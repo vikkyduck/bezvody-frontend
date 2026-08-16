@@ -1,0 +1,24 @@
+[Unit]
+Description=Платформа «Без Воды» — фронтенд (TanStack Start, SSR)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bezvody
+Group=bezvody
+WorkingDirectory=/opt/bezvody-front
+# Сборка nitro самодостаточна: зависимости уже внутри бандла, node_modules на
+# сервере не нужен. Поэтому запускаем прямо server/index.mjs.
+ExecStart=/usr/bin/node /opt/bezvody-front/server/index.mjs
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+# Наружу порт не выставляем: снаружи только nginx (8093), сюда он ходит по петле.
+Environment=HOST=127.0.0.1
+Environment=PORT=5050
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
