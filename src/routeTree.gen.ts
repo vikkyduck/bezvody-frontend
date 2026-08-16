@@ -13,7 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as BriefsRouteImport } from './routes/briefs'
-import { Route as LimitsRouteImport } from './routes/limits'
+import { Route as PmRouteImport } from './routes/pm'
+import { Route as VhodRouteImport } from './routes/vhod'
 import { Route as BriefsBriefIdRouteImport } from './routes/briefs.$briefId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -36,9 +37,14 @@ const BriefsRoute = BriefsRouteImport.update({
   path: '/briefs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LimitsRoute = LimitsRouteImport.update({
-  id: '/limits',
-  path: '/limits',
+const PmRoute = PmRouteImport.update({
+  id: '/pm',
+  path: '/pm',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VhodRoute = VhodRouteImport.update({
+  id: '/vhod',
+  path: '/vhod',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BriefsBriefIdRoute = BriefsBriefIdRouteImport.update({
@@ -52,7 +58,8 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/agents': typeof AgentsRoute
   '/briefs': typeof BriefsRouteWithChildren
-  '/limits': typeof LimitsRoute
+  '/pm': typeof PmRoute
+  '/vhod': typeof VhodRoute
   '/briefs/$briefId': typeof BriefsBriefIdRoute
 }
 export interface FileRoutesByTo {
@@ -60,7 +67,8 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/agents': typeof AgentsRoute
   '/briefs': typeof BriefsRouteWithChildren
-  '/limits': typeof LimitsRoute
+  '/pm': typeof PmRoute
+  '/vhod': typeof VhodRoute
   '/briefs/$briefId': typeof BriefsBriefIdRoute
 }
 export interface FileRoutesById {
@@ -69,22 +77,37 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/agents': typeof AgentsRoute
   '/briefs': typeof BriefsRouteWithChildren
-  '/limits': typeof LimitsRoute
+  '/pm': typeof PmRoute
+  '/vhod': typeof VhodRoute
   '/briefs/$briefId': typeof BriefsBriefIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/admin' | '/agents' | '/briefs' | '/limits' | '/briefs/$briefId'
+    | '/'
+    | '/admin'
+    | '/agents'
+    | '/briefs'
+    | '/pm'
+    | '/vhod'
+    | '/briefs/$briefId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/agents' | '/briefs' | '/limits' | '/briefs/$briefId'
+  to:
+    | '/'
+    | '/admin'
+    | '/agents'
+    | '/briefs'
+    | '/pm'
+    | '/vhod'
+    | '/briefs/$briefId'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/agents'
     | '/briefs'
-    | '/limits'
+    | '/pm'
+    | '/vhod'
     | '/briefs/$briefId'
   fileRoutesById: FileRoutesById
 }
@@ -93,7 +116,8 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   AgentsRoute: typeof AgentsRoute
   BriefsRoute: typeof BriefsRouteWithChildren
-  LimitsRoute: typeof LimitsRoute
+  PmRoute: typeof PmRoute
+  VhodRoute: typeof VhodRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -126,11 +150,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BriefsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/limits': {
-      id: '/limits'
-      path: '/limits'
-      fullPath: '/limits'
-      preLoaderRoute: typeof LimitsRouteImport
+    '/pm': {
+      id: '/pm'
+      path: '/pm'
+      fullPath: '/pm'
+      preLoaderRoute: typeof PmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vhod': {
+      id: '/vhod'
+      path: '/vhod'
+      fullPath: '/vhod'
+      preLoaderRoute: typeof VhodRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/briefs/$briefId': {
@@ -159,7 +190,8 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   AgentsRoute: AgentsRoute,
   BriefsRoute: BriefsRouteWithChildren,
-  LimitsRoute: LimitsRoute,
+  PmRoute: PmRoute,
+  VhodRoute: VhodRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

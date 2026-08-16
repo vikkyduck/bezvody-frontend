@@ -34,7 +34,7 @@ function Briefs() {
   const wordForm = (n: number) => (n === 1 ? "решение ждёт" : n < 5 ? "решения ждут" : "решений ждут");
 
   return (
-    <AppShell>
+    <AppShell allow={["client"]}>
       <PageHead
         eyebrow="Решения"
         title={pending.length ? `${pending.length} ${wordForm(pending.length)} вашей подписи` : "Все решения приняты"}

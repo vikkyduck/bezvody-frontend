@@ -43,7 +43,7 @@ function BriefPage() {
   const option = brief.options[choice] ?? brief.options[0]!;
 
   return (
-    <AppShell>
+    <AppShell allow={["client"]}>
       <Link to="/briefs" className="btn btn-ghost text-[12.5px]">
         ← Все решения
       </Link>

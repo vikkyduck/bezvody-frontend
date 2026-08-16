@@ -1,47 +1,52 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, PageHead } from "@/components/AppShell";
-import { RunPanel } from "@/components/RunPanel";
+import { useSession } from "@/lib/session";
 import { agents, domains, type DomainKey } from "@/lib/shtab-data";
 import { useShtab } from "@/lib/shtab-store";
 
 export const Route = createFileRoute("/agents")({
   head: () => ({
     meta: [
-      { title: "Агенты команды — каталог по десяти рабочим блокам | Штаб" },
+      { title: "Агенты — платформа «Без Воды»" },
       {
         name: "description",
-        content:
-          "Каталог агентов «Штаба»: результаты и причины, деньги, клиенты, продукт, операции, рынок, инициативы, риски, организация, стратегия и горизонтальные помощники.",
-      },
-      { property: "og:title", content: "Агенты команды — каталог по десяти блокам" },
-      {
-        property: "og:description",
         content: "Каждый агент отвечает за один рабочий вопрос: собирает данные и приносит готовый разбор.",
       },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "robots", content: "noindex" },
     ],
   }),
   component: Catalog,
 });
 
 function Catalog() {
-  const { installed, install, uninstall, startRun } = useShtab();
+  return (
+    <AppShell allow={["client"]}>
+      <CatalogBody />
+    </AppShell>
+  );
+}
+
+function CatalogBody() {
+  const { client } = useSession();
+  const { createWindow } = useShtab();
+  const navigate = useNavigate();
   const [open, setOpen] = useState<string | null>(null);
   const [domain, setDomain] = useState<DomainKey | "all">("all");
+  const [asked, setAsked] = useState<string[]>([]);
+  const opened = client?.agentIds ?? [];
 
   const visible = domain === "all" ? agents : agents.filter((a) => a.domain === domain);
   const current = domains.find((d) => d.key === domain);
   const count = (key: DomainKey) => agents.filter((a) => a.domain === key).length;
 
   return (
-    <AppShell>
+    <>
       <PageHead
         n="03"
         eyebrow="Агенты"
-        title="Кто из агентов работает на вашу команду"
-        lead="Агент — это один рабочий вопрос: он сам собирает данные и приносит готовый разбор. Подключённых запускайте сразу, остальных можно запросить — подключит администратор."
+        title="Кто из агентов работает на вашу компанию"
+        lead="Агент — это один рабочий вопрос: он сам собирает данные и приносит готовый разбор. Открытые запускайте сразу, остальные — по запросу вашему проджект-менеджеру."
       />
 
       {/* Десять предметных блоков плюс горизонтальные агенты для всех */}
@@ -72,7 +77,7 @@ function Catalog() {
 
       <div className="space-y-3">
         {visible.map((a) => {
-          const on = installed.includes(a.id);
+          const on = opened.includes(a.id);
           const expanded = open === a.id;
           const block = domains.find((d) => d.key === a.domain);
           return (
@@ -88,7 +93,7 @@ function Catalog() {
                   </div>
                   {on ? (
                     <div className="mt-2.5 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                      подключён вашей команде
+                      открыт вашей компании
                     </div>
                   ) : null}
                 </div>
@@ -96,19 +101,25 @@ function Catalog() {
                 <div className="flex flex-none flex-col items-start gap-2 sm:items-end">
                   {on ? (
                     <button
-                      onClick={() => startRun(a.id)}
-                      aria-label={`Запустить агента: ${a.name}`}
+                      onClick={() => {
+                        // Запуск агента = новое окно с ним: работа идёт в окне, а не «где-то».
+                        createWindow(a.id);
+                        navigate({ to: "/" });
+                      }}
+                      aria-label={`Открыть окно с агентом: ${a.name}`}
                       className="btn btn-primary text-[12.5px]"
                     >
-                      Запустить
+                      Открыть окно
                     </button>
+                  ) : asked.includes(a.id) ? (
+                    <span className="text-[12px] text-muted-foreground">запрос отправлен</span>
                   ) : (
                     <button
-                      onClick={() => install(a.id)}
-                      aria-label={`Запросить подключение: ${a.name}`}
+                      onClick={() => setAsked((p) => [...p, a.id])}
+                      aria-label={`Запросить агента: ${a.name}`}
                       className="btn btn-glass text-[12.5px]"
                     >
-                      Запросить подключение
+                      Запросить
                     </button>
                   )}
                   {a.steps?.length ? (
@@ -135,11 +146,7 @@ function Catalog() {
                       </li>
                     ))}
                   </ol>
-                  {on ? (
-                    <button onClick={() => uninstall(a.id)} className="btn btn-ghost mt-3 text-[12px]">
-                      Отключить агента
-                    </button>
-                  ) : null}
+
                 </div>
               ) : null}
             </div>
@@ -147,8 +154,7 @@ function Catalog() {
         })}
       </div>
 
-      <RunPanel />
-    </AppShell>
+    </>
   );
 }
 

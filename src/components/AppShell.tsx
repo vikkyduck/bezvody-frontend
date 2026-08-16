@@ -1,26 +1,66 @@
-import { Link, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
-import { team } from "@/lib/shtab-data";
-import { NavPills } from "@/components/NavPills";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect, type ReactNode } from "react";
+
+import { NavPills, type NavItem } from "@/components/NavPills";
 import { GlassPointer } from "@/components/bv/GlassPointer";
 import { StencilLogo, CatMark, LensFilter, Scene, SectionLabel } from "@/components/bv/core";
+import { creditsLeft, nf, roleLabel, type Role } from "@/lib/platform-data";
+import { useSession } from "@/lib/session";
 
-/** Ежедневные разделы — их всего три. */
-const nav = [
-  { to: "/", label: "Кабинет", short: "Кабинет" },
-  { to: "/briefs", label: "Решения", short: "Решения" },
-  { to: "/agents", label: "Агенты", short: "Агенты" },
-];
+/**
+ * Разделы у каждой роли свои. Кабинет администратора и кабинет проджекта —
+ * не «ещё одна вкладка» рядом с клиентскими, а отдельные входы: клиент про
+ * них не знает и не должен.
+ */
+const navByRole: Record<Role, NavItem[]> = {
+  client: [
+    { to: "/", label: "Окна", short: "Окна" },
+    { to: "/briefs", label: "Решения", short: "Решения" },
+    { to: "/agents", label: "Агенты", short: "Агенты" },
+  ],
+  project: [{ to: "/pm", label: "Мои клиенты", short: "Клиенты" }],
+  admin: [{ to: "/admin", label: "Кабинет", short: "Кабинет" }],
+};
 
-/** Редкие разделы живут отдельно, справа, и не спорят с ежедневными. */
-const navSecondary = [
-  { to: "/limits", label: "Границы", short: "Границы" },
-  { to: "/admin", label: "Админ", short: "Админ" },
-];
+/** Куда попадает роль сразу после входа. */
+export const homeByRole: Record<Role, string> = {
+  client: "/",
+  project: "/pm",
+  admin: "/admin",
+};
 
-
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, allow }: { children: ReactNode; allow: Role[] }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const { person, client, role, ready, signOut } = useSession();
+  const navigate = useNavigate();
+
+  // Проверять доступ можно только после того, как прочитали сессию, иначе
+  // при перезагрузке страницы вышвыривало бы уже вошедшего человека.
+  useEffect(() => {
+    if (!ready) return;
+    if (!role) {
+      navigate({ to: "/vhod", replace: true });
+      return;
+    }
+    if (!allow.includes(role)) navigate({ to: homeByRole[role], replace: true });
+  }, [ready, role, allow, navigate]);
+
+  if (!ready || !role || !allow.includes(role)) {
+    return (
+      <div className="stage grain flex min-h-screen items-center justify-center">
+        <CatMark className="h-10 w-12 animate-pulse text-[color:var(--color-text-primary)]/40" strokeWidth={2} />
+      </div>
+    );
+  }
+
+  const nav = navByRole[role];
+  const initials = person
+    ? person.name
+        .split(" ")
+        .map((w) => w[0])
+        .join("")
+        .slice(0, 2)
+    : "";
 
   return (
     <div className="stage grain min-h-screen">
@@ -34,37 +74,59 @@ export function AppShell({ children }: { children: ReactNode }) {
       />
       <header className="sticky top-0 z-40 border-b border-[color:var(--color-line)] bg-[color:var(--color-bg-primary)]/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1240px] items-center gap-6 px-5 py-3 sm:px-6">
-          <Link to="/" className="flex items-center gap-2.5" aria-label="Штаб — на главную">
+          <Link to={homeByRole[role]} className="flex items-center gap-2.5" aria-label="На главную">
             <CatMark className="h-7 w-9 text-[color:var(--color-text-primary)]/70" strokeWidth={2} />
             <StencilLogo className="logo-sm" />
-            <span className="ml-2 hidden border-l border-[color:var(--color-line)] pl-3 text-[13px] font-semibold lg:block">
-              Штаб
-            </span>
+            {role !== "client" ? (
+              <span className="ml-2 hidden border-l border-[color:var(--color-line)] pl-3 text-[13px] font-semibold lg:block">
+                {roleLabel[role]}
+              </span>
+            ) : null}
           </Link>
           <NavPills items={nav} path={path} className="hidden md:flex" />
-          <div className="ml-auto flex items-center gap-3 text-right">
-            <NavPills items={navSecondary} path={path} className="hidden border-r border-[color:var(--color-line)] pr-3 lg:flex" />
-            <div className="hidden sm:block">
-              <div className="text-[12.5px] font-semibold leading-tight">{team.name}</div>
-              <div className="text-[10.5px] text-muted-foreground">{team.company}</div>
+
+          <div className="ml-auto flex items-center gap-3.5 text-right">
+            {/* Клиент видит остаток кредитов всегда: расход не должен быть сюрпризом */}
+            {client ? (
+              <Link
+                to="/"
+                className="hidden border-r border-[color:var(--color-line)] pr-3.5 text-right sm:block"
+                title={`Израсходовано ${nf(client.creditsUsed)} из ${nf(client.creditsGranted)} кредитов`}
+              >
+                <div className="t-number text-[13px] font-semibold leading-tight tabular-nums">
+                  {nf(creditsLeft(client))}
+                </div>
+                <div className="text-[10.5px] text-muted-foreground">кредитов осталось</div>
+              </Link>
+            ) : null}
+            <div className="hidden text-right sm:block">
+              <div className="text-[12.5px] font-semibold leading-tight">{person?.name}</div>
+              <div className="text-[10.5px] text-muted-foreground">
+                {client ? client.unit : person?.position}
+              </div>
             </div>
             <div
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-[12px] font-bold text-primary-foreground"
-              title={`${team.owner} · ${team.company}`}
-              aria-label={`Пользователь ${team.owner}`}
+              className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary text-[12px] font-bold text-primary-foreground"
+              title={person?.name}
+              aria-hidden
             >
-              АК
+              {initials}
             </div>
+            <button onClick={signOut} className="btn btn-ghost text-[12px]" aria-label="Выйти из кабинета">
+              Выйти
+            </button>
           </div>
         </div>
         {/* Навигация на узких экранах: горизонтальная лента вместо скрытого меню */}
-        <div className="border-t border-[color:var(--color-line)] md:hidden">
-          <NavPills items={[...nav, ...navSecondary]} path={path} mobile className="flex overflow-x-auto px-4 py-2" />
-        </div>
+        {nav.length > 1 ? (
+          <div className="border-t border-[color:var(--color-line)] md:hidden">
+            <NavPills items={nav} path={path} mobile className="flex overflow-x-auto px-4 py-2" />
+          </div>
+        ) : null}
       </header>
       <main className="mx-auto max-w-[1240px] px-5 py-8 sm:px-6">{children}</main>
       <footer className="mx-auto flex max-w-[1240px] items-end justify-between gap-4 px-6 pb-10 pt-4 text-[11.5px] text-muted-foreground">
-        <span>Демонстрационный прототип. Агенты готовят решение — принимает его руководитель.</span>
+        <span>{client ? `${client.company} · доступ открыт до ${client.paidUntil}` : "Платформа «Без Воды»"}</span>
         <CatMark className="h-10 w-12 flex-none text-[color:var(--color-text-primary)]/50" strokeWidth={2} />
       </footer>
     </div>

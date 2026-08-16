@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ShtabProvider } from "../lib/shtab-store";
+import { SessionProvider } from "../lib/session";
 
 
 function NotFoundComponent() {
@@ -79,16 +80,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Штаб — кабинет команды с ИИ-агентами" },
+      { title: "Платформа «Без Воды»" },
       {
         name: "description",
-        content: "Кабинет команды с купленными ИИ-агентами подготовки управленческих решений.",
+        content: "Рабочее место команды: агенты готовят управленческие решения, решает руководитель.",
       },
-      { property: "og:title", content: "Штаб — кабинет команды с ИИ-агентами" },
-      {
-        property: "og:description",
-        content: "Агенты готовят решение: данные, причины, сценарии, документ к защите. Решает руководитель.",
-      },
+      // Кабинет — не витрина: в поиске ему делать нечего.
+      { name: "robots", content: "noindex" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -111,7 +109,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="ru">
       <head>
         <HeadContent />
       </head>
@@ -128,10 +126,12 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ShtabProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-      </ShtabProvider>
+      <SessionProvider>
+        <ShtabProvider>
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </ShtabProvider>
+      </SessionProvider>
     </QueryClientProvider>
   );
 

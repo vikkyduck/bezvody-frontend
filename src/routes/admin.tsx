@@ -1,392 +1,645 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AnimatePresence,
-  motion,
-  useInView,
-  useMotionValue,
-  useReducedMotion,
-  useSpring,
-  useTransform,
-} from "motion/react";
+import { Fragment, useMemo, useState, type FormEvent, type ReactNode } from "react";
+
 import { AppShell, PageHead } from "@/components/AppShell";
-import { teams, agents, domains, rub } from "@/lib/shtab-data";
-import { SectionLabel, CatMark } from "@/components/bv/core";
-import { Spotlight } from "@/components/bv/Spotlight";
+import {
+  accessCodes as seedCodes,
+  clients,
+  costRub,
+  creditsLeft,
+  creditsPct,
+  marginRub,
+  nf,
+  people as seedPeople,
+  personOf,
+  roleLabel,
+  rub,
+  silentDays,
+  usage,
+  usageOf,
+  type AccessCode,
+  type Client,
+  type Person,
+  type Role,
+} from "@/lib/platform-data";
+import { agents } from "@/lib/shtab-data";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
-      { title: "Администрирование кабинетов команд — Штаб" },
-      {
-        name: "description",
-        content:
-          "Корпоративное администрирование: кабинеты команд, подключённые агенты, места и стоимость подписки по подразделениям.",
-      },
-      { property: "og:title", content: "Администрирование кабинетов команд — Штаб" },
-      { property: "og:description", content: "Каждой команде — свой кабинет с купленными агентами и своими местами." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { title: "Кабинет администратора — платформа «Без Воды»" },
+      { name: "description", content: "Доступы, кредиты и агенты по всем клиентам платформы." },
+      { name: "robots", content: "noindex" },
     ],
   }),
-  component: Admin,
+  component: AdminCabinet,
 });
 
-type Filter = "Все" | "Активен" | "Пилот";
+const tabs = [
+  { key: "overview", label: "Обзор" },
+  { key: "access", label: "Доступы" },
+  { key: "credits", label: "Кредиты" },
+  { key: "agents", label: "Агенты" },
+] as const;
+type TabKey = (typeof tabs)[number]["key"];
 
-const usageParts = (t: { people: number; active30: number }) => ({ used: t.active30, total: t.people });
-
-const spendNumber = (spend: string) => Number(spend.replace(/[^\d]/g, ""));
-
-const EASE = [0.19, 1, 0.22, 1] as const;
-
-/** Плавный счётчик: значение «доезжает» пружиной, без резких скачков. */
-function Counter({
-  value,
-  format = (n: number) => String(n),
-  className,
-  delay = 0,
-}: {
-  value: number;
-  format?: (n: number) => string;
-  className?: string;
-  delay?: number;
-}) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-15%" });
-  const reduce = useReducedMotion();
-  const mv = useMotionValue(0);
-  const spring = useSpring(mv, { stiffness: 90, damping: 26, mass: 0.9 });
-  const text = useTransform(spring, (n) => format(Math.round(n)));
-
-  useEffect(() => {
-    if (!inView) return;
-    if (reduce) {
-      mv.set(value);
-      return;
-    }
-    const id = setTimeout(() => mv.set(value), delay * 1000);
-    return () => clearTimeout(id);
-  }, [inView, value, delay, mv, reduce]);
-
+function AdminCabinet() {
   return (
-    <span ref={ref} className={className}>
-      <motion.span>{text}</motion.span>
-    </span>
+    <AppShell allow={["admin"]}>
+      <Body />
+    </AppShell>
   );
 }
 
-/** Кольцо занятости мест: дуга вычерчивается один раз, мягко. */
-function Ring({ value, size = 132 }: { value: number; size?: number }) {
-  const reduce = useReducedMotion();
-  const r = 56;
-  const c = 2 * Math.PI * r;
-  return (
-    <div className="relative flex flex-none items-center justify-center" style={{ width: size, height: size }}>
-      <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90 overflow-visible">
-        <circle cx="64" cy="64" r={r} fill="none" strokeWidth="2" className="stroke-[color:var(--color-line)]" />
-        <motion.circle
-          cx="64"
-          cy="64"
-          r={r}
-          fill="none"
-          strokeWidth="4"
-          strokeLinecap="round"
-          className="stroke-[color:var(--color-accent)]"
-          style={{ filter: "drop-shadow(0 0 10px color-mix(in oklab, var(--color-accent) 45%, transparent))" }}
-          strokeDasharray={c}
-          initial={{ strokeDashoffset: c }}
-          whileInView={{ strokeDashoffset: c - (c * value) / 100 }}
-          viewport={{ once: true, margin: "-15%" }}
-          transition={{ duration: reduce ? 0 : 1.6, ease: EASE, delay: 0.15 }}
-        />
-      </svg>
-      <div className="absolute text-center">
-        <Counter value={value} format={(n) => `${n}%`} className="t-number block text-[30px] leading-none" delay={0.15} />
-        <div className="mt-1.5 text-[9.5px] uppercase tracking-[0.16em] text-muted-foreground">пользуются</div>
-      </div>
-    </div>
-  );
-}
-
-function SeatBar({ pct, delay = 0 }: { pct: number; delay?: number }) {
-  const reduce = useReducedMotion();
-  return (
-    <div className="h-[3px] w-full overflow-hidden rounded-full bg-[color:var(--color-line)]">
-      <motion.div
-        className="h-full rounded-full bg-[color:var(--color-accent)]"
-        initial={{ scaleX: 0 }}
-        whileInView={{ scaleX: pct / 100 }}
-        viewport={{ once: true, margin: "-10%" }}
-        transition={{ duration: reduce ? 0 : 1.1, ease: EASE, delay }}
-        style={{ originX: 0 }}
-      />
-    </div>
-  );
-}
-
-
-function Admin() {
-  const [filter, setFilter] = useState<Filter>("Все");
-  const [openTeam, setOpenTeam] = useState<string>(teams[0]!.name);
-
-  const totals = useMemo(() => {
-    const usage = teams.reduce(
-      (a, t) => {
-        const { used, total } = usageParts(t);
-        return { used: a.used + used, total: a.total + total };
-      },
-      { used: 0, total: 0 },
-    );
-    const spend = teams.reduce((a, t) => a + spendNumber(t.spend), 0);
-    const agentsTotal = teams.reduce((a, t) => a + t.agents, 0);
-    return { usage, spend, agentsTotal, util: Math.round((usage.used / usage.total) * 100) };
-  }, []);
-
-  const rows = useMemo(() => (filter === "Все" ? teams : teams.filter((t) => t.state === filter)), [filter]);
+function Body() {
+  const [tab, setTab] = useState<TabKey>("overview");
 
   return (
-    <AppShell>
+    <>
       <PageHead
-        n="05"
-        eyebrow="Администрирование"
-        title={`${teams.length} кабинетов под вашим управлением`}
-        lead="Каждое подразделение покупает свой набор агентов. Данные, доступы и журнал решений изолированы по кабинету."
-        right={
-          <div className="flex items-center gap-2">
-            <button className="btn btn-glass text-[13px]">Экспорт реестра</button>
-            <button className="btn btn-primary text-[13px]">Новый кабинет</button>
-          </div>
-        }
+        n="01"
+        eyebrow="Кабинет администратора"
+        title="Как идёт платформа"
+        lead="Доступы, деньги и агенты по всем клиентам. Оплата приходит по счёту — доступ открываете вы."
       />
 
-      {/* Одна сводная панель вместо трёх карточек */}
-      <motion.section
-        initial={{ opacity: 0, y: 22 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.9, ease: EASE }}
-        className="card-flat grid gap-10 px-6 py-7 md:grid-cols-[auto_1px_1fr] md:items-center md:gap-12 md:px-8"
-      >
-        <div className="flex items-center gap-6">
-          <Ring value={totals.util} />
-          <div>
-            <div className="label-caps">Пользуются за 30 дней</div>
-            <div className="t-number mt-2 text-[28px] leading-none">
-              <Counter value={totals.usage.used} delay={0.2} />
-              <span className="text-muted-foreground"> / {totals.usage.total}</span>
-            </div>
-            <p className="mt-2 max-w-[26ch] text-[12px] text-muted-foreground">
-              {totals.usage.total - totals.usage.used} человек не заходили в кабинет — стоит проверить, что мешает.
-            </p>
-          </div>
-        </div>
-
-        <div className="hidden h-full w-px bg-[color:var(--color-line)] md:block" />
-
-        <dl className="grid grid-cols-2 gap-x-10 gap-y-6 sm:grid-cols-3">
-          {[
-            { k: "Годовая подписка", v: rub(totals.spend) },
-            { k: "Подключено агентов", v: String(totals.agentsTotal) },
-            { k: "Кабинетов", v: `${teams.length} · пилотов ${teams.filter((t) => t.state === "Пилот").length}` },
-          ].map((m, i) => (
-            <motion.div
-              key={m.k}
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: EASE, delay: 0.25 + i * 0.09 }}
-            >
-              <dt className="label-caps">{m.k}</dt>
-              <dd className="t-number mt-2 text-[20px] leading-none tabular-nums">{m.v}</dd>
-            </motion.div>
-          ))}
-        </dl>
-      </motion.section>
-
-      {/* Реестр */}
-      <div className="mt-12 flex flex-wrap items-end justify-between gap-4">
-        <SectionLabel n="06">Реестр кабинетов</SectionLabel>
-        <div className="lg relative inline-flex rounded-[var(--radius-pill)] p-1">
-          {(["Все", "Активен", "Пилот"] as Filter[]).map((f) => (
+      <div className="-mx-1 overflow-x-auto pb-1">
+        <div
+          role="tablist"
+          aria-label="Разделы кабинета"
+          className="flex min-w-max items-center gap-1 rounded-[var(--radius-pill)] border border-[color:var(--color-line)] p-1"
+        >
+          {tabs.map((t) => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className="relative rounded-[var(--radius-pill)] px-4 py-1.5 text-[12.5px] transition-colors"
+              key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={`rounded-[var(--radius-pill)] px-3.5 py-1.5 text-[12.5px] transition-colors ${
+                tab === t.key ? "lg lg-strong font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              {filter === f ? (
-                <motion.span
-                  layoutId="admin-filter-pill"
-                  className="lg-strong absolute inset-0 rounded-[var(--radius-pill)]"
-                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                />
-              ) : null}
-              <span className={filter === f ? "relative font-semibold text-foreground" : "relative text-muted-foreground"}>
-                {f}
-              </span>
+              {t.label}
             </button>
           ))}
         </div>
       </div>
 
-      <motion.div layout className="mt-5 space-y-2.5">
-        <AnimatePresence initial={false} mode="popLayout">
-          {rows.map((t, i) => {
-            const { used, total } = usageParts(t);
-            const pct = total ? Math.round((used / total) * 100) : 0;
-            const open = openTeam === t.name;
-            const linked = agents.slice(0, t.agents);
-            return (
-              <motion.div
-                key={t.name}
-                layout
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8, scale: 0.99 }}
-                whileHover={{ y: -3 }}
-                whileTap={{ scale: 0.994 }}
-                transition={{
-                  y: { type: "spring", stiffness: 320, damping: 26 },
-                  scale: { type: "spring", stiffness: 480, damping: 30 },
-                  default: { duration: 0.55, ease: EASE, delay: i * 0.05 },
-                }}
-                className="card-flat group relative overflow-hidden transition-shadow duration-500 hover:shadow-[var(--lg-rim),var(--shadow-float)]"
-              >
-                {/* курсорный блик */}
-                <Spotlight />
-                {/* акцентный рельс слева */}
-                <span
-                  aria-hidden
-                  className={`pointer-events-none absolute left-0 top-0 h-full w-[2px] origin-top bg-[color:var(--color-accent)] transition-transform duration-500 ease-out ${
-                    open ? "scale-y-100 opacity-100" : "scale-y-0 opacity-70 group-hover:scale-y-100"
-                  }`}
-                />
-                <motion.button
-                  onClick={() => setOpenTeam(open ? "" : t.name)}
-                  aria-expanded={open}
-                  className="relative z-[2] flex w-full flex-wrap items-center gap-x-8 gap-y-4 px-6 py-5 text-left"
-                >
-
-                  <div className="min-w-[210px] flex-1">
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`h-1.5 w-1.5 flex-none rounded-full ${
-                          t.state === "Активен"
-                            ? "bg-[color:var(--color-accent)] shadow-[0_0_10px_var(--color-accent)]"
-                            : "bg-[color:var(--color-text-secondary)]"
-                        }`}
-                      />
-                      <span className="text-[15px] font-semibold">{t.name}</span>
-                    </div>
-                    <div className="mt-1 pl-4 text-[12px] text-muted-foreground">{t.owner}</div>
-                  </div>
-
-                  <div className="min-w-[150px] flex-1">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="t-number text-[13px]">
-                        {used} <span className="text-muted-foreground">/ {total}</span>
-                      </span>
-                      <span className="text-[11px] tabular-nums text-muted-foreground">{pct}%</span>
-                    </div>
-                    <div className="mt-2">
-                      <SeatBar pct={pct} delay={0.15 + i * 0.06} />
-                    </div>
-                  </div>
-
-                  <div className="min-w-[120px] text-right">
-                    <div className="label-caps text-[10px]">Подписка</div>
-                    <div className="mt-1 text-[13px] tabular-nums">{t.spend}</div>
-                  </div>
-
-                  <motion.span
-                    animate={{ rotate: open ? 45 : 0, opacity: open ? 1 : 0.55 }}
-                    transition={{ type: "spring", stiffness: 340, damping: 24 }}
-                    className="text-[15px] leading-none text-muted-foreground"
-                    aria-hidden
-                  >
-                    +
-                  </motion.span>
-                </motion.button>
-
-                <AnimatePresence initial={false}>
-                  {open ? (
-                    <motion.div
-                      key="body"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ height: { duration: 0.5, ease: EASE }, opacity: { duration: 0.32 } }}
-                      className="overflow-hidden"
-                    >
-                      <div className="border-t border-[color:var(--color-line)] px-6 py-6">
-                        <div className="grid gap-8 md:grid-cols-[1.4fr_1fr]">
-                          <div>
-                            <div className="label-caps">Подключённые агенты</div>
-                            <ul className="mt-3">
-                              {linked.map((a, j) => (
-                                <motion.li
-                                  key={a.id}
-                                  initial={{ opacity: 0, x: -10 }}
-                                  animate={{ opacity: 1, x: 0 }}
-                                  transition={{ duration: 0.45, ease: EASE, delay: 0.06 * j }}
-                                  className="flex items-start gap-3 border-t border-[color:var(--color-line)] py-3"
-                                >
-                                  <span className="t-number w-6 flex-none text-[12px] text-muted-foreground">
-                                    {domains.find((d) => d.key === a.domain)?.num ?? "—"}
-                                  </span>
-                                  <div>
-                                    <div className="text-[13.5px] font-semibold leading-snug">{a.name}</div>
-                                    <div className="mt-0.5 text-[12px] text-muted-foreground">
-                                      {domains.find((d) => d.key === a.domain)?.name} · {a.cadence} · {rub(a.price)}
-                                    </div>
-                                  </div>
-                                </motion.li>
-                              ))}
-                            </ul>
-                          </div>
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.5, ease: EASE, delay: 0.12 }}
-                            className="space-y-5"
-                          >
-                            <div>
-                              <div className="label-caps">Изоляция кабинета</div>
-                              <p className="mt-2 text-[12.5px] text-muted-foreground">
-                                Источники данных, доступы и журнал решений видны только команде «{t.name}». Кросс-доступ
-                                выдаёт администратор корпорации по заявке.
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <button className="btn btn-glass text-[12.5px]">Добавить агента</button>
-                              <button className="btn btn-ghost text-[12.5px]">Управлять местами</button>
-                            </div>
-                          </motion.div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 18 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-10%" }}
-        transition={{ duration: 0.8, ease: EASE }}
-        className="card-flat mt-12 flex flex-wrap items-center justify-between gap-6 px-6 py-6"
-      >
-        <div>
-          <div className="label-caps">Граница ответственности</div>
-          <p className="measure mt-2 text-[13px] text-muted-foreground">
-            Администратор управляет доступом и местами. Ни один агент не получает права принимать решение — он готовит
-            материал, выбор остаётся за руководителем команды.
-          </p>
-        </div>
-        <CatMark className="h-12 w-14 flex-none text-[color:var(--color-text-primary)]/40" strokeWidth={2} />
-      </motion.div>
-    </AppShell>
+      <div className="mt-7">
+        {tab === "overview" ? <Overview /> : null}
+        {tab === "access" ? <Access /> : null}
+        {tab === "credits" ? <Credits /> : null}
+        {tab === "agents" ? <AgentPanel /> : null}
+      </div>
+    </>
   );
+}
+
+// ── Обзор ─────────────────────────────────────────────────────────────────────
+/**
+ * Четыре вопроса, на которые владельцу платформы нужен ответ каждый день:
+ * сколько зарабатываем, кому пора выставить счёт, кто отваливается,
+ * что из каталога живо. Всё остальное — детали, они на других вкладках.
+ */
+function Overview() {
+  const invoiced = clients.reduce((s, c) => s + c.invoiceRub, 0);
+  const spentCredits = clients.reduce((s, c) => s + c.creditsUsed, 0);
+  const cost = costRub(spentCredits);
+  const margin = invoiced - cost;
+  const marginPct = Math.round((margin / invoiced) * 100);
+
+  // Пора выставлять счёт: кредиты на исходе или доступ заканчивается.
+  const toInvoice = clients.filter((c) => creditsPct(c) >= 75 || daysLeft(c.paidUntil) <= 45);
+  const silent = clients.filter((c) => silentDays(c) > 14);
+
+  const byAgent = useMemo(() => {
+    const map = new Map<string, { runs: number; credits: number; clients: number }>();
+    for (const u of usage) {
+      const cur = map.get(u.agentId) ?? { runs: 0, credits: 0, clients: 0 };
+      map.set(u.agentId, { runs: cur.runs + u.runs, credits: cur.credits + u.credits, clients: cur.clients + 1 });
+    }
+    return [...map.entries()].sort((a, b) => b[1].runs - a[1].runs);
+  }, []);
+
+  const dead = byAgent.filter(([, v]) => v.runs === 0);
+
+  return (
+    <div className="space-y-10">
+      <section className="border-y border-[color:var(--color-line)] py-6">
+        <div className="label-caps">Деньги за период</div>
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="t-number text-[44px] leading-none tabular-nums sm:text-[52px]">{rub(margin)}</span>
+          <span className="text-[15px] text-muted-foreground">осталось после расходов на модели · {marginPct} %</span>
+        </div>
+        <p className="measure mt-3 text-[12.5px] text-muted-foreground">
+          Выставлено по счетам {rub(invoiced)} · израсходовано {nf(spentCredits)} кредитов, это {rub(cost)} прямых
+          расходов. Кредит считаем по себестоимости токенов, без наценки — так видно настоящую маржу.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-[15px] font-semibold">Пора выставить счёт</h2>
+        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
+          Кредиты на исходе или доступ заканчивается в ближайшие полтора месяца. Оплата по счёту — значит,
+          счёт должен уйти раньше, чем клиент упрётся в ноль.
+        </p>
+        {toInvoice.length ? (
+          <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
+            {toInvoice.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3.5">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-medium leading-snug">{c.company}</div>
+                  <div className="text-[12px] text-muted-foreground">
+                    израсходовано {creditsPct(c)} % · доступ до {c.paidUntil}
+                  </div>
+                </div>
+                <span className="t-number text-[13px] tabular-nums text-muted-foreground">
+                  {nf(creditsLeft(c))} кредитов
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-muted-foreground">Ни у кого не горит.</p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-[15px] font-semibold">Замолчали</h2>
+        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
+          Купили и не заходят — это про отток, а не про экономию. Каждая строка здесь стоит одного звонка.
+        </p>
+        {silent.length ? (
+          <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
+            {silent.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3.5">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-medium leading-snug">{c.company}</div>
+                  <div className="text-[12px] text-muted-foreground">
+                    ведёт {personOf(c.managerId)?.name} · открыто агентов {c.agentIds.length}
+                  </div>
+                </div>
+                <span className="text-[13px] text-[color:var(--color-accent)]">
+                  {silentDays(c)} {declension(silentDays(c), "день", "дня", "дней")} тишины
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-muted-foreground">Все заходили на этой неделе.</p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-[15px] font-semibold">Что из каталога живо</h2>
+        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
+          Агент без запусков — это не проданный агент, а обещание, которое не сработало. Такие или
+          переобъяснять, или снимать с витрины.
+        </p>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div>
+            <div className="label-caps">Запускают чаще всего</div>
+            <ul className="mt-2.5 divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
+              {byAgent.slice(0, 5).map(([id, v]) => (
+                <li key={id} className="flex items-baseline justify-between gap-3 py-2.5">
+                  <span className="min-w-0 truncate text-[13px]">{agents.find((a) => a.id === id)?.name ?? id}</span>
+                  <span className="t-number flex-none text-[12px] tabular-nums text-muted-foreground">
+                    {v.runs}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <div className="label-caps">Подключены, но ни разу не запущены</div>
+            <ul className="mt-2.5 divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
+              {dead.map(([id]) => (
+                <li key={id} className="py-2.5 text-[13px]">
+                  {agents.find((a) => a.id === id)?.name ?? id}
+                </li>
+              ))}
+              {dead.length === 0 ? <li className="py-2.5 text-[13px] text-muted-foreground">Таких нет.</li> : null}
+            </ul>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ── Доступы ───────────────────────────────────────────────────────────────────
+/** Выдача логинов: новый человек + код. Регистрации нет — только ваша рука. */
+function Access() {
+  const [codes, setCodes] = useState<AccessCode[]>(seedCodes);
+  const [staff, setStaff] = useState<Person[]>(seedPeople);
+  const [name, setName] = useState("");
+  const [position, setPosition] = useState("");
+  const [role, setRole] = useState<Role>("client");
+  const [clientId, setClientId] = useState<string>(clients[0]?.id ?? "");
+  const [issued, setIssued] = useState<string | null>(null);
+
+  function issue(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    const personId = `p-${Date.now().toString(36)}`;
+    const code = makeCode(role, name, clientId);
+    setStaff((p) => [
+      ...p,
+      {
+        id: personId,
+        name: name.trim(),
+        position: position.trim() || roleLabel[role],
+        role,
+        clientId: role === "client" ? clientId : null,
+      },
+    ]);
+    setCodes((p) => [
+      { code, personId, issuedAt: today(), lastUsedAt: null, active: true },
+      ...p,
+    ]);
+    setIssued(code);
+    setName("");
+    setPosition("");
+  }
+
+  const revoke = (code: string) =>
+    setCodes((p) => p.map((c) => (c.code === code ? { ...c, active: false } : c)));
+
+  return (
+    <div className="space-y-10">
+      <section className="card-flat px-5 py-5">
+        <h2 className="text-[15px] font-semibold">Выдать доступ</h2>
+        <p className="measure mt-1 text-[12.5px] text-muted-foreground">
+          Код — это логин, пароля нет. Один код на одного человека: видно, кто заходил, и код можно отозвать,
+          не трогая остальных.
+        </p>
+
+        <form onSubmit={issue} className="mt-5 grid gap-3 sm:grid-cols-2">
+          <Field label="Имя и фамилия">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Анна Ковалёва"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Должность">
+            <input
+              value={position}
+              onChange={(e) => setPosition(e.target.value)}
+              placeholder="Коммерческий директор"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Роль">
+            <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputCls}>
+              <option value="client">Клиент — работает в окнах</option>
+              <option value="project">Проджект — ведёт клиентов</option>
+              <option value="admin">Администратор — всё</option>
+            </select>
+          </Field>
+          <Field label="Компания">
+            <select
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              disabled={role !== "client"}
+              className={`${inputCls} disabled:opacity-40`}
+            >
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.company}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="sm:col-span-2">
+            <button type="submit" className="btn btn-primary text-[13px]">
+              Выпустить код
+            </button>
+          </div>
+        </form>
+
+        {issued ? (
+          <div className="mt-4 border-t border-[color:var(--color-line)] pt-4">
+            <div className="label-caps">Код выпущен — передайте лично</div>
+            <div className="t-number mt-1.5 text-[20px] tracking-[0.08em]">{issued}</div>
+            <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+              На сервере код будет храниться зашифрованным: посмотреть можно, утечь базой — нет.
+            </p>
+          </div>
+        ) : null}
+      </section>
+
+      <section>
+        <h2 className="mb-4 text-[15px] font-semibold">Кто имеет доступ</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] border-collapse text-[13px]">
+            <thead>
+              <tr className="border-b border-[color:var(--color-line)] text-left">
+                <Th>Человек</Th>
+                <Th>Роль</Th>
+                <Th>Компания</Th>
+                <Th>Код</Th>
+                <Th>Последний вход</Th>
+                <Th> </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {codes.map((c) => {
+                const p = staff.find((x) => x.id === c.personId);
+                const client = clients.find((x) => x.id === p?.clientId);
+                return (
+                  <tr key={c.code} className="border-b border-[color:var(--color-line)]">
+                    <Td>
+                      <div className={c.active ? "" : "text-muted-foreground line-through"}>{p?.name ?? "—"}</div>
+                      <div className="text-[11.5px] text-muted-foreground">{p?.position}</div>
+                    </Td>
+                    <Td>{p ? roleLabel[p.role] : "—"}</Td>
+                    <Td>{client ? client.company : "«Без Воды»"}</Td>
+                    <Td>
+                      <span className="t-number text-[12px] tracking-[0.06em]">{c.code}</span>
+                    </Td>
+                    <Td>{c.lastUsedAt ?? <span className="text-muted-foreground">ни разу</span>}</Td>
+                    <Td>
+                      {c.active ? (
+                        <button onClick={() => revoke(c.code)} className="btn btn-ghost text-[12px]">
+                          Отозвать
+                        </button>
+                      ) : (
+                        <span className="text-[11.5px] text-muted-foreground">отозван</span>
+                      )}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ── Кредиты ───────────────────────────────────────────────────────────────────
+/** Аудит по каждому клиенту: что выдано, что израсходовано, что осталось нам. */
+function Credits() {
+  const [open, setOpen] = useState<string | null>(null);
+
+  return (
+    <div>
+      <h2 className="mb-1 text-[15px] font-semibold">Аудит кредитов по клиентам</h2>
+      <p className="measure mb-5 text-[12.5px] text-muted-foreground">
+        Выдано — сколько кредитов открыто по счёту. Себестоимость — сколько эта работа стоила нам у моделей.
+        Разница и есть то, что остаётся платформе.
+      </p>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] border-collapse text-[13px]">
+          <thead>
+            <tr className="border-b border-[color:var(--color-line)] text-left">
+              <Th>Клиент</Th>
+              <Th right>Выдано</Th>
+              <Th right>Израсходовано</Th>
+              <Th right>Осталось</Th>
+              <Th right>По счёту</Th>
+              <Th right>Себестоимость</Th>
+              <Th right>Остаётся нам</Th>
+              <Th> </Th>
+            </tr>
+          </thead>
+          <tbody>
+            {clients.map((c) => (
+              <Fragment key={c.id}>
+                <tr className="border-b border-[color:var(--color-line)]">
+                  <Td>
+                    <div className="font-medium">{c.company}</div>
+                    <div className="text-[11.5px] text-muted-foreground">
+                      {c.unit} · ведёт {personOf(c.managerId)?.name}
+                    </div>
+                  </Td>
+                  <Td right>{nf(c.creditsGranted)}</Td>
+                  <Td right>
+                    {nf(c.creditsUsed)}
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">{creditsPct(c)} %</span>
+                  </Td>
+                  <Td right>{nf(creditsLeft(c))}</Td>
+                  <Td right>{rub(c.invoiceRub)}</Td>
+                  <Td right>{rub(costRub(c.creditsUsed))}</Td>
+                  <Td right>
+                    <span className="font-semibold">{rub(marginRub(c))}</span>
+                  </Td>
+                  <Td>
+                    <button
+                      onClick={() => setOpen(open === c.id ? null : c.id)}
+                      className="btn btn-ghost text-[12px]"
+                    >
+                      {open === c.id ? "Свернуть" : "По агентам"}
+                    </button>
+                  </Td>
+                </tr>
+                {open === c.id ? (
+                  <tr>
+                    <td colSpan={8} className="border-b border-[color:var(--color-line)] px-1 py-4">
+                      <ul className="divide-y divide-[color:var(--color-line)]">
+                        {usageOf(c.id).map((u) => (
+                          <li key={u.agentId} className="flex items-baseline justify-between gap-4 py-2">
+                            <span className="text-[12.5px]">{agents.find((a) => a.id === u.agentId)?.name}</span>
+                            <span className="flex items-baseline gap-5 text-[12px] text-muted-foreground">
+                              <span className="tabular-nums">{u.runs} зап.</span>
+                              <span className="t-number w-[84px] text-right text-[12.5px] tabular-nums text-foreground">
+                                {nf(u.credits)}
+                              </span>
+                              <span className="w-[92px] text-right tabular-nums">{rub(costRub(u.credits))}</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Агенты ────────────────────────────────────────────────────────────────────
+/** Кому что открыто. Решение об открытии — ваше, клиент себе агента не включает. */
+function AgentPanel() {
+  const [map, setMap] = useState<Record<string, string[]>>(
+    Object.fromEntries(clients.map((c) => [c.id, c.agentIds])),
+  );
+  const [clientId, setClientId] = useState(clients[0]?.id ?? "");
+  const client = clients.find((c) => c.id === clientId) as Client;
+  const opened = map[clientId] ?? [];
+
+  const toggle = (agentId: string) =>
+    setMap((p) => {
+      const cur = p[clientId] ?? [];
+      return { ...p, [clientId]: cur.includes(agentId) ? cur.filter((x) => x !== agentId) : [...cur, agentId] };
+    });
+
+  return (
+    <div>
+      <h2 className="mb-1 text-[15px] font-semibold">Кому какие агенты открыты</h2>
+      <p className="measure mb-5 text-[12.5px] text-muted-foreground">
+        Каталог общий, но набор у каждого клиента свой — вы решаете, что ему нужно. Открытый агент
+        появляется у клиента в окне сразу.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {clients.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => setClientId(c.id)}
+            className={`btn text-[12.5px] ${c.id === clientId ? "btn-primary" : "btn-glass"}`}
+          >
+            {c.company}
+            <span className="ml-1.5 opacity-60">{(map[c.id] ?? []).length}</span>
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-4 text-[12.5px] text-muted-foreground">
+        {client.unit} · {opened.length} открыто · израсходовано {nf(client.creditsUsed)} кредитов
+      </p>
+
+      <div className="mt-5 space-y-5">
+        {groupByDomain(opened).map(([domainName, list]) => (
+          <div key={domainName}>
+            <div className="label-caps">{domainName}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {list.map((a) => {
+                const on = opened.includes(a.id);
+                const used = usageOf(clientId).find((u) => u.agentId === a.id);
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => toggle(a.id)}
+                    aria-pressed={on}
+                    title={a.result}
+                    className={`btn text-[12px] ${on ? "btn-primary" : "btn-glass"}`}
+                  >
+                    {a.name}
+                    {used && used.runs > 0 ? <span className="ml-1.5 opacity-60">{used.runs}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Мелочи ────────────────────────────────────────────────────────────────────
+
+const inputCls =
+  "mt-1.5 w-full rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40";
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="label-caps">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Th({ children, right }: { children: ReactNode; right?: boolean }) {
+  return (
+    <th className={`label-caps whitespace-nowrap py-2.5 pr-4 font-normal ${right ? "text-right" : ""}`}>
+      {children}
+    </th>
+  );
+}
+
+function Td({ children, right }: { children: ReactNode; right?: boolean }) {
+  // t-number — дисплейное начертание цифр: в таблице ему нужен явный кегль,
+  // иначе строка разъезжается на пол-экрана.
+  return (
+    <td className={`py-3 pr-4 align-top ${right ? "t-number whitespace-nowrap text-right text-[13px] tabular-nums" : ""}`}>
+      {children}
+    </td>
+  );
+}
+
+/** Группировка открытых агентов по блокам каталога — чтобы список читался. */
+function groupByDomain(opened: string[]) {
+  const groups = new Map<string, typeof agents>();
+  for (const a of agents) {
+    const key = a.domain;
+    groups.set(key, [...(groups.get(key) ?? []), a]);
+  }
+  return [...groups.entries()]
+    .map(([key, list]) => {
+      const name = domainName(key);
+      return [name, list] as const;
+    })
+    // Сначала блоки, где клиенту уже что-то открыто.
+    .sort((a, b) => countOpen(b[1], opened) - countOpen(a[1], opened));
+}
+
+const countOpen = (list: typeof agents, opened: string[]) => list.filter((a) => opened.includes(a.id)).length;
+
+function domainName(key: string) {
+  const found = domainsByKey[key];
+  return found ?? key;
+}
+
+const domainsByKey: Record<string, string> = {
+  rezultaty: "Результаты и причины",
+  dengi: "Деньги и финансы",
+  klienty: "Клиенты и продажи",
+  produkt: "Продукт и цена",
+  operacii: "Операции и поставки",
+  rynok: "Рынок и конкуренты",
+  iniciativy: "Инициативы и проекты",
+  riski: "Риски и соответствие",
+  organizaciya: "Организация работы",
+  strategiya: "Стратегия и развитие",
+  gorizont: "Для всех блоков",
+};
+
+const today = () => new Date().toLocaleDateString("ru-RU");
+
+/** Код в одном формате: префикс компании, фамилия, две случайные цифры. */
+function makeCode(role: Role, name: string, clientId: string) {
+  const surname = name.trim().split(/\s+/).pop() ?? "USER";
+  const prefix =
+    role === "client" ? (clients.find((c) => c.id === clientId)?.company.slice(1, 4) ?? "CL") : "BV";
+  return `${translit(prefix).toUpperCase()}-${translit(surname).toUpperCase()}`;
+}
+
+const translitMap: Record<string, string> = {
+  а: "A", б: "B", в: "V", г: "G", д: "D", е: "E", ё: "E", ж: "ZH", з: "Z", и: "I", й: "Y",
+  к: "K", л: "L", м: "M", н: "N", о: "O", п: "P", р: "R", с: "S", т: "T", у: "U", ф: "F",
+  х: "H", ц: "C", ч: "CH", ш: "SH", щ: "SCH", ъ: "", ы: "Y", ь: "", э: "E", ю: "YU", я: "YA",
+};
+
+const translit = (s: string) =>
+  s
+    .toLowerCase()
+    .split("")
+    .map((ch) => translitMap[ch] ?? ch)
+    .join("")
+    .replace(/[^a-z0-9]/gi, "");
+
+const declension = (n: number, one: string, few: string, many: string) => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+};
+
+/** Сколько дней до даты в формате ДД.ММ.ГГГГ. */
+function daysLeft(ddmmyyyy: string, from = "2026-08-16") {
+  const [d, m, y] = ddmmyyyy.split(".").map(Number);
+  return Math.round((Date.parse(`${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`) - Date.parse(from)) / 86400000);
 }

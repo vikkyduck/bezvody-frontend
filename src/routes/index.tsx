@@ -1,200 +1,252 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AppShell, PageHead } from "@/components/AppShell";
-import { RunPanel } from "@/components/RunPanel";
-import { DecisionCard, EmptyState } from "@/components/DecisionCard";
-import { agents, attentionSaved, briefs, dataContour, decisionLog, team } from "@/lib/shtab-data";
-import { useShtab } from "@/lib/shtab-store";
+import { useEffect, useRef, useState } from "react";
 
+import { AppShell } from "@/components/AppShell";
+import { creditsLeft, creditsPct, nf } from "@/lib/platform-data";
+import { useSession } from "@/lib/session";
+import { agents } from "@/lib/shtab-data";
+import { useShtab, type WorkWindow } from "@/lib/shtab-store";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Штаб — кабинет команды с ИИ-агентами для решений" },
+      { title: "Рабочее окно — платформа «Без Воды»" },
       {
         name: "description",
-        content:
-          "Личный кабинет команды: купленные ИИ-агенты готовят управленческие решения — что изменилось, почему, какие варианты. Решение принимает руководитель.",
+        content: "Одно окно на один вопрос: подключаете агента и работаете. Расход виден сразу.",
       },
-      { property: "og:title", content: "Штаб — кабинет команды с ИИ-агентами для решений" },
-      {
-        property: "og:description",
-        content: "Агенты собирают данные, находят причины и готовят документ к защите. Выбор остаётся за руководителем.",
-      },
+      { name: "robots", content: "noindex" },
     ],
   }),
-  component: Cabinet,
+  component: Workspace,
 });
 
-function Cabinet() {
-  const { installed, decided, startRun } = useShtab();
-  const mine = agents.filter((a) => installed.includes(a.id));
-  const pending = briefs.filter((b) => b.status === "Требует решения" && !decided.includes(b.id));
-  const first = pending[0];
-  const prepared = briefs.length + 5; // подготовлено агентами за месяц, включая архив
-  const saved = attentionSaved(prepared);
-
-
-  const wordForm = (n: number) => (n === 1 ? "решение ждёт" : n < 5 ? "решения ждут" : "решений ждут");
-
+function Workspace() {
   return (
-    <AppShell>
-      <PageHead
-        eyebrow="Кабинет команды"
-        title={
-          pending.length
-            ? `${pending.length} ${wordForm(pending.length)} вашей подписи`
-            : "Все решения приняты"
-        }
-        lead={`${team.name} · владелец ${team.owner}`}
-        right={
-          first ? (
-            <Link
-              to="/briefs/$briefId"
-              params={{ briefId: first.id }}
-              className="btn btn-primary text-[13px]"
-            >
-              Открыть решение
-            </Link>
-          ) : (
-            <Link to="/agents" className="btn btn-glass text-[13px]">
-              Каталог агентов
-            </Link>
-          )
-        }
-      />
-
-      {/* Один герой-показатель: то, что мы на самом деле продаём — сбережённое внимание */}
-      <section className="border-y border-[color:var(--color-line)] py-6">
-        <div className="label-caps">Сбережено вашего внимания за месяц</div>
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="t-number text-[44px] leading-none tabular-nums sm:text-[56px]">
-            {saved.weeks.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}
-          </span>
-          <span className="text-[15px] text-muted-foreground">
-            {weekWord(saved.weeks)} рабочего времени · {saved.hours} часов подготовки
-          </span>
-        </div>
-        <p className="measure mt-3 text-[12.5px] text-muted-foreground">
-          Подготовлено {prepared} {declension(prepared, "решение", "решения", "решений")} · принято {decisionLog.length} ·
-          агентов работает {mine.length} из {agents.length}. Внимание тратится один раз — на само решение.
-        </p>
-      </section>
-
-
-      <section className="mt-10">
-        <div className="mb-3 flex items-end justify-between gap-4">
-          <h2 className="text-[15px] font-semibold">Ждут вашего решения</h2>
-          <Link to="/briefs" className="btn btn-ghost text-[12.5px]">
-            Все решения
-          </Link>
-        </div>
-
-        {pending.length ? (
-          <div className="space-y-2.5">
-            {pending.map((b) => (
-              <DecisionCard key={b.id} brief={b} agentName={agents.find((a) => a.id === b.agentId)?.name} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title="Ничего не ждёт вас"
-            note="Агенты работают по расписанию. Как только появится вопрос, требующий вашей подписи, он окажется здесь."
-            action={
-              <Link to="/briefs" className="btn btn-glass text-[12.5px]">
-                Посмотреть принятые решения
-              </Link>
-            }
-          />
-        )}
-      </section>
-
-      <section className="mt-11">
-        <div className="mb-3 flex items-end justify-between gap-4">
-          <h2 className="text-[15px] font-semibold">Ваши агенты</h2>
-          <Link to="/agents" className="btn btn-ghost text-[12.5px]">
-            Добавить агента
-          </Link>
-        </div>
-        {mine.length ? (
-        <div className="grid items-stretch gap-3 md:grid-cols-2">
-          {mine.map((a) => (
-            <div key={a.id} className="card-flat flex h-full flex-col px-5 py-4">
-              <div className="text-[14.5px] font-semibold leading-snug">{a.name}</div>
-              <p className="mt-2 flex-1 text-[13px] text-muted-foreground">{a.result}</p>
-              <div className="mt-4 flex items-center justify-between gap-3 border-t border-[color:var(--color-line)] pt-3">
-                <span className="text-[11px] text-muted-foreground">{a.cadence}</span>
-                <button
-                  onClick={() => startRun(a.id)}
-                  aria-label={`Подготовить решение: ${a.name}`}
-                  className="btn btn-glass text-[12.5px]"
-                >
-                  Подготовить решение
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-        ) : (
-          <EmptyState
-            title="Пока ни один агент не подключён"
-            note="Выберите, что команда хочет понимать лучше — агент начнёт готовить решения по расписанию."
-            action={
-              <Link to="/agents" className="btn btn-glass text-[12.5px]">
-                Каталог агентов
-              </Link>
-            }
-          />
-        )}
-      </section>
-
-      <section className="mt-11">
-        <h2 className="mb-1 text-[15px] font-semibold">Память решений</h2>
-        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
-          Решение остаётся вместе с основанием, владельцем и датой проверки эффекта. Со временем это становится активом
-          компании: видно не только что решили, но и почему.
-        </p>
-        <ol className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-          {decisionLog.map((d) => (
-            <li key={d.date} className="flex flex-col gap-1.5 py-4 sm:flex-row sm:gap-5">
-              <span className="t-number w-[92px] flex-none pt-[2px] text-[11px] tabular-nums text-muted-foreground/70">
-                {d.date}
-              </span>
-              <div className="min-w-0">
-                <div className="text-[14px] font-medium leading-snug">{d.decision}</div>
-                <p className="measure mt-1 text-[12.5px] text-muted-foreground">Основание — {d.basis}</p>
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
-                  <span>владелец — {d.owner}</span>
-                  <span aria-hidden>·</span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span
-                      aria-hidden
-                      className={`h-[5px] w-[5px] flex-none rounded-full ${
-                        d.confirmed ? "bg-[color:var(--color-accent)]" : "bg-[color:var(--color-line)]"
-                      }`}
-                    />
-                    {d.confirmed ? `${d.effect} — подтверждён` : d.effect}
-                  </span>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <p className="measure mt-8 text-[11.5px] text-muted-foreground">{dataContour}</p>
-
-      <RunPanel />
+    <AppShell allow={["client"]}>
+      <WorkspaceBody />
     </AppShell>
   );
 }
 
-const declension = (n: number, one: string, few: string, many: string) => {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
-  return many;
-};
+function WorkspaceBody() {
+  const { client } = useSession();
+  const { windows, activeId, setActive, createWindow } = useShtab();
+  const active = windows.find((w) => w.id === activeId) ?? windows[0];
 
-const weekWord = (n: number) => (Math.abs(n - 1) < 0.05 ? "недели" : "недель");
+  if (!client || !active) return null;
 
+  return (
+    <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      {/* Список окон: слева, чтобы разговор не терялся при переключении */}
+      <aside className="lg:sticky lg:top-[92px] lg:self-start">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h1 className="text-[15px] font-semibold">Ваши окна</h1>
+          <button onClick={() => createWindow()} className="btn btn-glass text-[12px]">
+            Новое
+          </button>
+        </div>
+
+        <ul className="space-y-1.5">
+          {windows.map((w) => (
+            <li key={w.id}>
+              <WindowTab window={w} active={w.id === active.id} onClick={() => setActive(w.id)} />
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-6 border-t border-[color:var(--color-line)] pt-4">
+          <div className="label-caps">Кредиты</div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="t-number text-[22px] leading-none tabular-nums">{nf(creditsLeft(client))}</span>
+            <span className="text-[11.5px] text-muted-foreground">из {nf(client.creditsGranted)}</span>
+          </div>
+          <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-[color:var(--color-line)]">
+            <div
+              className="h-full rounded-full bg-[color:var(--color-accent)]"
+              style={{ width: `${creditsPct(client)}%` }}
+            />
+          </div>
+          <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+            Кредит — тысяча слов работы модели. Когда останется мало, проджект откроет следующий пакет по счёту.
+          </p>
+        </div>
+      </aside>
+
+      <section className="min-w-0">
+        <Window key={active.id} window={active} />
+      </section>
+    </div>
+  );
+}
+
+function WindowTab({ window: w, active, onClick }: { window: WorkWindow; active: boolean; onClick: () => void }) {
+  const agent = agents.find((a) => a.id === w.agentId);
+  return (
+    <button
+      onClick={onClick}
+      aria-current={active ? "true" : undefined}
+      className={`w-full rounded-[12px] border px-3.5 py-3 text-left transition-colors ${
+        active
+          ? "border-[color:var(--color-text-primary)]/25 bg-[color:var(--color-bg-secondary,transparent)]"
+          : "border-[color:var(--color-line)] hover:border-[color:var(--color-text-primary)]/20"
+      }`}
+    >
+      <div className="truncate text-[13.5px] font-medium leading-snug">{w.title}</div>
+      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span
+          aria-hidden
+          className={`h-[5px] w-[5px] flex-none rounded-full ${
+            agent ? "bg-[color:var(--color-accent)]" : "bg-[color:var(--color-line)]"
+          }`}
+        />
+        <span className="truncate">{agent ? agent.name : "агент не подключён"}</span>
+      </div>
+    </button>
+  );
+}
+
+function Window({ window: w }: { window: WorkWindow }) {
+  const { client } = useSession();
+  const { connectAgent, send, thinkingId } = useShtab();
+  const [draft, setDraft] = useState("");
+  const [picking, setPicking] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const agent = agents.find((a) => a.id === w.agentId);
+  const mine = agents.filter((a) => client?.agentIds.includes(a.id));
+  const thinking = thinkingId === w.id;
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [w.messages.length, thinking]);
+
+  return (
+    <div className="card-flat flex min-h-[600px] flex-col">
+      {/* Шапка окна: кто в нём работает и во что обошёлся разговор */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-[color:var(--color-line)] px-5 py-4">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-semibold leading-snug">{w.title}</div>
+          <button
+            onClick={() => setPicking((v) => !v)}
+            className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <span
+              aria-hidden
+              className={`h-[5px] w-[5px] flex-none rounded-full ${
+                agent ? "bg-[color:var(--color-accent)]" : "bg-[color:var(--color-line)]"
+              }`}
+            />
+            {agent ? agent.name : "Подключить агента"}
+            <span aria-hidden className="text-[10px]">
+              ▾
+            </span>
+          </button>
+        </div>
+        <div className="text-right">
+          <div className="t-number text-[13px] tabular-nums">{nf(w.credits)}</div>
+          <div className="text-[10.5px] text-muted-foreground">кредитов в окне</div>
+        </div>
+      </div>
+
+      {picking ? (
+        <div className="border-b border-[color:var(--color-line)] px-5 py-4">
+          <div className="label-caps">Агенты, открытые вашей компании</div>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {mine.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => {
+                  connectAgent(w.id, a.id);
+                  setPicking(false);
+                }}
+                className={`btn text-[12px] ${a.id === w.agentId ? "btn-primary" : "btn-glass"}`}
+              >
+                {a.name}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-[11.5px] text-muted-foreground">
+            Нужен другой агент — <Link to="/agents" className="underline underline-offset-2">запросите его</Link>,
+            подключит ваш проджект.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+        {w.messages.length === 0 && !thinking ? (
+          <div className="flex h-full min-h-[280px] flex-col items-center justify-center text-center">
+            <div className="measure text-[13.5px] text-muted-foreground">
+              {agent
+                ? `Спросите то, что вам решать. ${agent.result}.`
+                : "Подключите агента к окну — и задайте вопрос своими словами."}
+            </div>
+          </div>
+        ) : null}
+
+        {w.messages.map((m) => (
+          <Message key={m.id} from={m.from} text={m.text} credits={m.credits} />
+        ))}
+
+        {thinking ? (
+          <div className="flex items-center gap-2.5 text-[12.5px] text-muted-foreground">
+            <span className="h-[5px] w-[5px] animate-pulse rounded-full bg-[color:var(--color-accent)]" />
+            Агент собирает разбор
+          </div>
+        ) : null}
+        <div ref={endRef} />
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          send(w.id, draft);
+          setDraft("");
+        }}
+        className="flex items-end gap-2.5 border-t border-[color:var(--color-line)] px-5 py-4"
+      >
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter отправляет, Shift+Enter — перенос строки: так быстрее пишется.
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send(w.id, draft);
+              setDraft("");
+            }
+          }}
+          rows={2}
+          placeholder={agent ? "Опишите вопрос своими словами" : "Сначала подключите агента"}
+          aria-label="Сообщение агенту"
+          className="min-h-[52px] flex-1 resize-none rounded-[12px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-2.5 text-[13.5px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+        />
+        <button type="submit" disabled={!draft.trim() || thinking} className="btn btn-primary text-[13px] disabled:opacity-40">
+          Отправить
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function Message({ from, text, credits }: { from: "user" | "agent"; text: string; credits?: number | undefined }) {
+  const mine = from === "user";
+  return (
+    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+      <div className={`max-w-[86%] ${mine ? "text-right" : ""}`}>
+        <div
+          className={`whitespace-pre-line rounded-[14px] px-4 py-3 text-[13.5px] leading-relaxed ${
+            mine
+              ? "bg-primary text-primary-foreground"
+              : "border border-[color:var(--color-line)] text-foreground"
+          }`}
+        >
+          {text}
+        </div>
+        {credits ? (
+          <div className="mt-1.5 text-[10.5px] text-muted-foreground">{nf(credits)} кредитов</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
