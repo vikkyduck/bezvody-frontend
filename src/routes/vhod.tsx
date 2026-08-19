@@ -3,7 +3,8 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { homeByRole } from "@/components/AppShell";
 import { CatMark, LensFilter, Scene, StencilLogo } from "@/components/bv/core";
-import { accessCodes, personOf, roleLabel } from "@/lib/platform-data";
+import { useDirectory } from "@/lib/directory";
+import { roleLabel } from "@/lib/platform-data";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/vhod")({
@@ -105,24 +106,28 @@ function SignIn() {
  * с подключением настоящей выдачи доступов.
  */
 function DemoCodes({ onPick }: { onPick: (code: string) => void }) {
-  const shown = ["BV-CLIENT-01", "BV-PM-01", "BV-ADMIN-01"];
+  const { participants } = useDirectory();
+  // По одному живому коду на роль: список ведётся в кабинете администратора.
+  const shown = (["admin", "project", "client"] as const)
+    .map((role) => participants.find((p) => p.role === role && p.active))
+    .filter((p) => p !== undefined);
+
+  if (!shown.length) return null;
+
   return (
     <div className="mt-6 border-t border-[color:var(--color-line)] pt-4">
       <div className="label-caps">Коды для проверки макета</div>
       <div className="mt-2.5 flex flex-wrap gap-2">
-        {shown.map((c) => {
-          const person = personOf(accessCodes.find((a) => a.code === c)?.personId ?? null);
-          return (
-            <button
-              key={c}
-              onClick={() => onPick(c)}
-              className="btn btn-glass text-[11.5px]"
-              title={person ? `${person.name} — ${roleLabel[person.role]}` : c}
-            >
-              {person ? roleLabel[person.role] : c}
-            </button>
-          );
-        })}
+        {shown.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => onPick(p.code)}
+            className="btn btn-glass text-[11.5px]"
+            title={`${p.name} — ${p.code}`}
+          >
+            {roleLabel[p.role]}
+          </button>
+        ))}
       </div>
     </div>
   );

@@ -28,13 +28,13 @@ function Catalog() {
 }
 
 function CatalogBody() {
-  const { client } = useSession();
+  const { person } = useSession();
   const { createWindow } = useShtab();
   const navigate = useNavigate();
   const [open, setOpen] = useState<string | null>(null);
   const [domain, setDomain] = useState<DomainKey | "all">("all");
   const [asked, setAsked] = useState<string[]>([]);
-  const opened = client?.agentIds ?? [];
+  const opened = person?.agentIds ?? [];
 
   const visible = domain === "all" ? agents : agents.filter((a) => a.domain === domain);
   const current = domains.find((d) => d.key === domain);
@@ -45,7 +45,7 @@ function CatalogBody() {
       <PageHead
         n="03"
         eyebrow="Агенты"
-        title="Кто из агентов работает на вашу компанию"
+        title="Кто из агентов работает на вас"
         lead="Агент — это один рабочий вопрос: он сам собирает данные и приносит готовый разбор. Открытые запускайте сразу, остальные — по запросу вашему проджект-менеджеру."
       />
 
@@ -107,7 +107,7 @@ function CatalogBody() {
                   </div>
                   {on ? (
                     <div className="mt-2.5 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                      открыт вашей компании
+                      открыт вам
                     </div>
                   ) : null}
                 </div>

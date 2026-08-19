@@ -29,11 +29,11 @@ function Workspace() {
 }
 
 function WorkspaceBody() {
-  const { client } = useSession();
+  const { person } = useSession();
   const { windows, activeId, setActive, createWindow } = useShtab();
   const active = windows.find((w) => w.id === activeId) ?? windows[0];
 
-  if (!client) return null;
+  if (!person) return null;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
@@ -108,14 +108,14 @@ function WindowTab({ window: w, active, onClick }: { window: WorkWindow; active:
 }
 
 function Window({ window: w }: { window: WorkWindow }) {
-  const { client } = useSession();
+  const { person } = useSession();
   const { connectAgent, send, thinkingId } = useShtab();
   const [draft, setDraft] = useState("");
   const [picking, setPicking] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   const agent = agents.find((a) => a.id === w.agentId);
-  const mine = agents.filter((a) => client?.agentIds.includes(a.id));
+  const mine = agents.filter((a) => person?.agentIds.includes(a.id));
   const thinking = thinkingId === w.id;
 
   useEffect(() => {
@@ -148,7 +148,7 @@ function Window({ window: w }: { window: WorkWindow }) {
 
       {picking ? (
         <div className="border-b border-[color:var(--color-line)] px-5 py-4">
-          <div className="label-caps">Агенты, открытые вашей компании</div>
+          <div className="label-caps">Агенты, открытые вам</div>
           {mine.length ? (
             <div className="mt-2.5 flex flex-wrap gap-2">
               {mine.map((a) => (
@@ -166,7 +166,7 @@ function Window({ window: w }: { window: WorkWindow }) {
             </div>
           ) : (
             <p className="mt-2.5 text-[12.5px] text-muted-foreground">
-              Вашей компании пока не открыт ни один агент. Напишите проджект-менеджеру — он подключит
+              Вам пока не открыт ни один агент. Напишите вашему проджект-менеджеру — он подключит
               нужных, и они появятся здесь.
             </p>
           )}

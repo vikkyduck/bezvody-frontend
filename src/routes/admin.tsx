@@ -2,24 +2,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, type FormEvent, type ReactNode } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
-import {
-  accessCodes as seedCodes,
-  clients,
-  people as seedPeople,
-  personOf,
-  roleLabel,
-  silentDays,
-  type AccessCode,
-  type Person,
-  type Role,
-} from "@/lib/platform-data";
-import { agents } from "@/lib/shtab-data";
+import { AgentAccess, Contacts } from "@/components/AgentAccess";
+import { cleanTelegram, useDirectory, type Participant } from "@/lib/directory";
+import { roleLabel, type Role } from "@/lib/platform-data";
+import { agents, domains } from "@/lib/shtab-data";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
       { title: "Кабинет администратора — платформа «Без Воды»" },
-      { name: "description", content: "Доступы, клиенты и агенты платформы." },
+      { name: "description", content: "Участники, доступы и агенты платформы." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -27,9 +19,9 @@ export const Route = createFileRoute("/admin")({
 });
 
 const tabs = [
-  { key: "overview", label: "Обзор" },
-  { key: "access", label: "Доступы" },
+  { key: "people", label: "Участники" },
   { key: "agents", label: "Агенты" },
+  { key: "overview", label: "Обзор" },
 ] as const;
 type TabKey = (typeof tabs)[number]["key"];
 
@@ -42,15 +34,15 @@ function AdminCabinet() {
 }
 
 function Body() {
-  const [tab, setTab] = useState<TabKey>("overview");
+  const [tab, setTab] = useState<TabKey>("people");
 
   return (
     <>
       <PageHead
         n="01"
         eyebrow="Кабинет администратора"
-        title="Как идёт платформа"
-        lead="Доступы, клиенты и агенты. Оплата приходит по счёту — доступ открываете вы."
+        title="Кто работает на платформе"
+        lead="Заводите личные кабинеты, открывайте каждому своих агентов и передавайте код из рук в руки."
       />
 
       <div className="-mx-1 overflow-x-auto pb-1">
@@ -76,85 +68,423 @@ function Body() {
       </div>
 
       <div className="mt-7">
+        {tab === "people" ? <People /> : null}
+        {tab === "agents" ? <Catalog /> : null}
         {tab === "overview" ? <Overview /> : null}
-        {tab === "access" ? <Access /> : null}
-        {tab === "agents" ? <AgentPanel /> : null}
       </div>
     </>
   );
 }
 
+// ── Участники ─────────────────────────────────────────────────────────────────
+/**
+ * Личный кабинет заводится здесь и только здесь: регистрации нет.
+ * Код показывается один раз крупно и копируется — передаёте его сами,
+ * ни почта, ни телеграм отсюда ничего не отправляют.
+ */
+function People() {
+  const { participants } = useDirectory();
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-10">
+      <NewParticipant onCreated={(p) => setOpenId(p.id)} />
+
+      <section>
+        <h2 className="mb-4 text-[15px] font-semibold">
+          Личные кабинеты <span className="text-muted-foreground">· {participants.length}</span>
+        </h2>
+        <div className="space-y-2.5">
+          {participants.map((p) => (
+            <PersonCard
+              key={p.id}
+              person={p}
+              open={openId === p.id}
+              onToggle={() => setOpenId(openId === p.id ? null : p.id)}
+            />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) {
+  const { add } = useDirectory();
+  const [name, setName] = useState("");
+  const [position, setPosition] = useState("");
+  const [company, setCompany] = useState("");
+  const [email, setEmail] = useState("");
+  const [telegram, setTelegram] = useState("");
+  const [role, setRole] = useState<Role>("client");
+  const [issued, setIssued] = useState<Participant | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const created = add({ name, position, company, email, telegram, role });
+    setIssued(created);
+    setCopied(false);
+    onCreated(created);
+    setName("");
+    setPosition("");
+    setCompany("");
+    setEmail("");
+    setTelegram("");
+  }
+
+  return (
+    <section className="card-flat px-5 py-5">
+      <h2 className="text-[15px] font-semibold">Новый личный кабинет</h2>
+      <p className="measure mt-1 text-[12.5px] text-muted-foreground">
+        Имя обязательно, остальное — по желанию. Контакт нужен вам, чтобы знать, куда передать код:
+        платформа сама никому не пишет.
+      </p>
+
+      <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-2">
+        <Field label="Имя и фамилия">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя Фамилия" className={inputCls} />
+        </Field>
+        <Field label="Должность">
+          <input
+            value={position}
+            onChange={(e) => setPosition(e.target.value)}
+            placeholder="Коммерческий директор"
+            className={inputCls}
+          />
+        </Field>
+        <Field label="Компания">
+          <input
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            placeholder="Название компании"
+            className={inputCls}
+          />
+        </Field>
+        <Field label="Роль">
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputCls}>
+            <option value="client">Клиент — работает в окнах</option>
+            <option value="project">Проджект — ведёт клиентов</option>
+            <option value="admin">Администратор — всё</option>
+          </select>
+        </Field>
+        <Field label="Почта">
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            inputMode="email"
+            placeholder="name@company.ru"
+            className={inputCls}
+          />
+        </Field>
+        <Field label="Телеграм">
+          <input
+            value={telegram}
+            onChange={(e) => setTelegram(e.target.value)}
+            placeholder="@nickname"
+            className={inputCls}
+          />
+        </Field>
+        <div className="sm:col-span-2">
+          <button type="submit" className="btn btn-primary text-[13px]">
+            Завести кабинет
+          </button>
+        </div>
+      </form>
+
+      {issued ? (
+        <div className="mt-5 border-t border-[color:var(--color-line)] pt-4">
+          <div className="label-caps">Код для {issued.name} — передайте лично</div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <span className="t-number text-[22px] tracking-[0.08em]">{issued.code}</span>
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(issued.code).then(
+                  () => setCopied(true),
+                  () => setCopied(false),
+                );
+              }}
+              className="btn btn-glass text-[12px]"
+            >
+              {copied ? "Скопировано" : "Скопировать"}
+            </button>
+          </div>
+          <p className="mt-2 text-[11.5px] text-muted-foreground">
+            Ниже в карточке откройте этому человеку агентов — без них он войдёт в пустой кабинет.
+          </p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PersonCard({ person: p, open, onToggle }: { person: Participant; open: boolean; onToggle: () => void }) {
+  const { setActive, remove, update } = useDirectory();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [edit, setEdit] = useState(false);
+
+  return (
+    <div className="card-flat px-5 py-5">
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className={`text-[15px] font-semibold leading-snug ${p.active ? "" : "text-muted-foreground line-through"}`}>
+              {p.name}
+            </span>
+            <span className="rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              {roleLabel[p.role]}
+            </span>
+            {!p.active ? <span className="text-[11px] text-[color:var(--color-accent)]">код отозван</span> : null}
+          </div>
+          <p className="mt-1 text-[12.5px] text-muted-foreground">
+            {[p.position, p.company].filter(Boolean).join(" · ") || "должность не указана"}
+          </p>
+          <p className="mt-1 text-[12px] text-muted-foreground">
+            <Contacts person={p} />
+          </p>
+        </div>
+
+        <div className="text-right">
+          <div className="t-number text-[13px] tracking-[0.06em]">{p.code}</div>
+          <div className="text-[10.5px] text-muted-foreground">
+            {p.lastUsedAt ? `заходил ${p.lastUsedAt}` : "ни разу не заходил"}
+          </div>
+        </div>
+
+        <button onClick={onToggle} className="btn btn-glass text-[12.5px]">
+          {open ? "Свернуть" : `Агенты · ${p.agentIds.length}`}
+        </button>
+      </div>
+
+      {open ? (
+        <div className="mt-5 space-y-5 border-t border-[color:var(--color-line)] pt-5">
+          <div>
+            <div className="label-caps mb-2.5">Какие агенты открыты</div>
+            <AgentAccess person={p} />
+          </div>
+
+          {edit ? <EditFields person={p} onDone={() => setEdit(false)} onSave={update} /> : null}
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-[color:var(--color-line)] pt-4">
+            <button onClick={() => setEdit((v) => !v)} className="btn btn-ghost text-[12px]">
+              {edit ? "Закрыть правку" : "Изменить данные"}
+            </button>
+            <button onClick={() => setActive(p.id, !p.active)} className="btn btn-ghost text-[12px]">
+              {p.active ? "Отозвать код" : "Вернуть доступ"}
+            </button>
+            {confirmDelete ? (
+              <>
+                <button
+                  onClick={() => remove(p.id)}
+                  className="btn btn-ghost text-[12px] text-[color:var(--color-error)]"
+                >
+                  Точно удалить
+                </button>
+                <button onClick={() => setConfirmDelete(false)} className="btn btn-ghost text-[12px]">
+                  Отмена
+                </button>
+              </>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} className="btn btn-ghost text-[12px]">
+                Удалить кабинет
+              </button>
+            )}
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              Отозванный код перестаёт пускать, но кабинет остаётся в списке. Удаление стирает его совсем.
+            </span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Правка данных участника. Код не меняется: он уже у человека на руках. */
+function EditFields({
+  person: p,
+  onDone,
+  onSave,
+}: {
+  person: Participant;
+  onDone: () => void;
+  onSave: (id: string, patch: Partial<Omit<Participant, "id" | "code">>) => void;
+}) {
+  const [draft, setDraft] = useState({
+    name: p.name,
+    position: p.position,
+    company: p.company,
+    email: p.email,
+    telegram: p.telegram,
+    role: p.role,
+  });
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(p.id, { ...draft, telegram: cleanTelegram(draft.telegram) });
+        onDone();
+      }}
+      className="grid gap-3 sm:grid-cols-2"
+    >
+      <Field label="Имя и фамилия">
+        <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className={inputCls} />
+      </Field>
+      <Field label="Должность">
+        <input
+          value={draft.position}
+          onChange={(e) => setDraft({ ...draft, position: e.target.value })}
+          className={inputCls}
+        />
+      </Field>
+      <Field label="Компания">
+        <input
+          value={draft.company}
+          onChange={(e) => setDraft({ ...draft, company: e.target.value })}
+          className={inputCls}
+        />
+      </Field>
+      <Field label="Роль">
+        <select
+          value={draft.role}
+          onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}
+          className={inputCls}
+        >
+          <option value="client">Клиент</option>
+          <option value="project">Проджект</option>
+          <option value="admin">Администратор</option>
+        </select>
+      </Field>
+      <Field label="Почта">
+        <input value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} className={inputCls} />
+      </Field>
+      <Field label="Телеграм">
+        <input
+          value={draft.telegram}
+          onChange={(e) => setDraft({ ...draft, telegram: e.target.value })}
+          className={inputCls}
+        />
+      </Field>
+      <div className="sm:col-span-2">
+        <button type="submit" className="btn btn-primary text-[12.5px]">
+          Сохранить
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ── Каталог агентов ───────────────────────────────────────────────────────────
+function Catalog() {
+  if (agents.length === 0) {
+    return (
+      <div className="card-flat px-6 py-10 text-center">
+        <h2 className="text-[16px] font-semibold">Каталог пуст</h2>
+        <p className="measure mx-auto mt-2.5 text-[13.5px] text-muted-foreground">
+          Агентов ещё не завели.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="mb-1 text-[15px] font-semibold">Что умеет платформа</h2>
+      <p className="measure mb-5 text-[12.5px] text-muted-foreground">
+        Общий каталог. Кому именно открыт агент — решаете вы в карточке участника, а не здесь:
+        набор у каждого свой.
+      </p>
+
+      <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
+        {agents.map((a) => (
+          <li key={a.id} className="py-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <span className="text-[14.5px] font-semibold">{a.name}</span>
+              <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                {domains.find((d) => d.key === a.domain)?.name}
+              </span>
+            </div>
+            <p className="measure mt-1.5 text-[13px] text-muted-foreground">{a.result}</p>
+            <p className="mt-1 text-[11.5px] text-muted-foreground/80">
+              {a.method} · {a.cadence}
+            </p>
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-4 text-[11.5px] text-muted-foreground">
+        Пока это заглушки: имена и обещание результата. Настоящая работа появится вместе с бэкендом.
+      </p>
+    </div>
+  );
+}
+
 // ── Обзор ─────────────────────────────────────────────────────────────────────
 /**
- * Пока платформа не работает по-настоящему, честно показывать только то,
- * что действительно известно: сколько заведено и чего ещё нет. Учёт расхода
- * вернётся сюда вместе с настоящим счётчиком, а не раньше.
+ * Честно показываем только то, что действительно известно: сколько заведено,
+ * кому ещё не открыли агентов и кто ни разу не вошёл. Учёт расхода вернётся
+ * вместе с настоящим счётчиком, а не раньше.
  */
 function Overview() {
-  const withAccess = seedCodes.filter((c) => c.active).length;
-  const openedAgents = clients.reduce((s, c) => s + c.agentIds.length, 0);
-  const silent = clients.filter((c) => silentDays(c) > 14);
-
-  const todo = [
-    agents.length === 0 ? "Завести агентов в каталоге" : null,
-    openedAgents === 0 ? "Открыть клиентам их набор агентов" : null,
-    clients.length === 0 ? "Завести первого клиента" : null,
-  ].filter(Boolean) as string[];
+  const { participants } = useDirectory();
+  const active = participants.filter((p) => p.active);
+  const clientsWithoutAgents = active.filter((p) => p.role === "client" && p.agentIds.length === 0);
+  const neverEntered = active.filter((p) => !p.lastUsedAt);
 
   return (
     <div className="space-y-10">
       <section className="grid gap-6 border-y border-[color:var(--color-line)] py-6 sm:grid-cols-3">
-        <Stat n={clients.length} label="Клиентов на платформе" />
-        <Stat n={withAccess} label="Человек с доступом" />
+        <Stat n={active.length} label="Кабинетов с доступом" />
+        <Stat n={active.filter((p) => p.role === "client").length} label="Из них клиентов" />
         <Stat n={agents.length} label="Агентов в каталоге" />
       </section>
 
-      {todo.length ? (
-        <section>
-          <h2 className="mb-1 text-[15px] font-semibold">Что настроить</h2>
-          <p className="measure mb-4 text-[12.5px] text-muted-foreground">
-            Платформа готова, наполнения ещё нет. Пока эти пункты не закрыты, клиент в своём кабинете
-            увидит пустое окно.
-          </p>
-          <ol className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-            {todo.map((t, i) => (
-              <li key={t} className="flex gap-4 py-3.5">
-                <span className="t-number w-6 flex-none text-[11px] tabular-nums text-muted-foreground/70">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span className="text-[14px]">{t}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
+      <ListSection
+        title="Кабинет есть, агентов нет"
+        note="Такой человек войдёт и увидит пустое окно. Откройте ему агентов в карточке."
+        empty="У всех клиентов открыт хотя бы один агент."
+        items={clientsWithoutAgents.map((p) => ({ id: p.id, main: p.name, side: p.code }))}
+      />
 
-      <section>
-        <h2 className="mb-1 text-[15px] font-semibold">Замолчали</h2>
-        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
-          Купили и не заходят — это про отток, а не про экономию. Каждая строка здесь стоит одного звонка.
-        </p>
-        {silent.length ? (
-          <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-            {silent.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3.5">
-                <div className="min-w-0">
-                  <div className="text-[14px] font-medium leading-snug">{c.company}</div>
-                  <div className="text-[12px] text-muted-foreground">
-                    ведёт {personOf(c.managerId)?.name} · открыто агентов {c.agentIds.length}
-                  </div>
-                </div>
-                <span className="text-[13px] text-[color:var(--color-accent)]">
-                  {silentDays(c)} {declension(silentDays(c), "день", "дня", "дней")} тишины
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-muted-foreground">Все заходили на этой неделе.</p>
-        )}
-      </section>
+      <ListSection
+        title="Код выдан, но ни разу не вошли"
+        note="Либо код не дошёл, либо человек не понял, зачем заходить. И то и другое чинится звонком."
+        empty="Все, кому выдали код, уже заходили."
+        items={neverEntered.map((p) => ({ id: p.id, main: p.name, side: p.code }))}
+      />
     </div>
+  );
+}
+
+function ListSection({
+  title,
+  note,
+  empty,
+  items,
+}: {
+  title: string;
+  note: string;
+  empty: string;
+  items: { id: string; main: string; side: string }[];
+}) {
+  return (
+    <section>
+      <h2 className="mb-1 text-[15px] font-semibold">{title}</h2>
+      <p className="measure mb-4 text-[12.5px] text-muted-foreground">{note}</p>
+      {items.length ? (
+        <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
+          {items.map((i) => (
+            <li key={i.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3">
+              <span className="text-[14px]">{i.main}</span>
+              <span className="t-number text-[12px] tracking-[0.06em] text-muted-foreground">{i.side}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-[13px] text-muted-foreground">{empty}</p>
+      )}
+    </section>
   );
 }
 
@@ -163,232 +493,6 @@ function Stat({ n, label }: { n: number; label: string }) {
     <div>
       <div className="t-number text-[34px] leading-none tabular-nums">{n}</div>
       <div className="mt-1.5 text-[12.5px] text-muted-foreground">{label}</div>
-    </div>
-  );
-}
-
-// ── Доступы ───────────────────────────────────────────────────────────────────
-/** Выдача логинов: новый человек + код. Регистрации нет — только ваша рука. */
-function Access() {
-  const [codes, setCodes] = useState<AccessCode[]>(seedCodes);
-  const [staff, setStaff] = useState<Person[]>(seedPeople);
-  const [name, setName] = useState("");
-  const [position, setPosition] = useState("");
-  const [role, setRole] = useState<Role>("client");
-  const [clientId, setClientId] = useState<string>(clients[0]?.id ?? "");
-  const [issued, setIssued] = useState<string | null>(null);
-
-  function issue(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    const personId = `p-${Date.now().toString(36)}`;
-    const code = makeCode(role, name, clientId);
-    setStaff((p) => [
-      ...p,
-      {
-        id: personId,
-        name: name.trim(),
-        position: position.trim() || roleLabel[role],
-        role,
-        clientId: role === "client" ? clientId : null,
-      },
-    ]);
-    setCodes((p) => [{ code, personId, issuedAt: today(), lastUsedAt: null, active: true }, ...p]);
-    setIssued(code);
-    setName("");
-    setPosition("");
-  }
-
-  const revoke = (code: string) =>
-    setCodes((p) => p.map((c) => (c.code === code ? { ...c, active: false } : c)));
-
-  return (
-    <div className="space-y-10">
-      <section className="card-flat px-5 py-5">
-        <h2 className="text-[15px] font-semibold">Выдать доступ</h2>
-        <p className="measure mt-1 text-[12.5px] text-muted-foreground">
-          Код — это логин, пароля нет. Один код на одного человека: видно, кто заходил, и код можно отозвать,
-          не трогая остальных.
-        </p>
-
-        <form onSubmit={issue} className="mt-5 grid gap-3 sm:grid-cols-2">
-          <Field label="Имя и фамилия">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя Фамилия" className={inputCls} />
-          </Field>
-          <Field label="Должность">
-            <input
-              value={position}
-              onChange={(e) => setPosition(e.target.value)}
-              placeholder="Коммерческий директор"
-              className={inputCls}
-            />
-          </Field>
-          <Field label="Роль">
-            <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputCls}>
-              <option value="client">Клиент — работает в окнах</option>
-              <option value="project">Проджект — ведёт клиентов</option>
-              <option value="admin">Администратор — всё</option>
-            </select>
-          </Field>
-          <Field label="Компания">
-            <select
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              disabled={role !== "client"}
-              className={`${inputCls} disabled:opacity-40`}
-            >
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.company}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <div className="sm:col-span-2">
-            <button type="submit" className="btn btn-primary text-[13px]">
-              Выпустить код
-            </button>
-          </div>
-        </form>
-
-        {issued ? (
-          <div className="mt-4 border-t border-[color:var(--color-line)] pt-4">
-            <div className="label-caps">Код выпущен — передайте лично</div>
-            <div className="t-number mt-1.5 text-[20px] tracking-[0.08em]">{issued}</div>
-            <p className="mt-1.5 text-[11.5px] text-muted-foreground">
-              На сервере код будет храниться зашифрованным: посмотреть можно, утечь базой — нет.
-            </p>
-          </div>
-        ) : null}
-      </section>
-
-      <section>
-        <h2 className="mb-4 text-[15px] font-semibold">Кто имеет доступ</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-[13px]">
-            <thead>
-              <tr className="border-b border-[color:var(--color-line)] text-left">
-                <Th>Человек</Th>
-                <Th>Роль</Th>
-                <Th>Компания</Th>
-                <Th>Код</Th>
-                <Th>Последний вход</Th>
-                <Th> </Th>
-              </tr>
-            </thead>
-            <tbody>
-              {codes.map((c) => {
-                const p = staff.find((x) => x.id === c.personId);
-                const client = clients.find((x) => x.id === p?.clientId);
-                return (
-                  <tr key={c.code} className="border-b border-[color:var(--color-line)]">
-                    <Td>
-                      <div className={c.active ? "" : "text-muted-foreground line-through"}>{p?.name ?? "—"}</div>
-                      <div className="text-[11.5px] text-muted-foreground">{p?.position}</div>
-                    </Td>
-                    <Td>{p ? roleLabel[p.role] : "—"}</Td>
-                    <Td>{client ? client.company : "«Без Воды»"}</Td>
-                    <Td>
-                      <span className="t-number text-[12px] tracking-[0.06em]">{c.code}</span>
-                    </Td>
-                    <Td>{c.lastUsedAt ?? <span className="text-muted-foreground">ни разу</span>}</Td>
-                    <Td>
-                      {c.active ? (
-                        <button onClick={() => revoke(c.code)} className="btn btn-ghost text-[12px]">
-                          Отозвать
-                        </button>
-                      ) : (
-                        <span className="text-[11.5px] text-muted-foreground">отозван</span>
-                      )}
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-// ── Агенты ────────────────────────────────────────────────────────────────────
-/** Кому что открыто. Решение об открытии — ваше, клиент себе агента не включает. */
-function AgentPanel() {
-  const [map, setMap] = useState<Record<string, string[]>>(
-    Object.fromEntries(clients.map((c) => [c.id, c.agentIds])),
-  );
-  const [clientId, setClientId] = useState(clients[0]?.id ?? "");
-  const client = clients.find((c) => c.id === clientId);
-
-  const toggle = (agentId: string) =>
-    setMap((p) => {
-      const cur = p[clientId] ?? [];
-      return { ...p, [clientId]: cur.includes(agentId) ? cur.filter((x) => x !== agentId) : [...cur, agentId] };
-    });
-
-  if (agents.length === 0) {
-    return (
-      <div className="card-flat px-6 py-10 text-center">
-        <h2 className="text-[16px] font-semibold">Каталог пуст</h2>
-        <p className="measure mx-auto mt-2.5 text-[13.5px] text-muted-foreground">
-          Агентов ещё не завели. Когда они появятся, здесь вы будете открывать каждому клиенту свой набор —
-          по своему усмотрению, а не пакетом.
-        </p>
-      </div>
-    );
-  }
-
-  const opened = map[clientId] ?? [];
-
-  return (
-    <div>
-      <h2 className="mb-1 text-[15px] font-semibold">Кому какие агенты открыты</h2>
-      <p className="measure mb-5 text-[12.5px] text-muted-foreground">
-        Каталог общий, но набор у каждого клиента свой — вы решаете, что ему нужно. Открытый агент
-        появляется у клиента в окне сразу.
-      </p>
-
-      <div className="flex flex-wrap gap-2">
-        {clients.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => setClientId(c.id)}
-            className={`btn text-[12.5px] ${c.id === clientId ? "btn-primary" : "btn-glass"}`}
-          >
-            {c.company}
-            <span className="ml-1.5 opacity-60">{(map[c.id] ?? []).length}</span>
-          </button>
-        ))}
-      </div>
-
-      {client ? (
-        <p className="mt-4 text-[12.5px] text-muted-foreground">
-          {client.unit} · открыто {opened.length}
-        </p>
-      ) : null}
-
-      <div className="mt-5 space-y-5">
-        {groupByDomain().map(([domainName, list]) => (
-          <div key={domainName}>
-            <div className="label-caps">{domainName}</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {list.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => toggle(a.id)}
-                  aria-pressed={opened.includes(a.id)}
-                  title={a.result}
-                  className={`btn text-[12px] ${opened.includes(a.id) ? "btn-primary" : "btn-glass"}`}
-                >
-                  {a.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -406,65 +510,3 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </label>
   );
 }
-
-function Th({ children }: { children: ReactNode }) {
-  return <th className="label-caps whitespace-nowrap py-2.5 pr-4 font-normal">{children}</th>;
-}
-
-function Td({ children }: { children: ReactNode }) {
-  return <td className="py-3 pr-4 align-top">{children}</td>;
-}
-
-/** Группировка агентов по блокам каталога — чтобы список читался. */
-function groupByDomain() {
-  const groups = new Map<string, typeof agents>();
-  for (const a of agents) groups.set(a.domain, [...(groups.get(a.domain) ?? []), a]);
-  return [...groups.entries()].map(([key, list]) => [domainNames[key] ?? key, list] as const);
-}
-
-const domainNames: Record<string, string> = {
-  rezultaty: "Результаты и причины",
-  dengi: "Деньги и финансы",
-  klienty: "Клиенты и продажи",
-  produkt: "Продукт и цена",
-  operacii: "Операции и поставки",
-  rynok: "Рынок и конкуренты",
-  iniciativy: "Инициативы и проекты",
-  riski: "Риски и соответствие",
-  organizaciya: "Организация работы",
-  strategiya: "Стратегия и развитие",
-  gorizont: "Для всех блоков",
-};
-
-const today = () => new Date().toLocaleDateString("ru-RU");
-
-/** Код в одном формате: префикс компании и фамилия латиницей. */
-function makeCode(role: Role, name: string, clientId: string) {
-  const surname = name.trim().split(/\s+/).pop() ?? "USER";
-  const prefix =
-    role === "client" ? (clients.find((c) => c.id === clientId)?.company.slice(0, 3) ?? "CL") : "BV";
-  return `${translit(prefix).toUpperCase() || "CL"}-${translit(surname).toUpperCase()}`;
-}
-
-const translitMap: Record<string, string> = {
-  а: "A", б: "B", в: "V", г: "G", д: "D", е: "E", ё: "E", ж: "ZH", з: "Z", и: "I", й: "Y",
-  к: "K", л: "L", м: "M", н: "N", о: "O", п: "P", р: "R", с: "S", т: "T", у: "U", ф: "F",
-  х: "H", ц: "C", ч: "CH", ш: "SH", щ: "SCH", ъ: "", ы: "Y", ь: "", э: "E", ю: "YU", я: "YA",
-};
-
-const translit = (s: string) =>
-  s
-    .toLowerCase()
-    .split("")
-    .map((ch) => translitMap[ch] ?? ch)
-    .join("")
-    .replace(/[^a-z0-9]/gi, "");
-
-const declension = (n: number, one: string, few: string, many: string) => {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
-  return many;
-};
-

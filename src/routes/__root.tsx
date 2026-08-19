@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ShtabProvider } from "../lib/shtab-store";
 import { SessionProvider } from "../lib/session";
+import { DirectoryProvider } from "../lib/directory";
 
 
 function NotFoundComponent() {
@@ -126,12 +127,14 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SessionProvider>
-        <ShtabProvider>
+      <DirectoryProvider>
+        <SessionProvider>
+          <ShtabProvider>
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
-        </ShtabProvider>
-      </SessionProvider>
+          </ShtabProvider>
+        </SessionProvider>
+      </DirectoryProvider>
     </QueryClientProvider>
   );
 

@@ -31,7 +31,7 @@ export const homeByRole: Record<Role, string> = {
 
 export function AppShell({ children, allow }: { children: ReactNode; allow: Role[] }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const { person, client, role, ready, signOut } = useSession();
+  const { person, role, ready, signOut } = useSession();
   const navigate = useNavigate();
 
   // Проверять доступ можно только после того, как прочитали сессию, иначе
@@ -90,7 +90,7 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
             <div className="hidden text-right sm:block">
               <div className="text-[12.5px] font-semibold leading-tight">{person?.name}</div>
               <div className="text-[10.5px] text-muted-foreground">
-                {client ? client.unit : person?.position}
+                {person?.company || person?.position}
               </div>
             </div>
             <div

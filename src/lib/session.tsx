@@ -11,25 +11,26 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { accessCodes, clientOf, personOf, type Client, type Person, type Role } from "./platform-data";
+import { useDirectory, type Participant } from "./directory";
+import type { Role } from "./platform-data";
 
 const KEY = "bv-session";
 
 type Session = {
-  person: Person | null;
-  client: Client | null;
+  person: Participant | null;
   role: Role | null;
   signIn: (code: string) => { ok: true } | { ok: false; error: string };
   signOut: () => void;
-  /** false, пока не прочитали sessionStorage: до этого не решаем, пускать или нет */
+  /** false, пока не прочитаны справочник и сессия: до этого не решаем, пускать или нет */
   ready: boolean;
 };
 
 const Ctx = createContext<Session | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const directory = useDirectory();
   const [personId, setPersonId] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
+  const [restored, setRestored] = useState(false);
 
   // Читаем уже на клиенте: на сервере sessionStorage нет, и рендер разъехался бы.
   useEffect(() => {
@@ -38,28 +39,37 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       /* приватный режим браузера — работаем без запоминания */
     }
-    setReady(true);
+    setRestored(true);
   }, []);
 
-  const signIn = useCallback((raw: string) => {
-    const code = raw.trim().toUpperCase();
-    if (!code) return { ok: false as const, error: "Введите код доступа" };
+  const { byCode, markUsed } = directory;
 
-    const found = accessCodes.find((c) => c.code === code);
-    // Одна и та же формулировка на неизвестный и на отозванный код: подбирающему
-    // не подсказываем, существует ли код вообще.
-    if (!found || !found.active || !personOf(found.personId)) {
-      return { ok: false as const, error: "Код не подходит. Проверьте раскладку или запросите новый у администратора" };
-    }
+  const signIn = useCallback(
+    (raw: string) => {
+      const code = raw.trim().toUpperCase();
+      if (!code) return { ok: false as const, error: "Введите код доступа" };
 
-    setPersonId(found.personId);
-    try {
-      sessionStorage.setItem(KEY, found.personId);
-    } catch {
-      /* см. выше */
-    }
-    return { ok: true as const };
-  }, []);
+      const found = byCode(code);
+      // Одна и та же формулировка на неизвестный и на отозванный код: подбирающему
+      // не подсказываем, существует ли код вообще.
+      if (!found || !found.active) {
+        return {
+          ok: false as const,
+          error: "Код не подходит. Проверьте раскладку или запросите новый у администратора",
+        };
+      }
+
+      setPersonId(found.id);
+      markUsed(found.id);
+      try {
+        sessionStorage.setItem(KEY, found.id);
+      } catch {
+        /* см. выше */
+      }
+      return { ok: true as const };
+    },
+    [byCode, markUsed],
+  );
 
   const signOut = useCallback(() => {
     setPersonId(null);
@@ -71,16 +81,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Session>(() => {
-    const person = personOf(personId) ?? null;
+    const person = directory.byId(personId) ?? null;
     return {
-      person,
-      client: person ? (clientOf(person.clientId) ?? null) : null,
-      role: person?.role ?? null,
+      // Отозванный код не должен доживать в открытой вкладке до перезагрузки.
+      person: person?.active ? person : null,
+      role: person?.active ? person.role : null,
       signIn,
       signOut,
-      ready,
+      ready: restored && directory.ready,
     };
-  }, [personId, ready, signIn, signOut]);
+  }, [directory, personId, restored, signIn, signOut]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
