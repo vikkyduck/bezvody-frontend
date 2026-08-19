@@ -13,11 +13,9 @@ import { useSession } from "@/lib/session";
  * них не знает и не должен.
  */
 const navByRole: Record<Role, NavItem[]> = {
-  client: [
-    { to: "/", label: "Окна", short: "Окна" },
-    { to: "/briefs", label: "Решения", short: "Решения" },
-    { to: "/agents", label: "Агенты", short: "Агенты" },
-  ],
+  // У клиента разделов нет вовсе: весь кабинет — один экран. Выбрал агента,
+  // открылось окно, работаешь. Три вкладки только заставляли гадать, куда идти.
+  client: [],
   project: [{ to: "/pm", label: "Мои клиенты", short: "Клиенты" }],
   admin: [{ to: "/admin", label: "Кабинет", short: "Кабинет" }],
 };

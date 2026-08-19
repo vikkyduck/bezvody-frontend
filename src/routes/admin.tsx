@@ -3,9 +3,10 @@ import { useState, type FormEvent, type ReactNode } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
 import { AgentAccess, Contacts } from "@/components/AgentAccess";
+import { Conversations } from "@/components/Conversations";
 import { cleanTelegram, useDirectory, type Participant } from "@/lib/directory";
 import { roleLabel, type Role } from "@/lib/platform-data";
-import { agents, domains } from "@/lib/shtab-data";
+import { agents } from "@/lib/shtab-data";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -269,6 +270,13 @@ function PersonCard({ person: p, open, onToggle }: { person: Participant; open: 
             <AgentAccess person={p} />
           </div>
 
+          {p.role === "client" ? (
+            <div>
+              <div className="label-caps mb-2.5">Переписка</div>
+              <Conversations personId={p.id} personName={p.name} />
+            </div>
+          ) : null}
+
           {edit ? <EditFields person={p} onDone={() => setEdit(false)} onSave={update} /> : null}
 
           <div className="flex flex-wrap items-center gap-2 border-t border-[color:var(--color-line)] pt-4">
@@ -404,16 +412,9 @@ function Catalog() {
       <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
         {agents.map((a) => (
           <li key={a.id} className="py-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <span className="text-[14.5px] font-semibold">{a.name}</span>
-              <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                {domains.find((d) => d.key === a.domain)?.name}
-              </span>
-            </div>
+            <div className="text-[14.5px] font-semibold">{a.name}</div>
             <p className="measure mt-1.5 text-[13px] text-muted-foreground">{a.result}</p>
-            <p className="mt-1 text-[11.5px] text-muted-foreground/80">
-              {a.method} · {a.cadence}
-            </p>
+            <p className="mt-1 text-[11.5px] text-muted-foreground/80">{a.method}</p>
           </li>
         ))}
       </ul>

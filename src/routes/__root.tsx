@@ -11,7 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { ShtabProvider } from "../lib/shtab-store";
+import { WindowsProvider } from "../lib/windows-store";
 import { SessionProvider } from "../lib/session";
 import { DirectoryProvider } from "../lib/directory";
 
@@ -129,10 +129,10 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <SessionProvider>
         <DirectoryProvider>
-          <ShtabProvider>
+          <WindowsProvider>
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
-          </ShtabProvider>
+          </WindowsProvider>
         </DirectoryProvider>
       </SessionProvider>
     </QueryClientProvider>

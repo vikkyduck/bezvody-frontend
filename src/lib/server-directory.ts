@@ -19,50 +19,12 @@ import { createServerFn } from "@tanstack/react-start";
 import {
   cleanTelegram,
   normalize,
-  seedParticipants,
   uniqueCode,
   withoutCode,
   type Participant,
   type ParticipantDraft,
   type Role,
 } from "./participants";
-
-// ── Хранилище ─────────────────────────────────────────────────────────────────
-// Файл лежит ВНЕ папки приложения: деплой перезаписывает /opt/bezvody-front
-// целиком с --delete, и данные внутри неё не пережили бы ни одной выкатки.
-
-const dataDir = () => process.env["BV_DATA_DIR"]?.trim() || ".data";
-const dataFile = () => `${dataDir()}/directory.json`;
-
-async function readAll(): Promise<Participant[]> {
-  const { readFile } = await import("node:fs/promises");
-  try {
-    const raw = await readFile(dataFile(), "utf8");
-    const parsed = JSON.parse(raw) as Participant[];
-    if (Array.isArray(parsed) && parsed.length) return parsed.map(normalize);
-  } catch {
-    /* файла ещё нет или он повреждён — начинаем со скелета */
-  }
-  return seedParticipants;
-}
-
-async function writeAll(list: Participant[]): Promise<void> {
-  const { mkdir, writeFile, rename } = await import("node:fs/promises");
-  await mkdir(dataDir(), { recursive: true });
-  // Пишем через временный файл: обрыв на середине не оставит битый справочник.
-  const tmp = `${dataFile()}.tmp`;
-  await writeFile(tmp, JSON.stringify(list, null, 2), "utf8");
-  await rename(tmp, dataFile());
-}
-
-const today = () => new Date().toLocaleDateString("ru-RU");
-
-/** Кто звонит. Отозванный код не пускает никуда. */
-async function whoIs(code: string): Promise<{ list: Participant[]; me: Participant | null }> {
-  const list = await readAll();
-  const me = list.find((p) => p.code && p.code === code.trim().toUpperCase() && p.active) ?? null;
-  return { list, me };
-}
 
 /** Что видно этой роли: администратору — всё, проджекту — список без чужих кодов. */
 function visibleTo(me: Participant, list: Participant[]): Participant[] {
@@ -79,19 +41,21 @@ export const signInServer = createServerFn({ method: "POST" })
     const code = String(data.code ?? "").trim().toUpperCase();
     if (!code) return { ok: false as const };
 
-    const { list, me } = await whoIs(code);
+    const d = await import("./server-data");
+    const { list, me } = await d.whoIs(code);
     if (!me) return { ok: false as const };
 
     // Отмечаем вход: в админке видно, кому код выдали, а он им ни разу не воспользовался.
-    await writeAll(list.map((p) => (p.id === me.id ? { ...p, lastUsedAt: today() } : p)));
-    return { ok: true as const, me: { ...me, lastUsedAt: today() } };
+    await d.writeParticipants(list.map((p) => (p.id === me.id ? { ...p, lastUsedAt: d.today() } : p)));
+    return { ok: true as const, me: { ...me, lastUsedAt: d.today() } };
   });
 
 /** Кто я и что мне открыто — свежими данными, а не тем, что осело в браузере. */
 export const meServer = createServerFn({ method: "POST" })
   .validator((data: { code: string }) => data)
   .handler(async ({ data }) => {
-    const { me } = await whoIs(String(data.code ?? ""));
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
     return { me };
   });
 
@@ -100,7 +64,8 @@ export const meServer = createServerFn({ method: "POST" })
 export const listServer = createServerFn({ method: "POST" })
   .validator((data: { code: string }) => data)
   .handler(async ({ data }) => {
-    const { list, me } = await whoIs(String(data.code ?? ""));
+    const d = await import("./server-data");
+    const { list, me } = await d.whoIs(String(data.code ?? ""));
     if (!me) return { participants: [] as Participant[] };
     return { participants: visibleTo(me, list) };
   });
@@ -124,7 +89,8 @@ function allowed(role: Role, m: Mutation): boolean {
 export const mutateServer = createServerFn({ method: "POST" })
   .validator((data: { code: string; mutation: Mutation }) => data)
   .handler(async ({ data }) => {
-    const { list, me } = await whoIs(String(data.code ?? ""));
+    const d = await import("./server-data");
+    const { list, me } = await d.whoIs(String(data.code ?? ""));
     const m = data.mutation;
     if (!me || !allowed(me.role, m)) {
       return { ok: false as const, participants: me ? visibleTo(me, list) : [] };
@@ -146,7 +112,7 @@ export const mutateServer = createServerFn({ method: "POST" })
           role: draft.role,
           code: uniqueCode(draft.name, draft.role, list),
           agentIds: [],
-          createdAt: today(),
+          createdAt: d.today(),
           lastUsedAt: null,
           active: true,
         });
@@ -186,6 +152,6 @@ export const mutateServer = createServerFn({ method: "POST" })
         break;
     }
 
-    await writeAll(next);
+    await d.writeParticipants(next);
     return { ok: true as const, participants: visibleTo(me, next), created };
   });

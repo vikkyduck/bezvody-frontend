@@ -11,11 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
-import { Route as AgentsRouteImport } from './routes/agents'
-import { Route as BriefsRouteImport } from './routes/briefs'
 import { Route as PmRouteImport } from './routes/pm'
 import { Route as VhodRouteImport } from './routes/vhod'
-import { Route as BriefsBriefIdRouteImport } from './routes/briefs.$briefId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -25,16 +22,6 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AgentsRoute = AgentsRouteImport.update({
-  id: '/agents',
-  path: '/agents',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BriefsRoute = BriefsRouteImport.update({
-  id: '/briefs',
-  path: '/briefs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PmRoute = PmRouteImport.update({
@@ -47,75 +34,37 @@ const VhodRoute = VhodRouteImport.update({
   path: '/vhod',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BriefsBriefIdRoute = BriefsBriefIdRouteImport.update({
-  id: '/$briefId',
-  path: '/$briefId',
-  getParentRoute: () => BriefsRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/agents': typeof AgentsRoute
-  '/briefs': typeof BriefsRouteWithChildren
   '/pm': typeof PmRoute
   '/vhod': typeof VhodRoute
-  '/briefs/$briefId': typeof BriefsBriefIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/agents': typeof AgentsRoute
-  '/briefs': typeof BriefsRouteWithChildren
   '/pm': typeof PmRoute
   '/vhod': typeof VhodRoute
-  '/briefs/$briefId': typeof BriefsBriefIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/agents': typeof AgentsRoute
-  '/briefs': typeof BriefsRouteWithChildren
   '/pm': typeof PmRoute
   '/vhod': typeof VhodRoute
-  '/briefs/$briefId': typeof BriefsBriefIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/admin'
-    | '/agents'
-    | '/briefs'
-    | '/pm'
-    | '/vhod'
-    | '/briefs/$briefId'
+  fullPaths: '/' | '/admin' | '/pm' | '/vhod'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/admin'
-    | '/agents'
-    | '/briefs'
-    | '/pm'
-    | '/vhod'
-    | '/briefs/$briefId'
-  id:
-    | '__root__'
-    | '/'
-    | '/admin'
-    | '/agents'
-    | '/briefs'
-    | '/pm'
-    | '/vhod'
-    | '/briefs/$briefId'
+  to: '/' | '/admin' | '/pm' | '/vhod'
+  id: '__root__' | '/' | '/admin' | '/pm' | '/vhod'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
-  AgentsRoute: typeof AgentsRoute
-  BriefsRoute: typeof BriefsRouteWithChildren
   PmRoute: typeof PmRoute
   VhodRoute: typeof VhodRoute
 }
@@ -136,20 +85,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/agents': {
-      id: '/agents'
-      path: '/agents'
-      fullPath: '/agents'
-      preLoaderRoute: typeof AgentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/briefs': {
-      id: '/briefs'
-      path: '/briefs'
-      fullPath: '/briefs'
-      preLoaderRoute: typeof BriefsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/pm': {
       id: '/pm'
       path: '/pm'
@@ -164,32 +99,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VhodRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/briefs/$briefId': {
-      id: '/briefs/$briefId'
-      path: '/$briefId'
-      fullPath: '/briefs/$briefId'
-      preLoaderRoute: typeof BriefsBriefIdRouteImport
-      parentRoute: typeof BriefsRoute
-    }
   }
 }
-
-interface BriefsRouteChildren {
-  BriefsBriefIdRoute: typeof BriefsBriefIdRoute
-}
-
-const BriefsRouteChildren: BriefsRouteChildren = {
-  BriefsBriefIdRoute: BriefsBriefIdRoute,
-}
-
-const BriefsRouteWithChildren =
-  BriefsRoute._addFileChildren(BriefsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
-  AgentsRoute: AgentsRoute,
-  BriefsRoute: BriefsRouteWithChildren,
   PmRoute: PmRoute,
   VhodRoute: VhodRoute,
 }
