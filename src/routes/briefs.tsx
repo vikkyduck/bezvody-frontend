@@ -7,17 +7,13 @@ import { useShtab } from "@/lib/shtab-store";
 export const Route = createFileRoute("/briefs")({
   head: () => ({
     meta: [
-      { title: "Решения команды — Штаб" },
+      { title: "Решения — платформа «Без Воды»" },
       {
         name: "description",
         content:
           "Решение на одну страницу: что изменилось, почему, какие варианты и риски, кто владелец решения и как проверяется эффект.",
       },
-      { property: "og:title", content: "Решения команды — Штаб" },
-      {
-        property: "og:description",
-        content: "Одна страница на решение: вывод, доказательства, альтернативы и «trade-offs» вместо чата.",
-      },
+      { name: "robots", content: "noindex" },
     ],
   }),
   component: Briefs,
@@ -37,7 +33,13 @@ function Briefs() {
     <AppShell allow={["client"]}>
       <PageHead
         eyebrow="Решения"
-        title={pending.length ? `${pending.length} ${wordForm(pending.length)} вашей подписи` : "Все решения приняты"}
+        title={
+          pending.length
+            ? `${pending.length} ${wordForm(pending.length)} вашей подписи`
+            : briefs.length
+              ? "Все решения приняты"
+              : "Решений пока нет"
+        }
         lead="Агент готовит решение и показывает доказательства. Выбор и подпись — за руководителем."
       />
 

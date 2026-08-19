@@ -2,7 +2,7 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AppShell } from "@/components/AppShell";
-import { agents, briefs, confidenceLabel } from "@/lib/shtab-data";
+import { agents, briefs, confidenceLabel, type Brief } from "@/lib/shtab-data";
 import { useShtab } from "@/lib/shtab-store";
 import { SectionLabel } from "@/components/bv/core";
 import { SourceTag } from "@/components/bv/SourceTag";
@@ -32,7 +32,29 @@ const EASE = [0.19, 1, 0.22, 1] as const;
 
 function BriefPage() {
   const { briefId } = Route.useLoaderData();
-  const brief = briefs.find((b) => b.id === briefId)!;
+  const brief = briefs.find((b) => b.id === briefId);
+  // Решение могли отозвать, а ссылку сохранить в закладках — падать на этом нельзя.
+  if (!brief) return <BriefMissing />;
+  return <BriefBody brief={brief} />;
+}
+
+function BriefMissing() {
+  return (
+    <AppShell allow={["client"]}>
+      <div className="card-flat px-6 py-12 text-center">
+        <h1 className="text-[17px] font-semibold">Решение не найдено</h1>
+        <p className="measure mx-auto mt-2.5 text-[13.5px] text-muted-foreground">
+          Возможно, оно ещё не готово или ссылка устарела.
+        </p>
+        <Link to="/briefs" className="btn btn-glass mt-5 text-[12.5px]">
+          Все решения
+        </Link>
+      </div>
+    </AppShell>
+  );
+}
+
+function BriefBody({ brief }: { brief: Brief }) {
   const agent = agents.find((a) => a.id === brief.agentId);
   const { decided, decide, undecide } = useShtab();
   const accepted = decided.includes(brief.id) || brief.status === "Решение принято";

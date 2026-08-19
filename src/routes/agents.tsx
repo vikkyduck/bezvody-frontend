@@ -49,6 +49,18 @@ function CatalogBody() {
         lead="Агент — это один рабочий вопрос: он сам собирает данные и приносит готовый разбор. Открытые запускайте сразу, остальные — по запросу вашему проджект-менеджеру."
       />
 
+      {agents.length === 0 ? (
+        <div className="card-flat px-6 py-10 text-center">
+          <h2 className="text-[16px] font-semibold">Каталог пока пуст</h2>
+          <p className="measure mx-auto mt-2.5 text-[13.5px] text-muted-foreground">
+            Агентов ещё не завели. Как только администратор добавит их в каталог, они появятся здесь —
+            по десяти рабочим блокам.
+          </p>
+        </div>
+      ) : null}
+
+      {agents.length > 0 ? (
+      <>
       {/* Десять предметных блоков плюс горизонтальные агенты для всех */}
       <div className="-mx-1 overflow-x-auto pb-1">
         <div
@@ -74,6 +86,8 @@ function CatalogBody() {
           ? current.note
           : "Десять блоков по темам работы плюс горизонтальные агенты — те, что нужны всем: слайды, «6-pager», протокол решения, проверка источников."}
       </p>
+      </>
+      ) : null}
 
       <div className="space-y-3">
         {visible.map((a) => {

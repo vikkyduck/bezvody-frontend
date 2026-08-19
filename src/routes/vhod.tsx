@@ -71,7 +71,7 @@ function SignIn() {
                 setCode(e.target.value);
                 if (error) setError(null);
               }}
-              placeholder="SEM-KOVALEVA"
+              placeholder="BV-CLIENT-01"
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? "code-error" : undefined}
               className="mt-2.5 w-full rounded-[var(--radius-md,10px)] border border-[color:var(--color-line)] bg-transparent px-3.5 py-2.5 text-[14px] tracking-[0.06em] uppercase outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
@@ -105,7 +105,7 @@ function SignIn() {
  * с подключением настоящей выдачи доступов.
  */
 function DemoCodes({ onPick }: { onPick: (code: string) => void }) {
-  const shown = ["SEM-KOVALEVA", "BV-PM-RATOCHKA", "BV-ADMIN-01"];
+  const shown = ["BV-CLIENT-01", "BV-PM-01", "BV-ADMIN-01"];
   return (
     <div className="mt-6 border-t border-[color:var(--color-line)] pt-4">
       <div className="label-caps">Коды для проверки макета</div>

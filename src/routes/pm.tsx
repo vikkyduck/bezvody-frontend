@@ -2,15 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
-import {
-  clientsOf,
-  creditsLeft,
-  creditsPct,
-  nf,
-  silentDays,
-  usageOf,
-  type Client,
-} from "@/lib/platform-data";
+import { clientsOf, silentDays, type Client } from "@/lib/platform-data";
 import { useSession } from "@/lib/session";
 import { agents, domains } from "@/lib/shtab-data";
 
@@ -18,7 +10,7 @@ export const Route = createFileRoute("/pm")({
   head: () => ({
     meta: [
       { title: "Мои клиенты — платформа «Без Воды»" },
-      { name: "description", content: "Кабинет проджекта: агенты клиентов и расход кредитов." },
+      { name: "description", content: "Кабинет проджекта: клиенты и их агенты." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -38,7 +30,6 @@ function Body() {
   const mine = person ? clientsOf(person.id) : [];
   const [open, setOpen] = useState<string | null>(mine[0]?.id ?? null);
 
-  const spent = mine.reduce((s, c) => s + c.creditsUsed, 0);
   const silent = mine.filter((c) => silentDays(c) > 14);
 
   return (
@@ -46,38 +37,57 @@ function Body() {
       <PageHead
         n="01"
         eyebrow="Кабинет проджекта"
-        title={`${mine.length} ${declension(mine.length, "клиент", "клиента", "клиентов")} на вас`}
-        lead="Вы решаете, какие агенты открыты каждому клиенту, и видите, во что обходится их работа."
+        title={
+          mine.length
+            ? `${mine.length} ${declension(mine.length, "клиент", "клиента", "клиентов")} на вас`
+            : "Клиентов пока нет"
+        }
+        lead="Вы решаете, какие агенты открыты каждому клиенту, и видите, как идёт их работа."
       />
 
-      {/* Две цифры, которые проджект должен знать без отчёта */}
-      <section className="grid gap-4 border-y border-[color:var(--color-line)] py-5 sm:grid-cols-2">
-        <div>
-          <div className="label-caps">Израсходовано за месяц</div>
-          <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">{nf(spent)}</div>
-          <p className="mt-1.5 text-[11.5px] text-muted-foreground">кредитов по всем вашим клиентам</p>
-        </div>
-        <div>
-          <div className="label-caps">Молчат дольше двух недель</div>
-          <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">{silent.length}</div>
-          <p className="mt-1.5 text-[11.5px] text-muted-foreground">
-            {silent.length ? silent.map((c) => c.company).join(", ") : "все заходили на этой неделе"}
+      {mine.length ? (
+        <>
+          <section className="grid gap-4 border-y border-[color:var(--color-line)] py-5 sm:grid-cols-2">
+            <div>
+              <div className="label-caps">Клиентов на вас</div>
+              <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">{mine.length}</div>
+              <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+                агентов открыто {mine.reduce((s, c) => s + c.agentIds.length, 0)}
+              </p>
+            </div>
+            <div>
+              <div className="label-caps">Молчат дольше двух недель</div>
+              <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">{silent.length}</div>
+              <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+                {silent.length ? silent.map((c) => c.company).join(", ") : "все заходили на этой неделе"}
+              </p>
+            </div>
+          </section>
+
+          <section className="mt-8 space-y-3">
+            {mine.map((c) => (
+              <ClientCard
+                key={c.id}
+                client={c}
+                open={open === c.id}
+                onToggle={() => setOpen(open === c.id ? null : c.id)}
+              />
+            ))}
+          </section>
+        </>
+      ) : (
+        <div className="card-flat px-6 py-10 text-center">
+          <p className="measure mx-auto text-[13.5px] text-muted-foreground">
+            Как только администратор закрепит за вами компанию, она появится здесь вместе со своим
+            набором агентов.
           </p>
         </div>
-      </section>
-
-      <section className="mt-8 space-y-3">
-        {mine.map((c) => (
-          <ClientCard key={c.id} client={c} open={open === c.id} onToggle={() => setOpen(open === c.id ? null : c.id)} />
-        ))}
-      </section>
+      )}
     </>
   );
 }
 
 function ClientCard({ client: c, open, onToggle }: { client: Client; open: boolean; onToggle: () => void }) {
-  const rows = usageOf(c.id);
-  const idle = c.agentIds.filter((id) => !rows.find((r) => r.agentId === id && r.runs > 0));
   const silence = silentDays(c);
 
   return (
@@ -92,22 +102,12 @@ function ClientCard({ client: c, open, onToggle }: { client: Client; open: boole
           </div>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
             {c.unit} · доступ до {c.paidUntil} · агентов открыто {c.agentIds.length}
-            {idle.length ? ` · без единого запуска ${idle.length}` : ""}
           </p>
         </div>
 
-        <div className="text-right">
-          <div className="t-number text-[15px] tabular-nums">{nf(creditsLeft(c))}</div>
-          <div className="text-[10.5px] text-muted-foreground">кредитов осталось</div>
-        </div>
-
         <button onClick={onToggle} className="btn btn-glass text-[12.5px]">
-          {open ? "Свернуть" : "Агенты и расход"}
+          {open ? "Свернуть" : "Агенты клиента"}
         </button>
-      </div>
-
-      <div className="mt-4 h-[3px] w-full overflow-hidden rounded-full bg-[color:var(--color-line)]">
-        <div className="h-full rounded-full bg-[color:var(--color-accent)]" style={{ width: `${creditsPct(c)}%` }} />
       </div>
 
       {silence > 14 ? (
@@ -121,35 +121,27 @@ function ClientCard({ client: c, open, onToggle }: { client: Client; open: boole
   );
 }
 
-/** Панель назначения: что открыто клиенту и сколько это стоило. */
+/** Панель назначения: что открыто клиенту. */
 function AgentBoard({ client: c }: { client: Client }) {
-  const rows = usageOf(c.id);
   const [assigned, setAssigned] = useState<string[]>(c.agentIds);
   const [domain, setDomain] = useState<string>("all");
 
   const list = domain === "all" ? agents : agents.filter((a) => a.domain === domain);
 
+  if (agents.length === 0) {
+    return (
+      <div className="mt-5 border-t border-[color:var(--color-line)] pt-5">
+        <p className="text-[12.5px] text-muted-foreground">
+          Каталог пуст: агентов ещё не завели. Как только они появятся, вы сможете открывать их клиенту
+          прямо отсюда.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-5 border-t border-[color:var(--color-line)] pt-5">
-      <div className="label-caps">Расход по агентам за месяц</div>
-      <ul className="mt-2.5 divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-        {rows.map((r) => {
-          const a = agents.find((x) => x.id === r.agentId);
-          return (
-            <li key={r.agentId} className="flex items-baseline justify-between gap-4 py-2.5">
-              <span className="min-w-0 truncate text-[13px]">{a?.name ?? r.agentId}</span>
-              <span className="flex flex-none items-baseline gap-4 text-[12px] text-muted-foreground">
-                <span className="tabular-nums">
-                  {r.runs} {declension(r.runs, "запуск", "запуска", "запусков")}
-                </span>
-                <span className="t-number w-[76px] text-right text-[12.5px] tabular-nums text-foreground">{nf(r.credits)}</span>
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="label-caps">Какие агенты открыты клиенту</div>
         <select
           value={domain}

@@ -1,24 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
 import {
   accessCodes as seedCodes,
   clients,
-  costRub,
-  creditsLeft,
-  creditsPct,
-  marginRub,
-  nf,
   people as seedPeople,
   personOf,
   roleLabel,
-  rub,
   silentDays,
-  usage,
-  usageOf,
   type AccessCode,
-  type Client,
   type Person,
   type Role,
 } from "@/lib/platform-data";
@@ -28,7 +19,7 @@ export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
       { title: "Кабинет администратора — платформа «Без Воды»" },
-      { name: "description", content: "Доступы, кредиты и агенты по всем клиентам платформы." },
+      { name: "description", content: "Доступы, клиенты и агенты платформы." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -38,7 +29,6 @@ export const Route = createFileRoute("/admin")({
 const tabs = [
   { key: "overview", label: "Обзор" },
   { key: "access", label: "Доступы" },
-  { key: "credits", label: "Кредиты" },
   { key: "agents", label: "Агенты" },
 ] as const;
 type TabKey = (typeof tabs)[number]["key"];
@@ -60,7 +50,7 @@ function Body() {
         n="01"
         eyebrow="Кабинет администратора"
         title="Как идёт платформа"
-        lead="Доступы, деньги и агенты по всем клиентам. Оплата приходит по счёту — доступ открываете вы."
+        lead="Доступы, клиенты и агенты. Оплата приходит по счёту — доступ открываете вы."
       />
 
       <div className="-mx-1 overflow-x-auto pb-1">
@@ -88,7 +78,6 @@ function Body() {
       <div className="mt-7">
         {tab === "overview" ? <Overview /> : null}
         {tab === "access" ? <Access /> : null}
-        {tab === "credits" ? <Credits /> : null}
         {tab === "agents" ? <AgentPanel /> : null}
       </div>
     </>
@@ -97,72 +86,48 @@ function Body() {
 
 // ── Обзор ─────────────────────────────────────────────────────────────────────
 /**
- * Четыре вопроса, на которые владельцу платформы нужен ответ каждый день:
- * сколько зарабатываем, кому пора выставить счёт, кто отваливается,
- * что из каталога живо. Всё остальное — детали, они на других вкладках.
+ * Пока платформа не работает по-настоящему, честно показывать только то,
+ * что действительно известно: сколько заведено и чего ещё нет. Учёт расхода
+ * вернётся сюда вместе с настоящим счётчиком, а не раньше.
  */
 function Overview() {
-  const invoiced = clients.reduce((s, c) => s + c.invoiceRub, 0);
-  const spentCredits = clients.reduce((s, c) => s + c.creditsUsed, 0);
-  const cost = costRub(spentCredits);
-  const margin = invoiced - cost;
-  const marginPct = Math.round((margin / invoiced) * 100);
-
-  // Пора выставлять счёт: кредиты на исходе или доступ заканчивается.
-  const toInvoice = clients.filter((c) => creditsPct(c) >= 75 || daysLeft(c.paidUntil) <= 45);
+  const withAccess = seedCodes.filter((c) => c.active).length;
+  const openedAgents = clients.reduce((s, c) => s + c.agentIds.length, 0);
   const silent = clients.filter((c) => silentDays(c) > 14);
 
-  const byAgent = useMemo(() => {
-    const map = new Map<string, { runs: number; credits: number; clients: number }>();
-    for (const u of usage) {
-      const cur = map.get(u.agentId) ?? { runs: 0, credits: 0, clients: 0 };
-      map.set(u.agentId, { runs: cur.runs + u.runs, credits: cur.credits + u.credits, clients: cur.clients + 1 });
-    }
-    return [...map.entries()].sort((a, b) => b[1].runs - a[1].runs);
-  }, []);
-
-  const dead = byAgent.filter(([, v]) => v.runs === 0);
+  const todo = [
+    agents.length === 0 ? "Завести агентов в каталоге" : null,
+    openedAgents === 0 ? "Открыть клиентам их набор агентов" : null,
+    clients.length === 0 ? "Завести первого клиента" : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="space-y-10">
-      <section className="border-y border-[color:var(--color-line)] py-6">
-        <div className="label-caps">Деньги за период</div>
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="t-number text-[44px] leading-none tabular-nums sm:text-[52px]">{rub(margin)}</span>
-          <span className="text-[15px] text-muted-foreground">осталось после расходов на модели · {marginPct} %</span>
-        </div>
-        <p className="measure mt-3 text-[12.5px] text-muted-foreground">
-          Выставлено по счетам {rub(invoiced)} · израсходовано {nf(spentCredits)} кредитов, это {rub(cost)} прямых
-          расходов. Кредит считаем по себестоимости токенов, без наценки — так видно настоящую маржу.
-        </p>
+      <section className="grid gap-6 border-y border-[color:var(--color-line)] py-6 sm:grid-cols-3">
+        <Stat n={clients.length} label="Клиентов на платформе" />
+        <Stat n={withAccess} label="Человек с доступом" />
+        <Stat n={agents.length} label="Агентов в каталоге" />
       </section>
 
-      <section>
-        <h2 className="mb-1 text-[15px] font-semibold">Пора выставить счёт</h2>
-        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
-          Кредиты на исходе или доступ заканчивается в ближайшие полтора месяца. Оплата по счёту — значит,
-          счёт должен уйти раньше, чем клиент упрётся в ноль.
-        </p>
-        {toInvoice.length ? (
-          <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-            {toInvoice.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3.5">
-                <div className="min-w-0">
-                  <div className="text-[14px] font-medium leading-snug">{c.company}</div>
-                  <div className="text-[12px] text-muted-foreground">
-                    израсходовано {creditsPct(c)} % · доступ до {c.paidUntil}
-                  </div>
-                </div>
-                <span className="t-number text-[13px] tabular-nums text-muted-foreground">
-                  {nf(creditsLeft(c))} кредитов
+      {todo.length ? (
+        <section>
+          <h2 className="mb-1 text-[15px] font-semibold">Что настроить</h2>
+          <p className="measure mb-4 text-[12.5px] text-muted-foreground">
+            Платформа готова, наполнения ещё нет. Пока эти пункты не закрыты, клиент в своём кабинете
+            увидит пустое окно.
+          </p>
+          <ol className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
+            {todo.map((t, i) => (
+              <li key={t} className="flex gap-4 py-3.5">
+                <span className="t-number w-6 flex-none text-[11px] tabular-nums text-muted-foreground/70">
+                  {String(i + 1).padStart(2, "0")}
                 </span>
+                <span className="text-[14px]">{t}</span>
               </li>
             ))}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-muted-foreground">Ни у кого не горит.</p>
-        )}
-      </section>
+          </ol>
+        </section>
+      ) : null}
 
       <section>
         <h2 className="mb-1 text-[15px] font-semibold">Замолчали</h2>
@@ -189,40 +154,15 @@ function Overview() {
           <p className="text-[13px] text-muted-foreground">Все заходили на этой неделе.</p>
         )}
       </section>
+    </div>
+  );
+}
 
-      <section>
-        <h2 className="mb-1 text-[15px] font-semibold">Что из каталога живо</h2>
-        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
-          Агент без запусков — это не проданный агент, а обещание, которое не сработало. Такие или
-          переобъяснять, или снимать с витрины.
-        </p>
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <div className="label-caps">Запускают чаще всего</div>
-            <ul className="mt-2.5 divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-              {byAgent.slice(0, 5).map(([id, v]) => (
-                <li key={id} className="flex items-baseline justify-between gap-3 py-2.5">
-                  <span className="min-w-0 truncate text-[13px]">{agents.find((a) => a.id === id)?.name ?? id}</span>
-                  <span className="t-number flex-none text-[12px] tabular-nums text-muted-foreground">
-                    {v.runs}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <div className="label-caps">Подключены, но ни разу не запущены</div>
-            <ul className="mt-2.5 divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-              {dead.map(([id]) => (
-                <li key={id} className="py-2.5 text-[13px]">
-                  {agents.find((a) => a.id === id)?.name ?? id}
-                </li>
-              ))}
-              {dead.length === 0 ? <li className="py-2.5 text-[13px] text-muted-foreground">Таких нет.</li> : null}
-            </ul>
-          </div>
-        </div>
-      </section>
+function Stat({ n, label }: { n: number; label: string }) {
+  return (
+    <div>
+      <div className="t-number text-[34px] leading-none tabular-nums">{n}</div>
+      <div className="mt-1.5 text-[12.5px] text-muted-foreground">{label}</div>
     </div>
   );
 }
@@ -254,10 +194,7 @@ function Access() {
         clientId: role === "client" ? clientId : null,
       },
     ]);
-    setCodes((p) => [
-      { code, personId, issuedAt: today(), lastUsedAt: null, active: true },
-      ...p,
-    ]);
+    setCodes((p) => [{ code, personId, issuedAt: today(), lastUsedAt: null, active: true }, ...p]);
     setIssued(code);
     setName("");
     setPosition("");
@@ -277,12 +214,7 @@ function Access() {
 
         <form onSubmit={issue} className="mt-5 grid gap-3 sm:grid-cols-2">
           <Field label="Имя и фамилия">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Анна Ковалёва"
-              className={inputCls}
-            />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя Фамилия" className={inputCls} />
           </Field>
           <Field label="Должность">
             <input
@@ -381,92 +313,6 @@ function Access() {
   );
 }
 
-// ── Кредиты ───────────────────────────────────────────────────────────────────
-/** Аудит по каждому клиенту: что выдано, что израсходовано, что осталось нам. */
-function Credits() {
-  const [open, setOpen] = useState<string | null>(null);
-
-  return (
-    <div>
-      <h2 className="mb-1 text-[15px] font-semibold">Аудит кредитов по клиентам</h2>
-      <p className="measure mb-5 text-[12.5px] text-muted-foreground">
-        Выдано — сколько кредитов открыто по счёту. Себестоимость — сколько эта работа стоила нам у моделей.
-        Разница и есть то, что остаётся платформе.
-      </p>
-
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse text-[13px]">
-          <thead>
-            <tr className="border-b border-[color:var(--color-line)] text-left">
-              <Th>Клиент</Th>
-              <Th right>Выдано</Th>
-              <Th right>Израсходовано</Th>
-              <Th right>Осталось</Th>
-              <Th right>По счёту</Th>
-              <Th right>Себестоимость</Th>
-              <Th right>Остаётся нам</Th>
-              <Th> </Th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((c) => (
-              <Fragment key={c.id}>
-                <tr className="border-b border-[color:var(--color-line)]">
-                  <Td>
-                    <div className="font-medium">{c.company}</div>
-                    <div className="text-[11.5px] text-muted-foreground">
-                      {c.unit} · ведёт {personOf(c.managerId)?.name}
-                    </div>
-                  </Td>
-                  <Td right>{nf(c.creditsGranted)}</Td>
-                  <Td right>
-                    {nf(c.creditsUsed)}
-                    <span className="ml-1.5 text-[11px] text-muted-foreground">{creditsPct(c)} %</span>
-                  </Td>
-                  <Td right>{nf(creditsLeft(c))}</Td>
-                  <Td right>{rub(c.invoiceRub)}</Td>
-                  <Td right>{rub(costRub(c.creditsUsed))}</Td>
-                  <Td right>
-                    <span className="font-semibold">{rub(marginRub(c))}</span>
-                  </Td>
-                  <Td>
-                    <button
-                      onClick={() => setOpen(open === c.id ? null : c.id)}
-                      className="btn btn-ghost text-[12px]"
-                    >
-                      {open === c.id ? "Свернуть" : "По агентам"}
-                    </button>
-                  </Td>
-                </tr>
-                {open === c.id ? (
-                  <tr>
-                    <td colSpan={8} className="border-b border-[color:var(--color-line)] px-1 py-4">
-                      <ul className="divide-y divide-[color:var(--color-line)]">
-                        {usageOf(c.id).map((u) => (
-                          <li key={u.agentId} className="flex items-baseline justify-between gap-4 py-2">
-                            <span className="text-[12.5px]">{agents.find((a) => a.id === u.agentId)?.name}</span>
-                            <span className="flex items-baseline gap-5 text-[12px] text-muted-foreground">
-                              <span className="tabular-nums">{u.runs} зап.</span>
-                              <span className="t-number w-[84px] text-right text-[12.5px] tabular-nums text-foreground">
-                                {nf(u.credits)}
-                              </span>
-                              <span className="w-[92px] text-right tabular-nums">{rub(costRub(u.credits))}</span>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
-                  </tr>
-                ) : null}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 // ── Агенты ────────────────────────────────────────────────────────────────────
 /** Кому что открыто. Решение об открытии — ваше, клиент себе агента не включает. */
 function AgentPanel() {
@@ -474,14 +320,27 @@ function AgentPanel() {
     Object.fromEntries(clients.map((c) => [c.id, c.agentIds])),
   );
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
-  const client = clients.find((c) => c.id === clientId) as Client;
-  const opened = map[clientId] ?? [];
+  const client = clients.find((c) => c.id === clientId);
 
   const toggle = (agentId: string) =>
     setMap((p) => {
       const cur = p[clientId] ?? [];
       return { ...p, [clientId]: cur.includes(agentId) ? cur.filter((x) => x !== agentId) : [...cur, agentId] };
     });
+
+  if (agents.length === 0) {
+    return (
+      <div className="card-flat px-6 py-10 text-center">
+        <h2 className="text-[16px] font-semibold">Каталог пуст</h2>
+        <p className="measure mx-auto mt-2.5 text-[13.5px] text-muted-foreground">
+          Агентов ещё не завели. Когда они появятся, здесь вы будете открывать каждому клиенту свой набор —
+          по своему усмотрению, а не пакетом.
+        </p>
+      </div>
+    );
+  }
+
+  const opened = map[clientId] ?? [];
 
   return (
     <div>
@@ -504,31 +363,28 @@ function AgentPanel() {
         ))}
       </div>
 
-      <p className="mt-4 text-[12.5px] text-muted-foreground">
-        {client.unit} · {opened.length} открыто · израсходовано {nf(client.creditsUsed)} кредитов
-      </p>
+      {client ? (
+        <p className="mt-4 text-[12.5px] text-muted-foreground">
+          {client.unit} · открыто {opened.length}
+        </p>
+      ) : null}
 
       <div className="mt-5 space-y-5">
-        {groupByDomain(opened).map(([domainName, list]) => (
+        {groupByDomain().map(([domainName, list]) => (
           <div key={domainName}>
             <div className="label-caps">{domainName}</div>
             <div className="mt-2 flex flex-wrap gap-2">
-              {list.map((a) => {
-                const on = opened.includes(a.id);
-                const used = usageOf(clientId).find((u) => u.agentId === a.id);
-                return (
-                  <button
-                    key={a.id}
-                    onClick={() => toggle(a.id)}
-                    aria-pressed={on}
-                    title={a.result}
-                    className={`btn text-[12px] ${on ? "btn-primary" : "btn-glass"}`}
-                  >
-                    {a.name}
-                    {used && used.runs > 0 ? <span className="ml-1.5 opacity-60">{used.runs}</span> : null}
-                  </button>
-                );
-              })}
+              {list.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => toggle(a.id)}
+                  aria-pressed={opened.includes(a.id)}
+                  title={a.result}
+                  className={`btn text-[12px] ${opened.includes(a.id) ? "btn-primary" : "btn-glass"}`}
+                >
+                  {a.name}
+                </button>
+              ))}
             </div>
           </div>
         ))}
@@ -551,48 +407,22 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Th({ children, right }: { children: ReactNode; right?: boolean }) {
-  return (
-    <th className={`label-caps whitespace-nowrap py-2.5 pr-4 font-normal ${right ? "text-right" : ""}`}>
-      {children}
-    </th>
-  );
+function Th({ children }: { children: ReactNode }) {
+  return <th className="label-caps whitespace-nowrap py-2.5 pr-4 font-normal">{children}</th>;
 }
 
-function Td({ children, right }: { children: ReactNode; right?: boolean }) {
-  // t-number — дисплейное начертание цифр: в таблице ему нужен явный кегль,
-  // иначе строка разъезжается на пол-экрана.
-  return (
-    <td className={`py-3 pr-4 align-top ${right ? "t-number whitespace-nowrap text-right text-[13px] tabular-nums" : ""}`}>
-      {children}
-    </td>
-  );
+function Td({ children }: { children: ReactNode }) {
+  return <td className="py-3 pr-4 align-top">{children}</td>;
 }
 
-/** Группировка открытых агентов по блокам каталога — чтобы список читался. */
-function groupByDomain(opened: string[]) {
+/** Группировка агентов по блокам каталога — чтобы список читался. */
+function groupByDomain() {
   const groups = new Map<string, typeof agents>();
-  for (const a of agents) {
-    const key = a.domain;
-    groups.set(key, [...(groups.get(key) ?? []), a]);
-  }
-  return [...groups.entries()]
-    .map(([key, list]) => {
-      const name = domainName(key);
-      return [name, list] as const;
-    })
-    // Сначала блоки, где клиенту уже что-то открыто.
-    .sort((a, b) => countOpen(b[1], opened) - countOpen(a[1], opened));
+  for (const a of agents) groups.set(a.domain, [...(groups.get(a.domain) ?? []), a]);
+  return [...groups.entries()].map(([key, list]) => [domainNames[key] ?? key, list] as const);
 }
 
-const countOpen = (list: typeof agents, opened: string[]) => list.filter((a) => opened.includes(a.id)).length;
-
-function domainName(key: string) {
-  const found = domainsByKey[key];
-  return found ?? key;
-}
-
-const domainsByKey: Record<string, string> = {
+const domainNames: Record<string, string> = {
   rezultaty: "Результаты и причины",
   dengi: "Деньги и финансы",
   klienty: "Клиенты и продажи",
@@ -608,12 +438,12 @@ const domainsByKey: Record<string, string> = {
 
 const today = () => new Date().toLocaleDateString("ru-RU");
 
-/** Код в одном формате: префикс компании, фамилия, две случайные цифры. */
+/** Код в одном формате: префикс компании и фамилия латиницей. */
 function makeCode(role: Role, name: string, clientId: string) {
   const surname = name.trim().split(/\s+/).pop() ?? "USER";
   const prefix =
-    role === "client" ? (clients.find((c) => c.id === clientId)?.company.slice(1, 4) ?? "CL") : "BV";
-  return `${translit(prefix).toUpperCase()}-${translit(surname).toUpperCase()}`;
+    role === "client" ? (clients.find((c) => c.id === clientId)?.company.slice(0, 3) ?? "CL") : "BV";
+  return `${translit(prefix).toUpperCase() || "CL"}-${translit(surname).toUpperCase()}`;
 }
 
 const translitMap: Record<string, string> = {
@@ -638,8 +468,3 @@ const declension = (n: number, one: string, few: string, many: string) => {
   return many;
 };
 
-/** Сколько дней до даты в формате ДД.ММ.ГГГГ. */
-function daysLeft(ddmmyyyy: string, from = "2026-08-16") {
-  const [d, m, y] = ddmmyyyy.split(".").map(Number);
-  return Math.round((Date.parse(`${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`) - Date.parse(from)) / 86400000);
-}

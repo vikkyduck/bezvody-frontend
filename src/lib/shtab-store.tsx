@@ -2,9 +2,9 @@
  * Рабочее окно клиента.
  *
  * Окно — это один разговор по одному вопросу. К окну подключается агент,
- * и дальше человек просто пишет: расход по окну виден тут же, чтобы не
- * приходилось искать его в отчётах.
+ * и дальше человек просто пишет.
  *
+ * Окон при первом входе нет: платформа пустая, человек сам открывает первое.
  * Агентов в списке доступных ровно столько, сколько открыл проджект или
  * администратор: клиент не подключает их себе сам — это осознанно.
  */
@@ -18,8 +18,6 @@ export type WindowMessage = {
   id: string;
   from: Speaker;
   text: string;
-  /** Сколько кредитов стоил ответ агента */
-  credits?: number;
 };
 
 export type WorkWindow = {
@@ -28,64 +26,12 @@ export type WorkWindow = {
   /** Пока null — окно есть, а работать в нём некому: подключите агента */
   agentId: string | null;
   messages: WindowMessage[];
-  credits: number;
   updated: string;
 };
 
-/** Затравка: два живых окна и одно только что открытое. */
-const seed: WorkWindow[] = [
-  {
-    id: "w-1",
-    title: "Почему просела маржа опта",
-    agentId: "kpi-root-cause",
-    credits: 1840,
-    updated: "сегодня",
-    messages: [
-      { id: "m-1", from: "user", text: "Маржа опта падает шестую неделю. Разбери, из-за чего именно." },
-      {
-        id: "m-2",
-        from: "agent",
-        credits: 1840,
-        text:
-          "Падение на 2,4 п.п. объясняется на 78 % тремя факторами: рост скидочной глубины у трёх дистрибьюторов " +
-          "(−1,1 п.п.), сдвиг микса в низкомаржинальную серию 200 (−0,6 п.п.) и удорожание логистики Урал → Юг " +
-          "(−0,2 п.п.). Остальное — разовые списания.\n\nИсточники: 1С (выгрузка 14.08), CRM, тарифы перевозчика. " +
-          "Управляемый рычаг здесь один — скидочная матрица: она даёт больше половины падения.",
-      },
-    ],
-  },
-  {
-    id: "w-2",
-    title: "Хватит ли денег до конца квартала",
-    agentId: "cash-forecast",
-    credits: 2610,
-    updated: "вчера",
-    messages: [
-      { id: "m-3", from: "user", text: "Покажи прогноз денег на 13 недель и где будет провал." },
-      {
-        id: "m-4",
-        from: "agent",
-        credits: 2610,
-        text:
-          "Кассовый разрыв возникает на неделе 41 (около 12 млн ₽) и держится девять дней. Причина — совпадение " +
-          "выплаты по контракту и задержки двух крупных поступлений.\n\nПредположение: платёж «Ориона» придёт " +
-          "с задержкой в 10 дней — история платежей это подтверждает, но подтверждения от клиента нет.",
-      },
-    ],
-  },
-  {
-    id: "w-3",
-    title: "Новое окно",
-    agentId: null,
-    credits: 0,
-    updated: "сегодня",
-    messages: [],
-  },
-];
-
 type Store = {
   windows: WorkWindow[];
-  activeId: string;
+  activeId: string | null;
   setActive: (id: string) => void;
   createWindow: (agentId?: string) => string;
   connectAgent: (windowId: string, agentId: string) => void;
@@ -101,12 +47,12 @@ type Store = {
 
 const Ctx = createContext<Store | null>(null);
 
-let seq = 100;
+let seq = 0;
 const nextId = (prefix: string) => `${prefix}-${++seq}`;
 
 export function ShtabProvider({ children }: { children: ReactNode }) {
-  const [windows, setWindows] = useState<WorkWindow[]>(seed);
-  const [activeId, setActive] = useState("w-1");
+  const [windows, setWindows] = useState<WorkWindow[]>([]);
+  const [activeId, setActive] = useState<string | null>(null);
   const [thinkingId, setThinking] = useState<string | null>(null);
   const [decided, setDecided] = useState<string[]>([]);
 
@@ -114,7 +60,7 @@ export function ShtabProvider({ children }: { children: ReactNode }) {
     const id = nextId("w");
     const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
     setWindows((prev) => [
-      { id, title: agent ? agent.name : "Новое окно", agentId: agentId ?? null, messages: [], credits: 0, updated: "сейчас" },
+      { id, title: agent ? agent.name : "Новое окно", agentId: agentId ?? null, messages: [], updated: "сейчас" },
       ...prev,
     ]);
     setActive(id);
@@ -151,34 +97,30 @@ export function ShtabProvider({ children }: { children: ReactNode }) {
     );
     setThinking(windowId);
 
-    // Пока агент не подключён к серверу, ответ собирается из того, что агент
-    // обещает делать. Это заглушка ровно на время, пока нет API платформы.
+    // Платформа ещё не подключена к агентам, поэтому ответ один и честный.
+    // Здесь будет запрос к бэкенду.
     setTimeout(() => {
       setWindows((prev) =>
-        prev.map((w) => {
-          if (w.id !== windowId) return w;
-          const agent = agents.find((a) => a.id === w.agentId);
-          const credits = 320 + clean.length * 4;
-          return {
-            ...w,
-            credits: w.credits + credits,
-            messages: [
-              ...w.messages,
-              {
-                id: nextId("m"),
-                from: "agent" as const,
-                credits,
-                text: agent
-                  ? `${agent.result}. Разбор собран по методу «${agent.method.toLowerCase()}».\n\n` +
-                    "Каждое утверждение идёт с источником; где данных не хватило — помечено как предположение."
-                  : "К окну не подключён агент — подключите его сверху, и я возьмусь за вопрос.",
-              },
-            ],
-          };
-        }),
+        prev.map((w) =>
+          w.id === windowId
+            ? {
+                ...w,
+                messages: [
+                  ...w.messages,
+                  {
+                    id: nextId("m"),
+                    from: "agent" as const,
+                    text: w.agentId
+                      ? "Агент ещё не подключён к платформе — ответить пока нечем."
+                      : "К окну не подключён агент. Подключите его сверху, и я возьмусь за вопрос.",
+                  },
+                ],
+              }
+            : w,
+        ),
       );
       setThinking(null);
-    }, 1100);
+    }, 700);
   }, []);
 
   const value = useMemo<Store>(

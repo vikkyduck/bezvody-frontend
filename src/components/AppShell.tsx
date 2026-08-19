@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { NavPills, type NavItem } from "@/components/NavPills";
 import { GlassPointer } from "@/components/bv/GlassPointer";
 import { StencilLogo, CatMark, LensFilter, Scene, SectionLabel } from "@/components/bv/core";
-import { creditsLeft, nf, roleLabel, type Role } from "@/lib/platform-data";
+import { roleLabel, type Role } from "@/lib/platform-data";
 import { useSession } from "@/lib/session";
 
 /**
@@ -87,19 +87,6 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
           <NavPills items={nav} path={path} className="hidden md:flex" />
 
           <div className="ml-auto flex items-center gap-3.5 text-right">
-            {/* Клиент видит остаток кредитов всегда: расход не должен быть сюрпризом */}
-            {client ? (
-              <Link
-                to="/"
-                className="hidden border-r border-[color:var(--color-line)] pr-3.5 text-right sm:block"
-                title={`Израсходовано ${nf(client.creditsUsed)} из ${nf(client.creditsGranted)} кредитов`}
-              >
-                <div className="t-number text-[13px] font-semibold leading-tight tabular-nums">
-                  {nf(creditsLeft(client))}
-                </div>
-                <div className="text-[10.5px] text-muted-foreground">кредитов осталось</div>
-              </Link>
-            ) : null}
             <div className="hidden text-right sm:block">
               <div className="text-[12.5px] font-semibold leading-tight">{person?.name}</div>
               <div className="text-[10.5px] text-muted-foreground">
@@ -127,7 +114,7 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
       </header>
       <main className="mx-auto max-w-[1240px] px-5 py-8 sm:px-6">{children}</main>
       <footer className="mx-auto flex max-w-[1240px] items-end justify-between gap-4 px-6 pb-10 pt-4 text-[11.5px] text-muted-foreground">
-        <span>{client ? `${client.company} · доступ открыт до ${client.paidUntil}` : "Платформа «Без Воды»"}</span>
+        <span>Платформа «Без Воды»</span>
         <CatMark className="h-10 w-12 flex-none text-[color:var(--color-text-primary)]/50" strokeWidth={2} />
       </footer>
     </div>

@@ -1,8 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { creditsLeft, creditsPct, nf } from "@/lib/platform-data";
 import { useSession } from "@/lib/session";
 import { agents } from "@/lib/shtab-data";
 import { useShtab, type WorkWindow } from "@/lib/shtab-store";
@@ -13,7 +12,7 @@ export const Route = createFileRoute("/")({
       { title: "Рабочее окно — платформа «Без Воды»" },
       {
         name: "description",
-        content: "Одно окно на один вопрос: подключаете агента и работаете. Расход виден сразу.",
+        content: "Одно окно на один вопрос: подключаете агента и работаете.",
       },
       { name: "robots", content: "noindex" },
     ],
@@ -34,7 +33,7 @@ function WorkspaceBody() {
   const { windows, activeId, setActive, createWindow } = useShtab();
   const active = windows.find((w) => w.id === activeId) ?? windows[0];
 
-  if (!client || !active) return null;
+  if (!client) return null;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
@@ -47,34 +46,36 @@ function WorkspaceBody() {
           </button>
         </div>
 
-        <ul className="space-y-1.5">
-          {windows.map((w) => (
-            <li key={w.id}>
-              <WindowTab window={w} active={w.id === active.id} onClick={() => setActive(w.id)} />
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-6 border-t border-[color:var(--color-line)] pt-4">
-          <div className="label-caps">Кредиты</div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="t-number text-[22px] leading-none tabular-nums">{nf(creditsLeft(client))}</span>
-            <span className="text-[11.5px] text-muted-foreground">из {nf(client.creditsGranted)}</span>
-          </div>
-          <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-[color:var(--color-line)]">
-            <div
-              className="h-full rounded-full bg-[color:var(--color-accent)]"
-              style={{ width: `${creditsPct(client)}%` }}
-            />
-          </div>
-          <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
-            Кредит — тысяча слов работы модели. Когда останется мало, проджект откроет следующий пакет по счёту.
+        {windows.length ? (
+          <ul className="space-y-1.5">
+            {windows.map((w) => (
+              <li key={w.id}>
+                <WindowTab window={w} active={w.id === active?.id} onClick={() => setActive(w.id)} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            Окон пока нет. Откройте первое — оно и будет вашим рабочим местом.
           </p>
-        </div>
+        )}
       </aside>
 
       <section className="min-w-0">
-        <Window key={active.id} window={active} />
+        {active ? (
+          <Window key={active.id} window={active} />
+        ) : (
+          <div className="card-flat flex min-h-[520px] flex-col items-center justify-center px-6 text-center">
+            <h2 className="text-[17px] font-semibold">Здесь пусто</h2>
+            <p className="measure mt-2.5 text-[13.5px] text-muted-foreground">
+              Окно — это один вопрос, который вам решать. Откройте окно, подключите к нему агента
+              и спрашивайте своими словами.
+            </p>
+            <button onClick={() => createWindow()} className="btn btn-primary mt-5 text-[13px]">
+              Открыть окно
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -123,7 +124,7 @@ function Window({ window: w }: { window: WorkWindow }) {
 
   return (
     <div className="card-flat flex min-h-[600px] flex-col">
-      {/* Шапка окна: кто в нём работает и во что обошёлся разговор */}
+      {/* Шапка окна: кто в нём работает */}
       <div className="flex flex-wrap items-center gap-3 border-b border-[color:var(--color-line)] px-5 py-4">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-semibold leading-snug">{w.title}</div>
@@ -143,33 +144,32 @@ function Window({ window: w }: { window: WorkWindow }) {
             </span>
           </button>
         </div>
-        <div className="text-right">
-          <div className="t-number text-[13px] tabular-nums">{nf(w.credits)}</div>
-          <div className="text-[10.5px] text-muted-foreground">кредитов в окне</div>
-        </div>
       </div>
 
       {picking ? (
         <div className="border-b border-[color:var(--color-line)] px-5 py-4">
           <div className="label-caps">Агенты, открытые вашей компании</div>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            {mine.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => {
-                  connectAgent(w.id, a.id);
-                  setPicking(false);
-                }}
-                className={`btn text-[12px] ${a.id === w.agentId ? "btn-primary" : "btn-glass"}`}
-              >
-                {a.name}
-              </button>
-            ))}
-          </div>
-          <p className="mt-3 text-[11.5px] text-muted-foreground">
-            Нужен другой агент — <Link to="/agents" className="underline underline-offset-2">запросите его</Link>,
-            подключит ваш проджект.
-          </p>
+          {mine.length ? (
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {mine.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => {
+                    connectAgent(w.id, a.id);
+                    setPicking(false);
+                  }}
+                  className={`btn text-[12px] ${a.id === w.agentId ? "btn-primary" : "btn-glass"}`}
+                >
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2.5 text-[12.5px] text-muted-foreground">
+              Вашей компании пока не открыт ни один агент. Напишите проджект-менеджеру — он подключит
+              нужных, и они появятся здесь.
+            </p>
+          )}
         </div>
       ) : null}
 
@@ -185,7 +185,7 @@ function Window({ window: w }: { window: WorkWindow }) {
         ) : null}
 
         {w.messages.map((m) => (
-          <Message key={m.id} from={m.from} text={m.text} credits={m.credits} />
+          <Message key={m.id} from={m.from} text={m.text} />
         ))}
 
         {thinking ? (
@@ -229,7 +229,7 @@ function Window({ window: w }: { window: WorkWindow }) {
   );
 }
 
-function Message({ from, text, credits }: { from: "user" | "agent"; text: string; credits?: number | undefined }) {
+function Message({ from, text }: { from: "user" | "agent"; text: string }) {
   const mine = from === "user";
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -243,9 +243,6 @@ function Message({ from, text, credits }: { from: "user" | "agent"; text: string
         >
           {text}
         </div>
-        {credits ? (
-          <div className="mt-1.5 text-[10.5px] text-muted-foreground">{nf(credits)} кредитов</div>
-        ) : null}
       </div>
     </div>
   );
