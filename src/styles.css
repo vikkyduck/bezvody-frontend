@@ -119,6 +119,72 @@
   --ease-glass: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Светлая тема «Сухой остаток» — внутренние кабинеты.
+   Обложка (вход) остаётся угольной, поэтому светлые значения живут классом,
+   а не в :root. Палитра 1:1 из брендбука «Без Воды» 2.4, раздел 17 — та же,
+   что на fin-dohod.ru: Бумага/Мел/Графит, роза как единственный акцент.
+   ══════════════════════════════════════════════════════════════════════════ */
+.theme-paper {
+  /* --- Фоны и поверхности --- */
+  --color-bg-primary: #F7F5F1;    /* Бумага */
+  --color-bg-secondary: #EDEAE4;  /* Галерея */
+  --color-surface: #FCFBF8;       /* Мел */
+  /* Уголь остаётся инверсным элементам: графитовая кнопка, плашка на тёмном */
+  --color-bg-dark: #1D1F23;
+  --color-surface-dark: #22242A;
+
+  /* --- Текст: три ступени --- */
+  --color-text-primary: #1D1F23;   /* Графит */
+  --color-text-secondary: #545860; /* Сталь-текст */
+  --color-text-muted: #8B9098;     /* Сталь */
+  --color-text-inverse: #F1EFEA;   /* Бумага-на-угле */
+  --color-text-inverse-2: #A7ADB8;
+  --color-text-inverse-3: #F1EFEA;
+
+  /* --- Акцент --- */
+  --color-accent: #A3564B;         /* Пыльная роза */
+  --color-accent-hover: #6C60AE;   /* Лаванда */
+  --color-accent-glass: #E9C4BD;   /* Розовое стекло */
+  --color-accent-soft: rgba(163, 86, 75, 0.10);
+  --color-accent-text: #A3564B;
+  --color-chrome: #545860;
+  --color-steel: #8B9098;
+  --color-ink-hover: #31353C;
+  --color-line: #DBD7CF;           /* Штрих */
+  --color-line-dark: rgba(29, 31, 35, 0.14);
+
+  /* --- Статусы: спокойные, тревога одна на систему --- */
+  --color-success: #4E6B5C;      --color-success-soft: rgba(78, 107, 92, 0.10);
+  --color-error: #8E3B54;        --color-error-soft: rgba(142, 59, 84, 0.10);  /* Марсала */
+
+  --gradient-glass: linear-gradient(165deg, rgba(233, 196, 189, 0.9), rgba(233, 196, 189, 0.55));
+
+  /* --- Жидкое стекло на бумаге: светлая плёнка и светлая кромка --- */
+  --lg-tint: rgba(252, 251, 248, 0.28);
+  --lg-rim:
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.88),
+    inset 0 -1.5px 1px rgba(29, 31, 35, 0.10),
+    inset 1.5px 0 1px rgba(255, 255, 255, 0.45),
+    inset -1.5px 0 1px rgba(29, 31, 35, 0.05);
+
+  /* --- Тени: лёгкие, бумага не давит --- */
+  --shadow-hairline: 0 1px 2px rgba(29, 31, 35, 0.06), 0 2px 6px rgba(29, 31, 35, 0.04);
+  --shadow-soft: 0 6px 18px rgba(29, 31, 35, 0.07), 0 2px 6px rgba(29, 31, 35, 0.05);
+  --shadow-float: 0 18px 44px rgba(29, 31, 35, 0.13), 0 6px 14px rgba(29, 31, 35, 0.07);
+  --shadow-inner: inset 0 1px 3px rgba(29, 31, 35, 0.10), inset 0 -1px 1px rgba(255, 255, 255, 0.65);
+
+  /* Нативные контролы (select, скроллбары) — светлые */
+  color-scheme: light;
+  /* Сцена из брендбука: бумага с лёгким градиентом, стеклу есть что преломлять */
+  background: linear-gradient(140deg, #EFECE6 0%, #E3E0D9 55%, #D6D2CA 100%);
+  color: var(--color-text-primary);
+}
+
+/* Пятна материала на бумаге: роза → розовое стекло, хром → сталь */
+.theme-paper .stage__blob--rose { background: radial-gradient(closest-side, rgba(233, 196, 189, 0.55), rgba(233, 196, 189, 0)); }
+.theme-paper .stage__blob--chrome { background: radial-gradient(closest-side, rgba(139, 144, 152, 0.28), rgba(139, 144, 152, 0)); }
+
 @layer base {
   * { border-color: var(--color-line); }
 

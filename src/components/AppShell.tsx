@@ -47,7 +47,7 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
 
   if (!ready || !role || !allow.includes(role)) {
     return (
-      <div className="stage grain flex min-h-screen items-center justify-center">
+      <div className="stage grain theme-paper flex min-h-screen items-center justify-center">
         <CatMark className="h-10 w-12 animate-pulse text-[color:var(--color-text-primary)]/40" strokeWidth={2} />
       </div>
     );
@@ -63,7 +63,8 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
     : "";
 
   return (
-    <div className="stage grain min-h-screen">
+    // theme-paper: внутри кабинетов светлый «Сухой остаток», обложка входа остаётся угольной
+    <div className="stage grain theme-paper min-h-screen">
       <LensFilter />
       <GlassPointer />
       <Scene
