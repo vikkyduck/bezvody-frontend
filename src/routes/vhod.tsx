@@ -3,8 +3,6 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { homeByRole } from "@/components/AppShell";
 import { CatMark, LensFilter, Scene, StencilLogo } from "@/components/bv/core";
-import { useDirectory } from "@/lib/directory";
-import { roleLabel } from "@/lib/platform-data";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/vhod")({
@@ -30,14 +28,14 @@ function SignIn() {
     if (ready && role) navigate({ to: homeByRole[role], replace: true });
   }, [ready, role, navigate]);
 
-  function submit(e: FormEvent) {
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    const result = signIn(code);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setError(null);
+    setBusy(true);
+    const result = await signIn(code);
+    setBusy(false);
+    setError(result.ok ? null : result.error);
   }
 
   return (
@@ -83,8 +81,12 @@ function SignIn() {
               </p>
             ) : null}
 
-            <button type="submit" className="btn btn-primary mt-5 w-full text-[13.5px]">
-              Войти
+            <button
+              type="submit"
+              disabled={busy}
+              className="btn btn-primary mt-5 w-full text-[13.5px] disabled:opacity-50"
+            >
+              {busy ? "Проверяем" : "Войти"}
             </button>
 
             <p className="mt-4 text-[11.5px] leading-relaxed text-muted-foreground">
@@ -93,41 +95,7 @@ function SignIn() {
             </p>
           </form>
 
-          <DemoCodes onPick={setCode} />
         </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Пока платформа не отдаёт данные, войти можно только заранее заведённым кодом.
- * Блок нужен, чтобы проходить кабинеты насквозь на макете, — уезжает вместе
- * с подключением настоящей выдачи доступов.
- */
-function DemoCodes({ onPick }: { onPick: (code: string) => void }) {
-  const { participants } = useDirectory();
-  // По одному живому коду на роль: список ведётся в кабинете администратора.
-  const shown = (["admin", "project", "client"] as const)
-    .map((role) => participants.find((p) => p.role === role && p.active))
-    .filter((p) => p !== undefined);
-
-  if (!shown.length) return null;
-
-  return (
-    <div className="mt-6 border-t border-[color:var(--color-line)] pt-4">
-      <div className="label-caps">Коды для проверки макета</div>
-      <div className="mt-2.5 flex flex-wrap gap-2">
-        {shown.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => onPick(p.code)}
-            className="btn btn-glass text-[11.5px]"
-            title={`${p.name} — ${p.code}`}
-          >
-            {roleLabel[p.role]}
-          </button>
-        ))}
       </div>
     </div>
   );

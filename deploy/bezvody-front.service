@@ -14,6 +14,10 @@ ExecStart=/usr/bin/node /opt/bezvody-front/server/index.mjs
 Restart=always
 RestartSec=3
 Environment=NODE_ENV=production
+# Справочник участников лежит ВНЕ /opt/bezvody-front: деплой перезаписывает
+# папку приложения целиком с --delete, и данные внутри неё не пережили бы
+# ни одной выкатки.
+Environment=BV_DATA_DIR=/opt/bezvody-front-data
 # Наружу порт не выставляем: снаружи только nginx (8093), сюда он ходит по петле.
 Environment=HOST=127.0.0.1
 Environment=PORT=5050

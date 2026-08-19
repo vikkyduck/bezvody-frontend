@@ -120,10 +120,15 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
   const [issued, setIssued] = useState<Participant | null>(null);
   const [copied, setCopied] = useState(false);
 
-  function submit(e: FormEvent) {
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    const created = add({ name, position, company, email, telegram, role });
+    setBusy(true);
+    const created = await add({ name, position, company, email, telegram, role });
+    setBusy(false);
+    if (!created) return;
     setIssued(created);
     setCopied(false);
     onCreated(created);
@@ -187,8 +192,8 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
           />
         </Field>
         <div className="sm:col-span-2">
-          <button type="submit" className="btn btn-primary text-[13px]">
-            Завести кабинет
+          <button type="submit" disabled={busy} className="btn btn-primary text-[13px] disabled:opacity-50">
+            {busy ? "Заводим" : "Завести кабинет"}
           </button>
         </div>
       </form>

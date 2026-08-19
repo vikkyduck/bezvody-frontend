@@ -1,0 +1,123 @@
+/**
+ * Участник платформы — общий тип для сервера и браузера.
+ *
+ * Участник = личный кабинет: имя, контакт для связи, код доступа и свой
+ * набор агентов. Агенты назначаются человеку, а не компании: два человека
+ * из одной команды могут иметь разные наборы, и это нормально.
+ *
+ * Код передаётся из рук в руки — ни почта, ни телеграм отсюда ничего
+ * не отправляют. Контакты нужны, чтобы знать, куда написать.
+ */
+
+export type Role = "client" | "project" | "admin";
+
+export const roleLabel: Record<Role, string> = {
+  client: "Клиент",
+  project: "Проджект",
+  admin: "Администратор",
+};
+
+export type Participant = {
+  id: string;
+  name: string;
+  /** Должность или роль в компании — свободный текст, можно пусто */
+  position: string;
+  /** Компания или подразделение — свободный текст, можно пусто */
+  company: string;
+  email: string;
+  /** Ник в телеграме, приводится к одному виду при вводе */
+  telegram: string;
+  role: Role;
+  code: string;
+  /** Какие агенты открыты именно этому человеку */
+  agentIds: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+  /** Отозванный код остаётся в списке: видно, кому и что открывали */
+  active: boolean;
+};
+
+export type ParticipantDraft = {
+  name: string;
+  position?: string;
+  company?: string;
+  email?: string;
+  telegram?: string;
+  role: Role;
+};
+
+/**
+ * Первый и единственный кабинет из коробки — ваш. Всех остальных заводите
+ * руками в админке: самостоятельной регистрации на платформе нет.
+ */
+export const seedParticipants: Participant[] = [
+  {
+    id: "p-utkina",
+    name: "Виктория Уткина",
+    position: "Основатель",
+    company: "Без Воды",
+    email: "hello@vi-utkina.ru",
+    telegram: "",
+    role: "admin",
+    code: "BV-ADMIN-01",
+    agentIds: [],
+    createdAt: "—",
+    lastUsedAt: null,
+    active: true,
+  },
+];
+
+/** Ник приводим к одному виду: без собаки и без ссылки — её добавит интерфейс. */
+export function cleanTelegram(raw: string): string {
+  return raw.trim().replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "").trim();
+}
+
+/** Старая запись могла быть без новых полей — добиваем значениями по умолчанию. */
+export function normalize(p: Partial<Participant>): Participant {
+  return {
+    id: p.id ?? `p-${Math.random().toString(36).slice(2, 9)}`,
+    name: p.name ?? "Без имени",
+    position: p.position ?? "",
+    company: p.company ?? "",
+    email: p.email ?? "",
+    telegram: p.telegram ?? "",
+    role: p.role ?? "client",
+    code: p.code ?? "",
+    agentIds: p.agentIds ?? [],
+    createdAt: p.createdAt ?? "—",
+    lastUsedAt: p.lastUsedAt ?? null,
+    active: p.active ?? true,
+  };
+}
+
+const translitMap: Record<string, string> = {
+  а: "A", б: "B", в: "V", г: "G", д: "D", е: "E", ё: "E", ж: "ZH", з: "Z", и: "I", й: "Y",
+  к: "K", л: "L", м: "M", н: "N", о: "O", п: "P", р: "R", с: "S", т: "T", у: "U", ф: "F",
+  х: "H", ц: "C", ч: "CH", ш: "SH", щ: "SCH", ъ: "", ы: "Y", ь: "", э: "E", ю: "YU", я: "YA",
+};
+
+const translit = (s: string) =>
+  s
+    .toLowerCase()
+    .split("")
+    .map((ch) => translitMap[ch] ?? ch)
+    .join("")
+    .replace(/[^a-z0-9]/gi, "");
+
+const rolePrefix: Record<Role, string> = { admin: "BV", project: "BV-PM", client: "BV" };
+
+/** Код читается вслух и не повторяется: префикс, фамилия, при совпадении — номер. */
+export function uniqueCode(name: string, role: Role, existing: Participant[]): string {
+  const surname = translit(name.trim().split(/\s+/).pop() ?? "").toUpperCase() || "USER";
+  const base = `${rolePrefix[role]}-${surname}`;
+  const taken = new Set(existing.map((x) => x.code));
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 100; i++) {
+    const candidate = `${base}-${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now().toString(36).toUpperCase()}`;
+}
+
+/** Чужие коды наружу не отдаём: чужой код — это чужой вход. */
+export const withoutCode = (p: Participant): Participant => ({ ...p, code: "" });

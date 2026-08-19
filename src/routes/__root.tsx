@@ -127,14 +127,14 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <DirectoryProvider>
-        <SessionProvider>
+      <SessionProvider>
+        <DirectoryProvider>
           <ShtabProvider>
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
           </ShtabProvider>
-        </SessionProvider>
-      </DirectoryProvider>
+        </DirectoryProvider>
+      </SessionProvider>
     </QueryClientProvider>
   );
 
