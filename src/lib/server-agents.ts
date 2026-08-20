@@ -53,6 +53,12 @@ export type KeyState = { set: boolean; tail: string };
 export type AgentSettings = {
   agents: AgentConfigMap;
   keys: Record<Provider, KeyState>;
+  /**
+   * Роли по умолчанию — чтобы админка могла показать «вернуть как было».
+   * Приезжают ответом сервера, а не импортом из кода: иначе инструкции ролей
+   * попадают в бандл браузера, а это методология, за которую платит заказчик.
+   */
+  defaultRoles: Record<string, AgentRole[]>;
 };
 
 export const emptyKeys = (): Record<Provider, KeyState> => ({
@@ -61,7 +67,7 @@ export const emptyKeys = (): Record<Provider, KeyState> => ({
   gemini: { set: false, tail: "" },
 });
 
-const emptySettings = (): AgentSettings => ({ agents: {}, keys: emptyKeys() });
+const emptySettings = (): AgentSettings => ({ agents: {}, keys: emptyKeys(), defaultRoles: {} });
 
 export const MODELS = [
   { id: "claude-opus-5", label: "Opus 5 — самый сильный" },
@@ -178,7 +184,7 @@ export const getAgentSettingsServer = createServerFn({ method: "POST" })
     if (!me || me.role !== "admin") return emptySettings();
 
     const agents = await withAuthFlags(d, await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {}));
-    return { agents, keys: await keysSummary(d) };
+    return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES };
   });
 
 /** По каждому провайдеру: задан ли ключ и его хвост — сверить, тот ли это ключ. */
@@ -270,7 +276,7 @@ export const saveAgentServer = createServerFn({ method: "POST" })
     };
     await d.writeJson(file, agents);
 
-    return { agents: await withAuthFlags(d, agents), keys: await keysSummary(d) };
+    return { agents: await withAuthFlags(d, agents), keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES };
   });
 
 export const saveApiKeyServer = createServerFn({ method: "POST" })
@@ -283,7 +289,7 @@ export const saveApiKeyServer = createServerFn({ method: "POST" })
     const provider: Provider = isProvider(data.provider) ? data.provider : "anthropic";
     await d.writeApiKey(provider, String(data.key ?? "").trim());
     const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
-    return { agents, keys: await keysSummary(d) };
+    return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES };
   });
 
 /**

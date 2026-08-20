@@ -7,7 +7,7 @@ import {
   providerLabel,
   type Provider,
 } from "@/lib/providers";
-import { DEFAULT_ROLES, type AgentRole } from "@/lib/roles";
+import type { AgentRole } from "@/lib/roles";
 
 import { Attachments } from "@/components/Attachments";
 import { MAX_AGENT_FILES, type StoredFile } from "@/lib/documents";
@@ -26,7 +26,6 @@ import {
   emptyKeys,
   getAgentSettingsServer,
   normalizeConfig,
-  rolesOf,
   saveAgentServer,
   saveApiKeyServer,
   testAgentServer,
@@ -55,7 +54,7 @@ export function AgentSetup() {
     if (!code) return;
     getAgentSettingsServer({ data: { code } })
       .then(setSettings)
-      .catch(() => setSettings({ agents: {}, keys: emptyKeys() }));
+      .catch(() => setSettings({ agents: {}, keys: emptyKeys(), defaultRoles: {} }));
     listAgentFilesServer({ data: { code } })
       .then(setFiles)
       .catch(() => setFiles({}));
@@ -200,7 +199,10 @@ function AgentCard({
   const [authHeader, setAuthHeader] = useState(saved.authHeader);
   const [format, setFormat] = useState<"openai" | "simple">(saved.format);
   const [auth, setAuth] = useState("");
-  const savedRoles = rolesOf(id, settings.agents[id]);
+  // Та же логика, что на сервере: не задано — роли по умолчанию, пустой
+  // список — «ролей нет» осознанно.
+  const configuredRoles = settings.agents[id]?.roles;
+  const savedRoles = Array.isArray(configuredRoles) ? configuredRoles : (settings.defaultRoles[id] ?? []);
   const [roles, setRoles] = useState<AgentRole[]>(savedRoles);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -453,7 +455,7 @@ function AgentCard({
 
           {transport === "model" ? (
             <Roles
-              agentId={id}
+              defaults={settings.defaultRoles[id] ?? []}
               roles={roles}
               onChange={(next) => {
                 setRoles(next);
@@ -569,15 +571,14 @@ function AgentCard({
  * в ней меняется — и персональные данные в настройках платформы нам не нужны.
  */
 function Roles({
-  agentId,
+  defaults,
   roles,
   onChange,
 }: {
-  agentId: string;
+  defaults: AgentRole[];
   roles: AgentRole[];
   onChange: (next: AgentRole[]) => void;
 }) {
-  const defaults = DEFAULT_ROLES[agentId] ?? [];
   const changed = JSON.stringify(defaults) !== JSON.stringify(roles);
 
   const patch = (i: number, field: keyof AgentRole, value: string) =>
