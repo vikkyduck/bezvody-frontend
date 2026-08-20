@@ -438,11 +438,10 @@ type RoleChip = Omit<AgentRole, "prompt">;
 /**
  * Кнопки ролей.
  *
- * Роли разложены по группам, и группа — не украшение. В лестнице согласования
- * у собеседника есть право пропустить решение дальше или вернуть на доработку,
- * и порядок обхода там жёсткий: снизу вверх, с подготовленной позицией на
- * каждой ступени. В горизонтали никто ничего не утверждает — там либо
- * договариваются, либо расхождение уходит на эскалацию отдельно.
+ * Порядок неслучаен: сначала те, у кого есть право вернуть решение на
+ * доработку, — снизу вверх по лестнице, — потом те, с кем договариваются.
+ * Названия групп на экран не выводим: человек и так знает, кто над кем,
+ * а подписи только загромождают полосу.
  */
 function RoleBar({
   roles,
@@ -457,56 +456,40 @@ function RoleBar({
   disabled: boolean;
   onPick: (id: string) => void;
 }) {
-  const groups: string[] = [];
-  for (const r of roles) if (r.group && !groups.includes(r.group)) groups.push(r.group);
-  if (!groups.length) groups.push("");
-
   return (
     <section className="card-flat mb-4 px-5 py-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 className="text-[14px] font-semibold">Чью реакцию слушаем</h2>
-        <p className="text-[12px] text-muted-foreground">
-          Роль читает документ окна и разбирает его со своей колокольни
-        </p>
-      </div>
+      <h2 className="text-[14px] font-semibold">Чью реакцию слушаем</h2>
 
-      {groups.map((g) => (
-        <div key={g} className="mt-3.5">
-          {g ? <div className="label-caps mb-2">{g}</div> : null}
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {roles
-              .filter((r) => (r.group || "") === g)
-              .map((r) => {
-                const active = r.id === activeId;
-                return (
-                  <button
-                    key={r.id}
-                    onClick={() => onPick(r.id)}
-                    disabled={disabled}
-                    className={`rounded-[12px] border px-3.5 py-2.5 text-left transition-colors disabled:opacity-50 ${
-                      active
-                        ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent-soft)]"
-                        : "border-[color:var(--color-line)] hover:border-[color:var(--color-text-primary)]/35"
-                    }`}
-                  >
-                    <span className="flex items-baseline gap-1.5">
-                      {spokeWith(r.id) ? (
-                        <span
-                          aria-hidden
-                          className="mt-[1px] h-[5px] w-[5px] flex-none rounded-full bg-[color:var(--color-accent)]"
-                        />
-                      ) : null}
-                      <span className="text-[13px] font-medium leading-snug">{r.name}</span>
-                    </span>
-                    {r.hint ? (
-                      <span className="mt-1 block text-[11.5px] leading-snug text-muted-foreground">{r.hint}</span>
-                    ) : null}
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-      ))}
+      <div className="mt-3.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {roles.map((r) => {
+          const active = r.id === activeId;
+          return (
+            <button
+              key={r.id}
+              onClick={() => onPick(r.id)}
+              disabled={disabled}
+              className={`rounded-[12px] border px-3.5 py-2.5 text-left transition-colors disabled:opacity-50 ${
+                active
+                  ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent-soft)]"
+                  : "border-[color:var(--color-line)] hover:border-[color:var(--color-text-primary)]/35"
+              }`}
+            >
+              <span className="flex items-baseline gap-1.5">
+                {spokeWith(r.id) ? (
+                  <span
+                    aria-hidden
+                    className="mt-[1px] h-[5px] w-[5px] flex-none rounded-full bg-[color:var(--color-accent)]"
+                  />
+                ) : null}
+                <span className="text-[13px] font-medium leading-snug">{r.name}</span>
+              </span>
+              {r.hint ? (
+                <span className="mt-1 block text-[11.5px] leading-snug text-muted-foreground">{r.hint}</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }

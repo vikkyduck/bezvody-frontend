@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 
+import {
+  DEFAULT_MODEL_OF,
+  MODEL_HINTS,
+  PROVIDERS,
+  providerLabel,
+  type Provider,
+} from "@/lib/providers";
 import { DEFAULT_ROLES, type AgentRole } from "@/lib/roles";
 
 import { Attachments } from "@/components/Attachments";
@@ -16,6 +23,7 @@ import {
   DEFAULT_FINISH_RULE,
   DEFAULT_MODEL,
   MODELS,
+  emptyKeys,
   getAgentSettingsServer,
   normalizeConfig,
   rolesOf,
@@ -47,7 +55,7 @@ export function AgentSetup() {
     if (!code) return;
     getAgentSettingsServer({ data: { code } })
       .then(setSettings)
-      .catch(() => setSettings({ agents: {}, keySet: false, keyTail: "" }));
+      .catch(() => setSettings({ agents: {}, keys: emptyKeys() }));
     listAgentFilesServer({ data: { code } })
       .then(setFiles)
       .catch(() => setFiles({}));
@@ -84,15 +92,48 @@ export function AgentSetup() {
 }
 
 function ApiKey({ settings, onSaved }: { settings: AgentSettings; onSaved: (s: AgentSettings) => void }) {
+  return (
+    <section className="card-flat px-5 py-5">
+      <h2 className="text-[15px] font-semibold">Ключи моделей</h2>
+      <p className="measure mt-1 text-[12.5px] text-muted-foreground">
+        Свой ключ на каждого провайдера: так видно расход по каждому отдельно, и отзыв одного
+        не роняет остальных. Ключи хранятся на сервере в РФ и в браузер не возвращаются —
+        поэтому ниже видно только последние знаки. Ключ создаётся в консоли самого провайдера
+        и вставляется сюда; в переписку его не пересылайте.
+      </p>
+
+      <div className="mt-4 space-y-3">
+        {PROVIDERS.map((p) => (
+          <ProviderKey key={p.id} provider={p.id} label={p.label} hint={p.hint} settings={settings} onSaved={onSaved} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProviderKey({
+  provider,
+  label,
+  hint,
+  settings,
+  onSaved,
+}: {
+  provider: Provider;
+  label: string;
+  hint: string;
+  settings: AgentSettings;
+  onSaved: (s: AgentSettings) => void;
+}) {
   const { code } = useSession();
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const state = settings.keys[provider] ?? { set: false, tail: "" };
 
   async function save() {
     if (!code || !value.trim()) return;
     setBusy(true);
     try {
-      onSaved(await saveApiKeyServer({ data: { code, key: value } }));
+      onSaved(await saveApiKeyServer({ data: { code, provider, key: value } }));
       setValue("");
     } finally {
       setBusy(false);
@@ -100,41 +141,35 @@ function ApiKey({ settings, onSaved }: { settings: AgentSettings; onSaved: (s: A
   }
 
   return (
-    <section className="card-flat px-5 py-5">
-      <h2 className="text-[15px] font-semibold">Ключ модели</h2>
-      <p className="measure mt-1 text-[12.5px] text-muted-foreground">
-        Один ключ на платформу. Хранится на сервере в РФ и в браузер не возвращается —
-        поэтому ниже видно только последние знаки.
-      </p>
-
-      <div className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="block min-w-[280px] flex-1">
-          <span className="label-caps">{settings.keySet ? "Заменить ключ" : "Вставьте ключ"}</span>
-          <input
-            type="password"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="sk-ant-…"
-            autoComplete="off"
-            spellCheck={false}
-            className="mt-1.5 w-full rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
-          />
-        </label>
-        <button onClick={save} disabled={busy || !value.trim()} className="btn btn-primary text-[13px] disabled:opacity-40">
+    <div className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-[13.5px] font-medium">{label}</span>
+        <span className="text-[11.5px] text-muted-foreground">
+          {state.set ? (
+            <>
+              ключ задан <span className="t-number tracking-[0.08em]">••••{state.tail}</span>
+            </>
+          ) : (
+            "ключа нет — агенты на этой модели отвечать не смогут"
+          )}
+        </span>
+      </div>
+      <p className="mt-1 text-[11.5px] text-muted-foreground">{hint}</p>
+      <div className="mt-2.5 flex flex-wrap items-end gap-2.5">
+        <input
+          type="password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={state.set ? "впишите новый, чтобы заменить" : "вставьте ключ"}
+          autoComplete="off"
+          spellCheck={false}
+          className="min-w-[240px] flex-1 rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+        />
+        <button onClick={save} disabled={busy || !value.trim()} className="btn btn-glass text-[12.5px] disabled:opacity-40">
           {busy ? "Сохраняю" : "Сохранить"}
         </button>
       </div>
-
-      <p className="mt-3 text-[12px] text-muted-foreground">
-        {settings.keySet ? (
-          <>
-            Ключ задан <span className="t-number text-[13px] tracking-[0.08em]">••••{settings.keyTail}</span>
-          </>
-        ) : (
-          "Ключ не задан — агенты отвечать не смогут."
-        )}
-      </p>
-    </section>
+    </div>
   );
 }
 
@@ -160,6 +195,7 @@ function AgentCard({
   const [finishRule, setFinishRule] = useState(saved.finishRule);
   const [model, setModel] = useState(saved.model || DEFAULT_MODEL);
   const [transport, setTransport] = useState<Transport>(saved.transport);
+  const [provider, setProvider] = useState<Provider>(saved.provider);
   const [endpoint, setEndpoint] = useState(saved.endpoint);
   const [authHeader, setAuthHeader] = useState(saved.authHeader);
   const [format, setFormat] = useState<"openai" | "simple">(saved.format);
@@ -177,6 +213,7 @@ function AgentCard({
     setFinishRule(saved.finishRule);
     setModel(saved.model || DEFAULT_MODEL);
     setTransport(saved.transport);
+    setProvider(saved.provider);
     setEndpoint(saved.endpoint);
     setAuthHeader(saved.authHeader);
     setFormat(saved.format);
@@ -190,6 +227,7 @@ function AgentCard({
     saved.finishRule,
     saved.model,
     saved.transport,
+    saved.provider,
     saved.endpoint,
     saved.authHeader,
     saved.format,
@@ -204,7 +242,7 @@ function AgentCard({
     try {
       onSaved(
         await saveAgentServer({
-          data: { code, agentId: id, prompt, finishRule, model, transport, endpoint, authHeader, format, auth, roles },
+          data: { code, agentId: id, prompt, finishRule, provider, model, transport, endpoint, authHeader, format, auth, roles },
         }),
       );
       setAuth("");
@@ -225,7 +263,12 @@ function AgentCard({
     }
   }
 
-  const where = saved.transport === "http" ? "ваш сервис" : MODELS.find((m) => m.id === saved.model)?.label ?? saved.model;
+  const where =
+    saved.transport === "http"
+      ? "ваш сервис"
+      : saved.provider === "anthropic"
+        ? MODELS.find((m) => m.id === saved.model)?.label ?? saved.model
+        : `${providerLabel(saved.provider)} · ${saved.model}`;
 
   return (
     <div className="card-flat px-5 py-5">
@@ -279,6 +322,35 @@ function AgentCard({
               </button>
             </div>
           </div>
+
+          {transport === "model" ? (
+            <div>
+              <span className="label-caps">Чем думает агент</span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {PROVIDERS.map((pr) => (
+                  <button
+                    key={pr.id}
+                    onClick={() => {
+                      setProvider(pr.id);
+                      // Имя модели принадлежит провайдеру: claude-opus-5 в GPT
+                      // не существует, и оставлять его — готовая ошибка.
+                      setModel(DEFAULT_MODEL_OF[pr.id]);
+                      setDone(false);
+                    }}
+                    className={`btn text-[12px] ${provider === pr.id ? "btn-primary" : "btn-glass"}`}
+                  >
+                    {pr.label}
+                  </button>
+                ))}
+              </div>
+              <p className="measure mt-2 text-[11.5px] text-muted-foreground">
+                {PROVIDERS.find((pr) => pr.id === provider)?.hint}
+                {provider !== "anthropic"
+                  ? ". Роли и инструкции остаются те же — меняется только тот, кто их отыгрывает."
+                  : ""}
+              </p>
+            </div>
+          ) : null}
 
           {transport === "http" ? (
             <div className="space-y-3">
@@ -393,27 +465,53 @@ function AgentCard({
           <div className="flex flex-wrap items-end gap-3">
             <label className="block">
               <span className="label-caps">Модель</span>
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="mt-1.5 rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none"
-              >
-                {MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+              {provider === "anthropic" || transport === "http" ? (
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="mt-1.5 rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none"
+                >
+                  {MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <>
+                  <input
+                    value={model}
+                    onChange={(e) => {
+                      setModel(e.target.value);
+                      setDone(false);
+                    }}
+                    list={`models-${id}`}
+                    spellCheck={false}
+                    placeholder={DEFAULT_MODEL_OF[provider]}
+                    className="mt-1.5 w-[240px] rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+                  />
+                  <datalist id={`models-${id}`}>
+                    {(MODEL_HINTS[provider] ?? []).map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                </>
+              )}
             </label>
             <button onClick={save} disabled={busy} className="btn btn-primary text-[13px] disabled:opacity-50">
               {busy ? "Сохраняю" : "Сохранить"}
             </button>
-            {transport === "http" && saved.endpoint ? (
+            {transport === "model" || saved.endpoint ? (
               <button onClick={checkLink} disabled={busy} className="btn btn-glass text-[13px] disabled:opacity-50">
                 Проверить связь
               </button>
             ) : null}
             {done ? <span className="text-[12px] text-muted-foreground">Сохранено</span> : null}
+            {transport === "model" ? (
+              <span className="text-[11.5px] text-muted-foreground">
+                Проверка идёт по сохранённой настройке — сначала «Сохранить»
+              </span>
+            ) : null}
           </div>
 
           <div className="border-t border-[color:var(--color-line)] pt-4">
@@ -521,11 +619,11 @@ function Roles({
                   <input value={r.name} onChange={(e) => patch(i, "name", e.target.value)} className={inputCls} />
                 </label>
                 <label className="block">
-                  <span className="label-caps">Группа</span>
+                  <span className="label-caps">Группа — для порядка, клиенту не видна</span>
                   <input
                     value={r.group}
                     onChange={(e) => patch(i, "group", e.target.value)}
-                    placeholder="например: Лестница согласования"
+                    placeholder="служебная пометка"
                     className={inputCls}
                   />
                 </label>

@@ -64,12 +64,28 @@ export const writeWindows = (personId: string, list: StoredWindow[]) =>
 
 export const today = () => new Date().toLocaleDateString("ru-RU");
 
-// ── Ключ модели ───────────────────────────────────────────────────────────────
-// Лежит отдельным файлом с правами 600 и наружу не отдаётся никогда.
+// ── Ключи моделей ─────────────────────────────────────────────────────────────
+// Лежат отдельным файлом с правами 600 и наружу не отдаются никогда.
+// Ключ на каждого провайдера свой: так видно расход по каждому отдельно,
+// и отзыв одного не роняет остальных.
 
 const secretsFile = () => `${dataDir()}/secrets.json`;
 
-type Secrets = { anthropicKey?: string; agentAuth?: Record<string, string> };
+type Secrets = {
+  anthropicKey?: string;
+  openaiKey?: string;
+  geminiKey?: string;
+  agentAuth?: Record<string, string>;
+};
+
+/** Поле в secrets.json и запасной путь через переменную окружения. */
+const KEY_FIELD = {
+  anthropic: { field: "anthropicKey", env: "ANTHROPIC_API_KEY" },
+  openai: { field: "openaiKey", env: "OPENAI_API_KEY" },
+  gemini: { field: "geminiKey", env: "GEMINI_API_KEY" },
+} as const;
+
+export type KeyProvider = keyof typeof KEY_FIELD;
 
 const readSecrets = () => readJson<Secrets>(secretsFile(), {});
 
@@ -79,14 +95,16 @@ async function writeSecrets(next: Secrets): Promise<void> {
   await chmod(secretsFile(), 0o600);
 }
 
-export async function readApiKey(): Promise<string> {
+export async function readApiKey(provider: KeyProvider = "anthropic"): Promise<string> {
+  const { field, env } = KEY_FIELD[provider] ?? KEY_FIELD.anthropic;
   const raw = await readSecrets();
-  return raw.anthropicKey?.trim() || process.env["ANTHROPIC_API_KEY"]?.trim() || "";
+  return raw[field]?.trim() || process.env[env]?.trim() || "";
 }
 
-export async function writeApiKey(key: string): Promise<void> {
+export async function writeApiKey(provider: KeyProvider, key: string): Promise<void> {
+  const { field } = KEY_FIELD[provider] ?? KEY_FIELD.anthropic;
   const cur = await readSecrets();
-  await writeSecrets({ ...cur, anthropicKey: key });
+  await writeSecrets({ ...cur, [field]: key });
 }
 
 /** Секрет доступа к чужому API — свой на каждого агента. */

@@ -11,6 +11,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 
 import type { Attachment } from "./documents";
 import type { StoredMessage } from "./conversations";
+import { providerLabel, type Provider } from "./providers";
 
 /** Локальный вход в транзит — тот же, через который ходит Kotu. */
 const BASE_URL = process.env["ANTHROPIC_BASE_URL"]?.trim() || "http://127.0.0.1:8444/anthropic";
@@ -86,13 +87,24 @@ export async function askAgent(opts: {
   history: StoredMessage[];
   question: string;
   attachments?: Attachment[];
+  /** Чем думает агент. По умолчанию Claude — так было до появления выбора */
+  provider?: Provider;
   /** Для журнала: кто и с каким агентом говорит */
   label?: string;
 }): Promise<AskResult> {
+  const provider: Provider = opts.provider ?? "anthropic";
   const { readApiKey } = await import("./server-data");
-  const apiKey = await readApiKey();
-  if (!apiKey) return { ok: false, reason: "no-key" };
+  const apiKey = await readApiKey(provider);
+  // Ключ свой у каждого провайдера — человеку важно знать, какого не хватает.
+  if (!apiKey) return { ok: false, reason: "no-key", detail: providerLabel(provider) };
   if (!opts.systemPrompt.trim()) return { ok: false, reason: "not-configured" };
+
+  // GPT и Gemini живут в отдельном модуле: у них другая форма запроса и
+  // другая работа с документами, и мешать это с кодом Claude незачем.
+  if (provider !== "anthropic") {
+    const { askAlt } = await import("./server-llm-alt");
+    return askAlt(provider, opts, apiKey);
+  }
 
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   // Повторы — не роскошь: при тридцати одновременных разговорах модель

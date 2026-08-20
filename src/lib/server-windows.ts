@@ -172,6 +172,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         return askAgent({
           systemPrompt,
           model: cfg?.model ?? "claude-opus-5",
+          ...(cfg?.provider ? { provider: cfg.provider } : {}),
           history,
           question: text,
           attachments,
@@ -187,7 +188,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     const reply = answer.ok
       ? answer.text
       : answer.reason === "no-key"
-        ? "Агент настроен, но ключ модели ещё не задан — администратор вписывает его в своей панели. Вопрос сохранён."
+        ? `Агент настроен, но ключ модели${answer.detail ? ` ${answer.detail}` : ""} ещё не задан — администратор вписывает его в своей панели. Вопрос сохранён.`
         : answer.reason === "not-configured"
           ? "Этому агенту ещё не задали инструкцию — администратор вписывает её в своей панели. Вопрос сохранён."
           : answer.reason === "busy"

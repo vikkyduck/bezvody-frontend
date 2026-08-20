@@ -12,6 +12,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { DEFAULT_ROLES, ROLE_RULES, type AgentRole } from "./roles";
+import { DEFAULT_MODEL_OF, PROVIDERS, isProvider, type Provider } from "./providers";
 
 /** Чем работает агент: моделью напрямую или готовым сервисом по HTTP. */
 export type Transport = "model" | "http";
@@ -19,6 +20,8 @@ export type Transport = "model" | "http";
 export type AgentConfig = {
   /** Системный промпт: кто агент и как работает */
   prompt: string;
+  /** Чем думает агент: Claude, GPT или Gemini. Ключ у каждого свой */
+  provider: Provider;
   /** Правило завершения — дописывается к инструкции последним абзацем */
   finishRule: string;
   model: string;
@@ -43,12 +46,22 @@ export type AgentConfig = {
 
 export type AgentConfigMap = Record<string, AgentConfig>;
 
-/** Что видит администратор: настройки агентов плюс признак ключа. */
+/** Задан ли ключ провайдера. Сам ключ наружу не отдаётся никогда. */
+export type KeyState = { set: boolean; tail: string };
+
+/** Что видит администратор: настройки агентов плюс признаки ключей. */
 export type AgentSettings = {
   agents: AgentConfigMap;
-  keySet: boolean;
-  keyTail: string;
+  keys: Record<Provider, KeyState>;
 };
+
+export const emptyKeys = (): Record<Provider, KeyState> => ({
+  anthropic: { set: false, tail: "" },
+  openai: { set: false, tail: "" },
+  gemini: { set: false, tail: "" },
+});
+
+const emptySettings = (): AgentSettings => ({ agents: {}, keys: emptyKeys() });
 
 export const MODELS = [
   { id: "claude-opus-5", label: "Opus 5 — самый сильный" },
@@ -97,6 +110,7 @@ export const DEFAULT_FINISH_RULE = `Ответ всегда состоит из 
 
 export const emptyConfig = (): AgentConfig => ({
   prompt: "",
+  provider: "anthropic",
   finishRule: DEFAULT_FINISH_RULE,
   model: DEFAULT_MODEL,
   enabled: false,
@@ -116,6 +130,8 @@ export function normalizeConfig(c: Partial<AgentConfig> | undefined): AgentConfi
   return {
     ...base,
     finishRule: c && "finishRule" in c ? (c.finishRule ?? "") : DEFAULT_FINISH_RULE,
+    // Записи, сделанные до появления выбора модели, работали на Claude.
+    provider: isProvider(base.provider) ? base.provider : "anthropic",
     authSet: Boolean(base.authSet),
   };
 }
@@ -159,12 +175,21 @@ export const getAgentSettingsServer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<AgentSettings> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me || me.role !== "admin") return { agents: {}, keySet: false, keyTail: "" };
+    if (!me || me.role !== "admin") return emptySettings();
 
     const agents = await withAuthFlags(d, await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {}));
-    const key = await d.readApiKey();
-    return { agents, keySet: Boolean(key), keyTail: key ? key.slice(-4) : "" };
+    return { agents, keys: await keysSummary(d) };
   });
+
+/** По каждому провайдеру: задан ли ключ и его хвост — сверить, тот ли это ключ. */
+async function keysSummary(d: typeof import("./server-data")): Promise<Record<Provider, KeyState>> {
+  const out = emptyKeys();
+  for (const { id } of PROVIDERS) {
+    const key = await d.readApiKey(id);
+    out[id] = { set: Boolean(key), tail: key ? key.slice(-4) : "" };
+  }
+  return out;
+}
 
 /** Проставляем «секрет задан», не раскрывая сам секрет. */
 async function withAuthFlags(
@@ -185,6 +210,7 @@ export const saveAgentServer = createServerFn({ method: "POST" })
       agentId: string;
       prompt: string;
       finishRule?: string;
+      provider?: Provider;
       model: string;
       transport?: Transport;
       endpoint?: string;
@@ -199,13 +225,14 @@ export const saveAgentServer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<AgentSettings> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me || me.role !== "admin") return { agents: {}, keySet: false, keyTail: "" };
+    if (!me || me.role !== "admin") return emptySettings();
 
     const file = `${d.dataDir()}/agents.json`;
     const agents = await d.readJson<AgentConfigMap>(file, {});
     const prev = normalizeConfig(agents[data.agentId]);
     const prompt = String(data.prompt ?? "").trim();
     const transport = data.transport ?? prev.transport;
+    const provider: Provider = isProvider(data.provider) ? data.provider : prev.provider;
     const endpoint = (data.endpoint ?? prev.endpoint).trim();
 
     if (data.auth === "-") await d.writeAgentAuth(data.agentId, "");
@@ -217,9 +244,17 @@ export const saveAgentServer = createServerFn({ method: "POST" })
     agents[data.agentId] = {
       ...prev,
       prompt,
+      provider,
       ...(roles ? { roles } : {}),
       finishRule: data.finishRule ?? prev.finishRule,
-      model: MODELS.some((m) => m.id === data.model) ? data.model : DEFAULT_MODEL,
+      // У Claude модель выбирается из нашего списка, у чужих провайдеров имя
+      // вписывается руками: их линейки меняются чаще, чем мы правим код.
+      model:
+        provider === "anthropic"
+          ? MODELS.some((m) => m.id === data.model)
+            ? data.model
+            : DEFAULT_MODEL
+          : String(data.model ?? "").trim().slice(0, 100) || DEFAULT_MODEL_OF[provider],
       transport,
       endpoint,
       authHeader: (data.authHeader ?? prev.authHeader).trim() || "Authorization",
@@ -235,21 +270,20 @@ export const saveAgentServer = createServerFn({ method: "POST" })
     };
     await d.writeJson(file, agents);
 
-    const key = await d.readApiKey();
-    return { agents: await withAuthFlags(d, agents), keySet: Boolean(key), keyTail: key ? key.slice(-4) : "" };
+    return { agents: await withAuthFlags(d, agents), keys: await keysSummary(d) };
   });
 
 export const saveApiKeyServer = createServerFn({ method: "POST" })
-  .validator((data: { code: string; key: string }) => data)
+  .validator((data: { code: string; key: string; provider?: Provider }) => data)
   .handler(async ({ data }): Promise<AgentSettings> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me || me.role !== "admin") return { agents: {}, keySet: false, keyTail: "" };
+    if (!me || me.role !== "admin") return emptySettings();
 
-    await d.writeApiKey(String(data.key ?? "").trim());
+    const provider: Provider = isProvider(data.provider) ? data.provider : "anthropic";
+    await d.writeApiKey(provider, String(data.key ?? "").trim());
     const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
-    const key = await d.readApiKey();
-    return { agents, keySet: Boolean(key), keyTail: key ? key.slice(-4) : "" };
+    return { agents, keys: await keysSummary(d) };
   });
 
 /**
@@ -266,7 +300,34 @@ export const testAgentServer = createServerFn({ method: "POST" })
 
     const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
     const cfg = normalizeConfig(agents[data.agentId]);
-    if (cfg.transport !== "http") return { ok: false, detail: "агент работает напрямую через модель", raw: "", text: "" };
+
+    // Агент на модели: проверяем, что ключ и имя модели рабочие. Это главный
+    // способ узнать правду про чужого провайдера — их линейки меняются, и
+    // ответ на живой запрос честнее любого списка в коде.
+    if (cfg.transport === "model") {
+      const { askAgent } = await import("./server-llm");
+      const res = await askAgent({
+        systemPrompt: "Отвечай кратко и по-русски.",
+        model: cfg.model,
+        provider: cfg.provider,
+        history: [],
+        question: "Проверка связи. Ответь одним предложением: какая ты модель.",
+        label: `${data.agentId} · проверка связи`,
+      });
+      return res.ok
+        ? { ok: true, detail: `связь есть · ${cfg.provider} · ${cfg.model}`, raw: "", text: res.text }
+        : {
+            ok: false,
+            detail:
+              res.reason === "no-key"
+                ? `ключ ${res.detail ?? cfg.provider} не задан`
+                : res.reason === "busy"
+                  ? "провайдер отвечает «занято» — попробуйте через минуту"
+                  : (res.detail ?? "связи нет"),
+            raw: "",
+            text: "",
+          };
+    }
 
     const { callHttpAgent } = await import("./server-http-agent");
     const res = await callHttpAgent({
