@@ -77,12 +77,6 @@ export const MODELS = [
 
 export const DEFAULT_MODEL = "claude-opus-5";
 
-/** Модель по умолчанию для агента. Архитектор и советы на Sonnet, остальные тоже. */
-export const defaultModelOf = (agentId: string): string => {
-  if (agentId === "neurocouncil") return "claude-opus-5";
-  return "claude-sonnet-5";
-};
-
 /**
  * Правило завершения работы. Дописывается к инструкции каждого агента.
  *
@@ -123,7 +117,7 @@ export const DEFAULT_FINISH_RULE = `Ответ всегда состоит из 
 export const emptyConfig = (agentId?: string): AgentConfig => ({
   prompt: "",
   provider: "anthropic",
-  model: agentId ? defaultModelOf(agentId) : DEFAULT_MODEL,
+  model: DEFAULT_MODEL,
   finishRule: DEFAULT_FINISH_RULE,
   enabled: false,
   updatedAt: null,
@@ -264,7 +258,7 @@ export const saveAgentServer = createServerFn({ method: "POST" })
         provider === "anthropic"
           ? MODELS.some((m) => m.id === data.model)
             ? data.model
-            : defaultModelOf(data.agentId)
+            : DEFAULT_MODEL
           : String(data.model ?? "").trim().slice(0, 100) || DEFAULT_MODEL_OF[provider],
       transport,
       endpoint,
