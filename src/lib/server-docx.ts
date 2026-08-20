@@ -17,6 +17,7 @@ import {
   ExternalHyperlink,
   Footer,
   HeadingLevel,
+  PageBreak,
   PageNumber,
   Packer,
   Paragraph,
@@ -29,7 +30,7 @@ import {
   type ISectionOptions,
   type ParagraphChild,
 } from "docx";
-import type { Root, RootContent, PhrasingContent, TableCell as MdTableCell } from "mdast";
+import type { Root, RootContent, PhrasingContent, Heading, TableCell as MdTableCell } from "mdast";
 
 const FONT = "Calibri";
 const INK = "1A1A1A";
@@ -268,6 +269,32 @@ function blocks(nodes: readonly RootContent[], depth = 0): (Paragraph | Table)[]
   return out;
 }
 
+// ── Две части ответа ─────────────────────────────────────────────────────────
+/**
+ * Ответ агента состоит из документа и разбора фактуры. Согласующим несут
+ * первое, автору нужно второе — поэтому в файле они не перемешаны: разбор
+ * уходит приложением с новой страницы, и его легко отрезать перед отправкой.
+ *
+ * Если агент не разметил части (старый ответ, свой текст правила) — весь
+ * текст идёт документом. Потерять кусок хуже, чем не разделить.
+ */
+const headingText = (h: Heading): string =>
+  h.children.map((c) => ("value" in c ? c.value : "")).join(" ").trim().toLowerCase();
+
+const isReviewHeading = (n: RootContent): boolean =>
+  n.type === "heading" && /разбор|вопрос/.test(headingText(n));
+
+const isDocumentHeading = (n: RootContent): boolean =>
+  n.type === "heading" && /^документ$/.test(headingText(n));
+
+function splitAnswer(all: RootContent[]): { main: RootContent[]; review: RootContent[] } {
+  const at = all.findIndex(isReviewHeading);
+  const main = at >= 0 ? all.slice(0, at) : all;
+  const review = at >= 0 ? all.slice(at + 1) : [];
+  // Заголовок «Документ» дублирует шапку файла — он там уже есть.
+  return { main: main.length && isDocumentHeading(main[0]!) ? main.slice(1) : main, review };
+}
+
 // ── Документ целиком ──────────────────────────────────────────────────────────
 
 export type DocxMeta = {
@@ -291,7 +318,30 @@ export async function answerToDocx(markdown: string, meta: DocxMeta): Promise<Bu
     mdastExtensions: [gfmFromMarkdown()],
   }) as Root;
 
-  const body = blocks(tree.children);
+  const { main, review } = splitAnswer(tree.children);
+  const body = blocks(main);
+
+  const appendix: (Paragraph | Table)[] = review.length
+    ? [
+        new Paragraph({ children: [new PageBreak()] }),
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun({ text: "Приложение. Разбор и вопросы", bold: true })],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: "Эта часть — автору документа, а не согласующим: что в фактуре сильное и слабое, чем закрыть пустые графы. Перед отправкой её можно убрать.",
+              italics: true,
+              color: MUTED,
+              size: 19,
+            }),
+          ],
+          spacing: { after: 200 },
+        }),
+        ...blocks(review),
+      ]
+    : [];
 
   const head: (Paragraph | Table)[] = [
     new Paragraph({
@@ -344,7 +394,7 @@ export async function answerToDocx(markdown: string, meta: DocxMeta): Promise<Bu
         ],
       }),
     },
-    children: [...head, ...body],
+    children: [...head, ...body, ...appendix],
   };
 
   const doc = new Document({
