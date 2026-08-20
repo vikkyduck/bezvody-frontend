@@ -11,6 +11,7 @@ import {
 } from "@/lib/server-files";
 import { useSession } from "@/lib/session";
 import {
+  DEFAULT_FINISH_RULE,
   DEFAULT_MODEL,
   MODELS,
   getAgentSettingsServer,
@@ -153,6 +154,7 @@ function AgentCard({
   const saved = normalizeConfig(settings.agents[id]);
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState(saved.prompt);
+  const [finishRule, setFinishRule] = useState(saved.finishRule);
   const [model, setModel] = useState(saved.model || DEFAULT_MODEL);
   const [transport, setTransport] = useState<Transport>(saved.transport);
   const [endpoint, setEndpoint] = useState(saved.endpoint);
@@ -167,12 +169,13 @@ function AgentCard({
   useEffect(() => {
     if (open) return;
     setPrompt(saved.prompt);
+    setFinishRule(saved.finishRule);
     setModel(saved.model || DEFAULT_MODEL);
     setTransport(saved.transport);
     setEndpoint(saved.endpoint);
     setAuthHeader(saved.authHeader);
     setFormat(saved.format);
-  }, [open, saved.prompt, saved.model, saved.transport, saved.endpoint, saved.authHeader, saved.format]);
+  }, [open, saved.prompt, saved.finishRule, saved.model, saved.transport, saved.endpoint, saved.authHeader, saved.format]);
 
   async function save() {
     if (!code) return;
@@ -182,7 +185,7 @@ function AgentCard({
     try {
       onSaved(
         await saveAgentServer({
-          data: { code, agentId: id, prompt, model, transport, endpoint, authHeader, format, auth },
+          data: { code, agentId: id, prompt, finishRule, model, transport, endpoint, authHeader, format, auth },
         }),
       );
       setAuth("");
@@ -323,6 +326,36 @@ function AgentCard({
               className="mt-1.5 w-full resize-y rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-3 text-[13px] leading-relaxed outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
             />
           </label>
+
+          <div>
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <span className="label-caps">Чем заканчивать работу</span>
+              {finishRule.trim() !== DEFAULT_FINISH_RULE.trim() ? (
+                <button
+                  onClick={() => setFinishRule(DEFAULT_FINISH_RULE)}
+                  className="text-[11.5px] text-muted-foreground underline underline-offset-4"
+                >
+                  вернуть правило платформы
+                </button>
+              ) : null}
+            </div>
+            <p className="measure mt-1 text-[12px] text-muted-foreground">
+              Дописывается к инструкции последним абзацем. Нужно ради одного: агент доходил до
+              рекомендаций и останавливался — уточнял, предлагал собрать документ «если нужно», —
+              и человек оставался с перепиской. Неполный документ можно дополнить, отсутствующий — нет.
+              Очистите поле, если этому агенту правило мешает.
+            </p>
+            <textarea
+              value={finishRule}
+              onChange={(e) => {
+                setFinishRule(e.target.value);
+                setDone(false);
+              }}
+              rows={7}
+              placeholder="Пусто — агент заканчивает работу так, как решит сам"
+              className="mt-2 w-full resize-y rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-3 text-[12.5px] leading-relaxed outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+            />
+          </div>
 
           <div className="flex flex-wrap items-end gap-3">
             <label className="block">

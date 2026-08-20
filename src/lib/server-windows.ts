@@ -8,6 +8,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { shortTitle, type StoredWindow } from "./conversations";
+import { systemPromptOf, type AgentConfig } from "./server-agents";
 
 const stamp = () => new Date().toISOString();
 const rid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 9)}`;
@@ -99,23 +100,11 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     }
 
     // Спрашиваем модель. Историю передаём ту, что была ДО этого вопроса.
-    const cfgAll = await d.readJson<
-      Record<
-        string,
-        {
-          prompt: string;
-          model: string;
-          transport?: "model" | "http";
-          endpoint?: string;
-          authHeader?: string;
-          format?: "openai" | "simple";
-        }
-      >
-    >(
-      `${d.dataDir()}/agents.json`,
-      {},
-    );
+    const cfgAll = await d.readJson<Record<string, Partial<AgentConfig>>>(`${d.dataDir()}/agents.json`, {});
     const cfg = cfgAll[target.agentId];
+    // Инструкция агента плюс правило завершения: команда должна получить
+    // документ, а не переписку с уточнениями.
+    const systemPrompt = systemPromptOf(cfg);
     q.startAsking(key);
 
     // Документы: постоянные у агента, принесённые в окно и прочитанные по ссылкам.
@@ -146,7 +135,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
               ...(cfg.model ? { model: cfg.model } : {}),
             },
             auth: agentAuth,
-            systemPrompt: cfg.prompt ?? "",
+            systemPrompt,
             history: target.messages,
             question: text,
             attachments,
@@ -158,7 +147,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
 
         const { askAgent } = await import("./server-llm");
         return askAgent({
-          systemPrompt: cfg?.prompt ?? "",
+          systemPrompt,
           model: cfg?.model ?? "claude-opus-5",
           history: target.messages,
           question: text,

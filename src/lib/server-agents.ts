@@ -17,6 +17,8 @@ export type Transport = "model" | "http";
 export type AgentConfig = {
   /** Системный промпт: кто агент и как работает */
   prompt: string;
+  /** Правило завершения — дописывается к инструкции последним абзацем */
+  finishRule: string;
   model: string;
   /** Пока не настроен, агент честно говорит об этом клиенту */
   enabled: boolean;
@@ -48,8 +50,30 @@ export const MODELS = [
 
 export const DEFAULT_MODEL = "claude-opus-5";
 
+/**
+ * Правило завершения работы. Дописывается к инструкции каждого агента.
+ *
+ * Оно решает одну конкретную беду: агент доходил до рекомендаций и
+ * останавливался — уточнял, спрашивал разрешения, предлагал «собрать, если
+ * нужно». Человек оставался с перепиской вместо документа. Команде нужен
+ * документ, даже неполный: неполный можно дополнить, отсутствующий — нельзя.
+ *
+ * Лежит отдельным полем, а не внутри инструкции: инструкцию пишет методолог
+ * под задачу, а это — общее правило платформы, и видно, что оно включено.
+ */
+export const DEFAULT_FINISH_RULE = `Всегда доводи работу до готового документа.
+
+Если данных не хватает — не останавливайся на вопросах и не ограничивайся рекомендациями: собери документ из того, что есть.
+— не спрашивай разрешения собрать документ, собирай;
+— где данных нет, так и пиши в тексте: «данных нет» или «предположение», — но раздел не пропускай;
+— каждое утверждение, взятое из присланных материалов, помечай источником;
+— в конце документа отдельным блоком перечисли, чего не хватило и какой вывод это может изменить.
+
+Уточняющие вопросы уместны только после готового документа, отдельным списком в конце.`;
+
 export const emptyConfig = (): AgentConfig => ({
   prompt: "",
+  finishRule: DEFAULT_FINISH_RULE,
   model: DEFAULT_MODEL,
   enabled: false,
   updatedAt: null,
@@ -63,7 +87,22 @@ export const emptyConfig = (): AgentConfig => ({
 /** Старая запись могла быть без новых полей — добиваем значениями по умолчанию. */
 export function normalizeConfig(c: Partial<AgentConfig> | undefined): AgentConfig {
   const base = { ...emptyConfig(), ...(c ?? {}) };
-  return { ...base, authSet: Boolean(base.authSet) };
+  // Запись, сделанная до появления правила, получает его по умолчанию:
+  // включать руками каждому агенту — лишний повод забыть.
+  return {
+    ...base,
+    finishRule: c && "finishRule" in c ? (c.finishRule ?? "") : DEFAULT_FINISH_RULE,
+    authSet: Boolean(base.authSet),
+  };
+}
+
+/** Что уедет модели: инструкция агента плюс правило завершения. */
+export function systemPromptOf(cfg: Partial<AgentConfig> | undefined): string {
+  const c = normalizeConfig(cfg);
+  const rule = c.finishRule.trim();
+  const prompt = c.prompt.trim();
+  if (!prompt) return "";
+  return rule ? `${prompt}\n\n---\n\n${rule}` : prompt;
 }
 
 // ── Чтение и запись ───────────────────────────────────────────────────────────
@@ -98,6 +137,7 @@ export const saveAgentServer = createServerFn({ method: "POST" })
       code: string;
       agentId: string;
       prompt: string;
+      finishRule?: string;
       model: string;
       transport?: Transport;
       endpoint?: string;
@@ -125,6 +165,7 @@ export const saveAgentServer = createServerFn({ method: "POST" })
     agents[data.agentId] = {
       ...prev,
       prompt,
+      finishRule: data.finishRule ?? prev.finishRule,
       model: MODELS.some((m) => m.id === data.model) ? data.model : DEFAULT_MODEL,
       transport,
       endpoint,
@@ -173,7 +214,7 @@ export const testAgentServer = createServerFn({ method: "POST" })
     const res = await callHttpAgent({
       settings: { endpoint: cfg.endpoint, authHeader: cfg.authHeader, format: cfg.format, model: cfg.model },
       auth: await d.readAgentAuth(data.agentId),
-      systemPrompt: cfg.prompt,
+      systemPrompt: systemPromptOf(cfg),
       history: [],
       question: "Проверка связи. Ответь одним предложением, что ты за агент.",
       timeoutMs: 60_000,
