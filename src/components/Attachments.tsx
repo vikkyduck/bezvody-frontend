@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 
 import { MAX_FILE_BYTES, SUPPORTED_HINT, fileNote, humanSize, type StoredFile } from "@/lib/documents";
 
@@ -15,6 +15,31 @@ import { MAX_FILE_BYTES, SUPPORTED_HINT, fileNote, humanSize, type StoredFile } 
  */
 
 type DownloadResult = { ok: boolean; name: string; mime: string; base64: string };
+
+/**
+ * Пока файл едет, видно, что он едет.
+ *
+ * Стомегабайтная выгрузка по обычному каналу уходит минуту-другую, и без
+ * счётчика это неотличимо от зависшей кнопки: человек жмёт ещё раз или уходит.
+ * Точных процентов дать не можем — браузер их для таких запросов не сообщает,
+ * — поэтому показываем честное: имя, вес и сколько уже идёт.
+ */
+function Uploading({ name, size }: { name: string; size: number }) {
+  const [sec, setSec] = useState(0);
+
+  useEffect(() => {
+    setSec(0);
+    const id = setInterval(() => setSec((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [name]);
+
+  return (
+    <>
+      {name} · {humanSize(size)} · {sec} с
+      {size > 20 * 1024 * 1024 ? " — большой файл, это займёт время" : ""}
+    </>
+  );
+}
 
 export function Attachments({
   files,
@@ -36,7 +61,7 @@ export function Attachments({
   compact?: boolean;
 }) {
   const picker = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState("");
+  const [busy, setBusy] = useState<{ name: string; size: number } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [over, setOver] = useState(false);
 
@@ -48,7 +73,7 @@ export function Attachments({
     // По одному: так видно, какой именно файл не прошёл, и сервер не давится
     // десятком тяжёлых загрузок разом.
     for (const file of Array.from(list)) {
-      setBusy(file.name);
+      setBusy({ name: file.name, size: file.size });
       try {
         const err = await onUpload(file);
         if (err) problems.push(err);
@@ -56,7 +81,7 @@ export function Attachments({
         problems.push(`${file.name}: не удалось загрузить`);
       }
     }
-    setBusy("");
+    setBusy(null);
     setErrors(problems);
     if (picker.current) picker.current.value = "";
   }
@@ -112,16 +137,23 @@ export function Attachments({
               }
             >
               <span className="min-w-0">
-                {onDownload ? (
+                {/* Скачивать нечего, если файл не приехал: у неоткрывшейся
+                    ссылки есть только имя и причина. */}
+                {onDownload && f.size > 0 ? (
                   <button
                     onClick={() => void save(f)}
-                    title="Скачать"
+                    title={f.source ? `Скачать · ${f.source}` : "Скачать"}
                     className={`block max-w-[420px] truncate text-left ${compact ? "text-[12px]" : "text-[14px]"} underline decoration-[color:var(--color-line)] underline-offset-4 hover:decoration-current`}
                   >
                     {f.name}
                   </button>
                 ) : (
-                  <span className={`block max-w-[420px] truncate ${compact ? "text-[12px]" : "text-[14px]"}`}>{f.name}</span>
+                  <span
+                    title={f.source}
+                    className={`block max-w-[420px] truncate ${compact ? "text-[12px]" : "text-[14px]"}`}
+                  >
+                    {f.name}
+                  </span>
                 )}
                 {compact ? null : (
                   <span className={`mt-0.5 block text-[12px] ${f.note ? "text-[color:var(--color-error)]" : "text-muted-foreground"}`}>
@@ -165,12 +197,16 @@ export function Attachments({
               disabled={Boolean(busy) || full}
               className="btn btn-glass text-[12px] disabled:opacity-40"
             >
-              {busy ? `Читаю ${busy}` : "Прикрепить документ"}
+              {busy ? "Загружаю" : "Прикрепить документ"}
             </button>
             <span className="text-[11.5px] text-muted-foreground">
-              {full
-                ? `Больше ${max} документов сюда не поместится — уберите лишние`
-                : `${SUPPORTED_HINT} · до ${humanSize(MAX_FILE_BYTES)} · можно перетащить мышью`}
+              {busy ? (
+                <Uploading name={busy.name} size={busy.size} />
+              ) : full ? (
+                `Больше ${max} документов сюда не поместится — уберите лишние`
+              ) : (
+                `${SUPPORTED_HINT} · до ${humanSize(MAX_FILE_BYTES)} · можно перетащить мышью или прислать ссылкой в сообщении`
+              )}
             </span>
           </div>
         </div>

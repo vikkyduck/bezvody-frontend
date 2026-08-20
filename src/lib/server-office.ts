@@ -10,7 +10,14 @@
  * модель читает сама, целиком и с вёрсткой.
  */
 
-type ZipEntry = { name: string; read: () => Buffer };
+type ZipEntry = { name: string; size: number; read: () => Buffer };
+
+/**
+ * Сколько распакованного XML готовы держать в памяти.
+ * Office-файл — это архив, и стомегабайтная книга разворачивается в гигабайты.
+ * Лучше честно сказать «не осилили», чем уронить сервис всем сразу.
+ */
+const MAX_UNPACKED = 200 * 1024 * 1024;
 
 // ── Zip ───────────────────────────────────────────────────────────────────────
 
@@ -40,6 +47,7 @@ async function openZip(buf: Buffer): Promise<Map<string, ZipEntry>> {
     if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) break;
     const method = buf.readUInt16LE(p + 10);
     const compSize = buf.readUInt32LE(p + 20);
+    const rawSize = buf.readUInt32LE(p + 24);
     const nameLen = buf.readUInt16LE(p + 28);
     const extraLen = buf.readUInt16LE(p + 30);
     const commentLen = buf.readUInt16LE(p + 32);
@@ -48,7 +56,9 @@ async function openZip(buf: Buffer): Promise<Map<string, ZipEntry>> {
 
     out.set(name, {
       name,
+      size: rawSize,
       read: () => {
+        if (rawSize > MAX_UNPACKED) throw new Error("файл слишком тяжёлый, чтобы разобрать его целиком");
         if (buf.readUInt32LE(localAt) !== 0x04034b50) throw new Error("битый документ");
         const dataAt = localAt + 30 + buf.readUInt16LE(localAt + 26) + buf.readUInt16LE(localAt + 28);
         const raw = buf.subarray(dataAt, dataAt + compSize);
@@ -68,7 +78,7 @@ const textOf = (zip: Map<string, ZipEntry>, name: string): string => {
 
 // ── XML ───────────────────────────────────────────────────────────────────────
 
-function decodeEntities(s: string): string {
+export function decodeEntities(s: string): string {
   return s
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))

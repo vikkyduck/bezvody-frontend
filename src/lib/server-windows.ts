@@ -59,10 +59,23 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     const text = String(data.text ?? "").trim();
     if (!me || !text) return { windows: [] as StoredWindow[] };
 
-    const windows = await d.readWindows(me.id);
+    let windows = await d.readWindows(me.id);
 
     const target = windows.find((w) => w.id === data.windowId);
     if (!target) return { windows };
+
+    // Ссылки из вопроса читаем ДО того, как спросить агента: он должен
+    // получить документ, а не отвечать «доступа к внешним файлам у меня нет».
+    // Сохраняем сразу — тогда прочитанное останется в окне, даже если модель
+    // потом не ответит.
+    const { attachmentsFor, readLinks } = await import("./server-files");
+    const fromLinks = await readLinks({ text, personId: me.id, already: target.files });
+    let files = target.files;
+    if (fromLinks.length) {
+      files = [...files, ...fromLinks];
+      windows = windows.map((w) => (w.id === target.id ? { ...w, files, updatedAt: stamp() } : w));
+      await d.writeWindows(me.id, windows);
+    }
 
     // Спрашиваем модель. Историю передаём ту, что была ДО этого вопроса.
     const cfgAll = await d.readJson<
@@ -83,12 +96,11 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     );
     const cfg = cfgAll[target.agentId];
 
-    // Документы: постоянные у агента плюс принесённые в это окно.
-    const { attachmentsFor } = await import("./server-files");
+    // Документы: постоянные у агента, принесённые в окно и прочитанные по ссылкам.
     const attachments = await attachmentsFor({
       agentId: target.agentId,
       personId: me.id,
-      windowFiles: target.files,
+      windowFiles: files,
     });
 
     let answer: { ok: true; text: string } | { ok: false; reason: string; detail?: string };

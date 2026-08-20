@@ -25,6 +25,8 @@ export type StoredFile = {
   id: string;
   /** Имя, как его назвал человек: показываем и отдаём при скачивании */
   name: string;
+  /** Откуда приехал, если его не приносили руками: адрес ссылки */
+  source?: string;
   mime: string;
   size: number;
   kind: DocKind;
@@ -39,12 +41,23 @@ export type StoredFile = {
 // Ограничения не выдуманы: 32 МБ — потолок запроса к модели, а окно контекста
 // не резиновое. Лучше сказать об этом при загрузке, чем оборвать ответ на полуслове.
 
-export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_WINDOW_FILES = 15;
 export const MAX_AGENT_FILES = 10;
 /** Сколько всего весят документы одного окна — чтобы диск не рос без спроса */
-export const MAX_WINDOW_BYTES = 80 * 1024 * 1024;
-export const MAX_AGENT_BYTES = 40 * 1024 * 1024;
+export const MAX_WINDOW_BYTES = 400 * 1024 * 1024;
+export const MAX_AGENT_BYTES = 200 * 1024 * 1024;
+/**
+ * Картинку модель принимает маленькой — это её предел, не наш каприз.
+ * Тяжёлое фото проще пересохранить, чем спорить с API.
+ */
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/**
+ * До этого размера PDF уезжает к модели файлом — она читает вёрстку и таблицы
+ * своими глазами. Выше начинается предел запроса (32 МБ на всё), поэтому
+ * большой PDF мы распознаём в текст у себя.
+ */
+export const MAX_PDF_NATIVE_BYTES = 25 * 1024 * 1024;
 /** Сколько распознанного текста уедет к модели за один вопрос */
 export const MAX_TEXT_CHARS = 300_000;
 /** Сколько «сырых» байт (PDF, картинки) влезает в один запрос */
@@ -87,6 +100,9 @@ export function rejectReason(name: string, size: number): string {
     return `${name}: такой формат не читается. Принимаем ${SUPPORTED_HINT}`;
   }
   if (size > MAX_FILE_BYTES) return `${name}: ${humanSize(size)} — больше ${humanSize(MAX_FILE_BYTES)}`;
+  if (kindOf(name) === "image" && size > MAX_IMAGE_BYTES) {
+    return `${name}: картинка тяжелее ${humanSize(MAX_IMAGE_BYTES)} — модель такую не примет, пересохраните поменьше`;
+  }
   if (size === 0) return `${name}: файл пустой`;
   return "";
 }
@@ -112,10 +128,17 @@ export function humanSize(bytes: number): string {
 
 /** Одна строка про файл под его именем: размер и что с ним стало. */
 export function fileNote(f: StoredFile): string {
-  const size = humanSize(f.size);
-  if (f.note) return `${size} · ${f.note}`;
-  if (f.kind === "pdf") return `${size} · PDF, агент читает целиком`;
-  if (f.kind === "image") return `${size} · изображение`;
-  if (!f.chars) return `${size} · текста не нашлось`;
-  return `${size} · ${f.chars.toLocaleString("ru-RU")} знаков текста`;
+  const bits: string[] = [];
+  if (f.size) bits.push(humanSize(f.size));
+
+  if (f.note) bits.push(f.note);
+  else if (f.kind === "pdf") {
+    // Большой PDF модель файлом не принимает — мы распознали его сами.
+    bits.push(f.chars ? `PDF, распознано ${f.chars.toLocaleString("ru-RU")} знаков` : "PDF, агент читает целиком");
+  } else if (f.kind === "image") bits.push("изображение");
+  else if (!f.chars) bits.push("текста не нашлось");
+  else bits.push(`${f.chars.toLocaleString("ru-RU")} знаков текста`);
+
+  if (f.source) bits.push("по ссылке");
+  return bits.join(" · ");
 }

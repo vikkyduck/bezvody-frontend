@@ -14,6 +14,7 @@ import {
   MAX_AGENT_FILES,
   MAX_AGENT_BYTES,
   MAX_FILE_BYTES,
+  MAX_PDF_NATIVE_BYTES,
   MAX_RAW_BYTES,
   MAX_TEXT_CHARS,
   MAX_WINDOW_BYTES,
@@ -59,6 +60,7 @@ async function saveFile(
   name: string,
   mime: string,
   bytes: Buffer,
+  source?: string,
 ): Promise<StoredFile> {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const dir = await folder(scope, ownerId);
@@ -79,6 +81,28 @@ async function saveFile(
     }
   } else if (kind === "text") {
     text = plainText(bytes);
+  } else if (kind === "pdf" && bytes.length > MAX_PDF_NATIVE_BYTES) {
+    // Такой PDF в запрос к модели целиком не влезет — читаем текст сами.
+    try {
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const pdf = await getDocumentProxy(new Uint8Array(bytes));
+      const out = await extractText(pdf, { mergePages: true });
+      text = String(out.text ?? "").trim();
+    } catch {
+      text = "";
+    }
+    if (!text) {
+      note = "PDF слишком большой, чтобы отдать его модели целиком, а текста внутри не нашлось " +
+        "(обычно так со сканами). Пришлите документ в Word или разбейте PDF на части";
+    }
+  }
+
+  // Очень длинный текст режем при сохранении: в запрос к модели он всё равно
+  // не уедет целиком, а вот файл на диске и память сервера съест.
+  const LIMIT = 5_000_000;
+  if (text.length > LIMIT) {
+    text = `${text.slice(0, LIMIT)}\n\n[документ очень большой: сохранены первые ${(LIMIT / 1_000_000).toFixed(0)} млн знаков]`;
+    if (!note) note = "документ очень большой — сохранена первая часть текста";
   }
 
   if (text.trim()) await writeFile(`${dir}/${id}.txt`, text, "utf8");
@@ -86,6 +110,7 @@ async function saveFile(
   return {
     id,
     name,
+    ...(source ? { source } : {}),
     mime: mimeOf(name, mime),
     size: bytes.length,
     kind,
@@ -121,10 +146,13 @@ export async function loadForModel(
   const { readFile } = await import("node:fs/promises");
   const dir = await folder(scope, ownerId);
   try {
+    // Есть распознанный текст — значит файлом его отдавать не надо: так
+    // сделано для тяжёлых PDF, которые в запрос целиком не помещаются.
+    if (file.chars > 0) return { text: await readFile(`${dir}/${file.id}.txt`, "utf8"), base64: "" };
     if (file.kind === "pdf" || file.kind === "image") {
       return { text: "", base64: (await readFile(`${dir}/${file.id}.bin`)).toString("base64") };
     }
-    return { text: await readFile(`${dir}/${file.id}.txt`, "utf8"), base64: "" };
+    return { text: "", base64: "" };
   } catch {
     // Файл пропал с диска — молчим и работаем без него: лучше ответ без
     // одного документа, чем упавшее окно.
@@ -188,6 +216,71 @@ export const deleteWindowFileServer = createServerFn({ method: "POST" })
     await dropFiles("window", me.id, [data.fileId]);
     return { ok: true, error: "", windows: next };
   });
+
+/**
+ * Ссылки из сообщения — в материалы окна.
+ *
+ * Человек кидает ссылку и ждёт, что её прочитают. Мы забираем документ и
+ * кладём рядом с остальными: агент читает его как обычный файл, а человек
+ * видит, что именно было прочитано, и может это скачать.
+ *
+ * Одну и ту же ссылку второй раз не качаем: она уже лежит в окне.
+ */
+export async function readLinks(opts: {
+  text: string;
+  personId: string;
+  already: StoredFile[];
+}): Promise<StoredFile[]> {
+  const { extractUrls, fetchLink } = await import("./server-links");
+  const seen = new Set(opts.already.map((f) => f.source).filter(Boolean));
+  const urls = extractUrls(opts.text).filter((u) => !seen.has(u));
+  if (!urls.length) return [];
+
+  const room = MAX_WINDOW_FILES - opts.already.length;
+  const out: StoredFile[] = [];
+
+  for (const url of urls.slice(0, Math.max(0, room))) {
+    const got = await fetchLink(url, MAX_FILE_BYTES);
+    if (!got.ok) {
+      // Неудачу тоже записываем: и человек видит причину, и агент не станет
+      // делать вид, что документ прочитан.
+      out.push({
+        id: rid(),
+        name: shortUrl(url),
+        source: url,
+        mime: "",
+        size: 0,
+        kind: "text",
+        at: new Date().toISOString(),
+        chars: 0,
+        note: got.reason,
+      });
+      continue;
+    }
+    if (!kindOf(got.name)) {
+      out.push({
+        id: rid(), name: shortUrl(url), source: url, mime: "", size: 0, kind: "text",
+        at: new Date().toISOString(), chars: 0,
+        note: `по ссылке лежит файл, который мы не читаем (${got.name})`,
+      });
+      continue;
+    }
+    out.push(await saveFile("window", opts.personId, got.name, got.mime, got.bytes, url));
+  }
+
+  return out;
+}
+
+/** Адрес для показа: длинный урл в строке файла нечитаем. */
+function shortUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const tail = u.pathname.length > 24 ? `${u.pathname.slice(0, 24)}…` : u.pathname;
+    return `${u.hostname}${tail}`;
+  } catch {
+    return url.slice(0, 48);
+  }
+}
 
 /** Окно удалили — уносим и его файлы, чтобы диск не копил мусор. */
 export const forgetWindowFiles = (personId: string, files: StoredFile[]) =>
@@ -323,8 +416,26 @@ export async function attachmentsFor(opts: {
   const out: Attachment[] = [];
 
   for (const item of queue) {
+    const base = {
+      // Откуда документ — часть смысла: агент должен знать, что это прочитано
+      // по ссылке клиента, а не прислано файлом.
+      title: item.file.source ? `${item.file.name} (по ссылке ${item.file.source})` : item.file.name,
+      kind: item.file.kind,
+      mime: item.file.mime,
+      origin: item.origin,
+    };
+
+    if (item.file.source && item.file.note) {
+      out.push({
+        ...base,
+        text: `Ссылку ${item.file.source} открыть не удалось: ${item.file.note}. Скажите об этом клиенту и попросите прислать файл.`,
+        base64: "",
+        mime: "",
+      });
+      continue;
+    }
+
     const loaded = await loadForModel(item.scope, item.ownerId, item.file);
-    const base = { title: item.file.name, kind: item.file.kind, mime: item.file.mime, origin: item.origin };
 
     if (item.file.kind === "pdf" || item.file.kind === "image") {
       if (!loaded.base64) continue;
