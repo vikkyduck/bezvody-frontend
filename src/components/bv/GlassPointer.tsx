@@ -4,6 +4,9 @@ import { useEffect } from "react";
  * Стекло «ловит свет»: под курсором на пластине появляется мягкий блик,
  * координаты которого передаются в CSS через --mx / --my, а сила — через --sheen.
  * Один слушатель на документ вместо обработчиков на каждой карточке.
+ *
+ * Пластины выше экрана пропускаем: блик по ним — это перерисовка всей площади
+ * на каждое движение мыши, а видно от неё всё равно один экран.
  */
 export function GlassPointer() {
   useEffect(() => {
@@ -37,6 +40,7 @@ export function GlassPointer() {
       }
       if (!el) return;
       const r = el.getBoundingClientRect();
+      if (r.height > window.innerHeight * 1.5) return;
       next = { el, x: e.clientX - r.left, y: e.clientY - r.top };
       if (!frame) frame = requestAnimationFrame(apply);
     };

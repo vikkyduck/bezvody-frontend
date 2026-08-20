@@ -70,8 +70,11 @@ export function Conversations({ personId, personName }: { personId: string; pers
                     </span>
                   </button>
 
+                  {/* Чужой разбор — тоже шесть страниц: читаем его в окне,
+                      иначе одна раскрытая переписка растягивает админку
+                      на десятки тысяч пикселей. */}
                   {shown ? (
-                    <div className="mt-3 space-y-2.5 border-t border-[color:var(--color-line)] pt-3">
+                    <div className="mt-3 max-h-[520px] space-y-2.5 overflow-y-auto border-t border-[color:var(--color-line)] pt-3">
                       {w.files.length ? (
                         <div className="pb-1">
                           <div className="label-caps mb-1.5">Документы в окне</div>

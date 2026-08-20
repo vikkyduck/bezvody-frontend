@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
 import { Attachments } from "@/components/Attachments";
@@ -131,13 +131,16 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
   const { send, remove, attach, detach, download, thinkingId } = useWindows();
   const [draft, setDraft] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const agent = agentById(w.agentId);
   const thinking = thinkingId === w.id;
 
+  // Прокручиваем сам список, а не страницу: разговор живёт в своём окне,
+  // и уводить человека вниз всей страницей незачем.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const list = listRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
   }, [w.messages.length, thinking]);
 
   function submit() {
@@ -172,7 +175,10 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
         )}
       </div>
 
-      <div className="card-flat flex min-h-[620px] flex-col">
+      {/* talk-pane: высота окна ограничена экраном. Без этого карточка растёт
+          вместе с разговором — на шести ответах агента это шестьдесят тысяч
+          пикселей стекла, которые браузер перерисовывает на каждый кадр. */}
+      <div className="card-flat talk-pane flex flex-col">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-[color:var(--color-line)] px-5 py-4">
           <div className="min-w-0 flex-1">
             <div className="truncate text-[15px] font-semibold leading-snug">{w.title}</div>
@@ -183,7 +189,7 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
           </div>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+        <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
           {w.messages.length === 0 && !thinking ? (
             <div className="flex h-full min-h-[280px] flex-col items-center justify-center text-center">
               <p className="measure text-[13.5px] text-muted-foreground">
@@ -196,13 +202,7 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
             <Message key={m.id} from={m.from} text={m.text} />
           ))}
 
-          {thinking ? (
-            <div className="flex items-center gap-2.5 text-[12.5px] text-muted-foreground">
-              <span className="h-[5px] w-[5px] animate-pulse rounded-full bg-[color:var(--color-accent)]" />
-              {agent?.name ?? "Агент"} работает
-            </div>
-          ) : null}
-          <div ref={endRef} />
+          {thinking ? <Waiting name={agent?.name ?? "Агент"} /> : null}
         </div>
 
         {/* Документы окна — на виду у поля ввода: агент читает их при каждом вопросе */}
@@ -292,7 +292,33 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
   );
 }
 
-function Message({ from, text }: { from: "user" | "agent"; text: string }) {
+/**
+ * Пока агент пишет, видно, сколько он уже пишет.
+ *
+ * Разбор на шесть страниц идёт минутами, и без счётчика это неотличимо от
+ * зависшей страницы: человек жмёт заново или уходит. Секунды на экране —
+ * самый дешёвый способ сказать «идёт работа, не сломалось».
+ */
+function Waiting({ name }: { name: string }) {
+  const [sec, setSec] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setSec((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2.5 text-[12.5px] text-muted-foreground">
+      <span className="h-[5px] w-[5px] animate-pulse rounded-full bg-[color:var(--color-accent)]" />
+      <span>
+        {name} работает · {sec} с
+        {sec > 45 ? " — подробный разбор пишется минутами, это нормально" : ""}
+      </span>
+    </div>
+  );
+}
+
+const Message = memo(function Message({ from, text }: { from: "user" | "agent"; text: string }) {
   const mine = from === "user";
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -310,7 +336,7 @@ function Message({ from, text }: { from: "user" | "agent"; text: string }) {
       </div>
     </div>
   );
-}
+});
 
 /** Дата человеческим языком: сегодня, вчера или число. */
 function when(iso: string): string {
