@@ -182,6 +182,9 @@ export const sendMessageServer = createServerFn({ method: "POST" })
             ? "Сейчас к агенту очередь: слишком много обращений разом. Вопрос сохранён — отправьте его ещё раз через минуту."
             : `Не удалось получить ответ: ${answer.detail ?? "ошибка связи с моделью"}. Вопрос сохранён — попробуйте ещё раз.`;
 
+    // Id реплики придумываем заранее: по нему потом собирается файл Word.
+    const answerId = rid("m");
+
     const next = windows.map((w) => {
       if (w.id !== data.windowId) return w;
       const docs = answer.ok
@@ -192,6 +195,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
               title: w.messages.length === 0 ? shortTitle(text) : `Ответ от ${new Date().toLocaleDateString("ru-RU")}`,
               kind: "Разбор агента",
               at: stamp(),
+              messageId: answerId,
             },
           ]
         : w.docs;
@@ -203,7 +207,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         messages: [
           ...w.messages,
           { id: rid("m"), from: "user" as const, text, at: stamp() },
-          { id: rid("m"), from: "agent" as const, text: reply, at: stamp() },
+          { id: answerId, from: "agent" as const, text: reply, at: stamp() },
         ],
       };
     });

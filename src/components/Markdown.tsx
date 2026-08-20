@@ -26,7 +26,7 @@ const components: Components = {
 
 export const Markdown = memo(function Markdown({ children }: { children: string }) {
   return (
-    <div className="bv-md text-[13.5px] leading-relaxed">
+    <div className="bv-md text-[14.5px] leading-[1.62]">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {children}
       </ReactMarkdown>

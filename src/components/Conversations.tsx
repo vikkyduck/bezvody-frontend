@@ -5,7 +5,8 @@ import { Markdown } from "@/components/Markdown";
 import { agentById } from "@/lib/shtab-data";
 import type { StoredWindow } from "@/lib/conversations";
 import { MAX_WINDOW_FILES } from "@/lib/documents";
-import { downloadFileServer } from "@/lib/server-files";
+import { DOCX_MIME, saveFile } from "@/lib/download";
+import { downloadAnswerServer, downloadFileServer } from "@/lib/server-files";
 import { readWindowsServer } from "@/lib/server-windows";
 import { useSession } from "@/lib/session";
 
@@ -102,6 +103,19 @@ export function Conversations({ personId, personName }: { personId: string; pers
                             ) : (
                               <div className="mt-0.5">
                                 <Markdown>{m.text}</Markdown>
+                                <button
+                                  onClick={() => {
+                                    if (!code) return;
+                                    void downloadAnswerServer({
+                                      data: { code, windowId: w.id, messageId: m.id, personId },
+                                    }).then((r) => {
+                                      if (r.ok) saveFile(r.name, r.base64, DOCX_MIME);
+                                    });
+                                  }}
+                                  className="btn btn-glass mt-2 text-[11px]"
+                                >
+                                  Скачать в Word
+                                </button>
                               </div>
                             )}
                           </div>

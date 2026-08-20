@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
 import { Attachments } from "@/components/Attachments";
 import { Markdown } from "@/components/Markdown";
 import type { StoredWindow } from "@/lib/conversations";
 import { MAX_WINDOW_FILES } from "@/lib/documents";
+import { DOCX_MIME, saveFile } from "@/lib/download";
+import { downloadAnswerServer } from "@/lib/server-files";
 import { useSession } from "@/lib/session";
 import { agentById, agents } from "@/lib/shtab-data";
 import { useWindows } from "@/lib/windows-store";
@@ -129,6 +131,7 @@ function Start({ ready, windows }: { ready: boolean; windows: StoredWindow[] }) 
 
 function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () => void }) {
   const { send, remove, attach, detach, download, thinkingId, note, clearNote } = useWindows();
+  const { code } = useSession();
   const [draft, setDraft] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -142,6 +145,17 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
   }, [w.messages.length, thinking]);
+
+  // Ссылка стабильная: иначе memo на репликах перестанет работать и разговор
+  // снова начнёт перерисовываться на каждую букву.
+  const saveAnswer = useCallback(
+    async (messageId: string) => {
+      if (!code) return;
+      const res = await downloadAnswerServer({ data: { code, windowId: w.id, messageId } });
+      if (res.ok) saveFile(res.name, res.base64, DOCX_MIME);
+    },
+    [code, w.id],
+  );
 
   function submit() {
     const text = draft.trim();
@@ -199,7 +213,7 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
           ) : null}
 
           {w.messages.map((m) => (
-            <Message key={m.id} from={m.from} text={m.text} />
+            <Message key={m.id} id={m.id} from={m.from} text={m.text} onSave={saveAnswer} />
           ))}
 
           {thinking ? <Waiting name={agent?.name ?? "Агент"} /> : null}
@@ -285,14 +299,29 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
         </p>
         {w.docs.length ? (
           <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-            {w.docs.map((doc) => (
-              <li key={doc.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3">
-                <span className="text-[14px]">{doc.title}</span>
-                <span className="text-[12px] text-muted-foreground">
-                  {doc.kind} · {when(doc.at)}
-                </span>
-              </li>
-            ))}
+            {w.docs.map((doc, i) => {
+              // У разборов, собранных до появления выгрузки, ссылки на реплику
+              // нет — берём ответ по порядку, он тот же самый.
+              const messageId = doc.messageId ?? w.messages.filter((m) => m.from === "agent")[i]?.id;
+              return (
+                <li key={doc.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3">
+                  <span className="text-[14px]">{doc.title}</span>
+                  <span className="flex items-baseline gap-3 text-[12px] text-muted-foreground">
+                    <span>
+                      {doc.kind} · {when(doc.at)}
+                    </span>
+                    {messageId ? (
+                      <button
+                        onClick={() => void saveAnswer(messageId)}
+                        className="btn btn-glass text-[11.5px]"
+                      >
+                        Скачать в Word
+                      </button>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="text-[13px] text-muted-foreground">
@@ -330,8 +359,29 @@ function Waiting({ name }: { name: string }) {
   );
 }
 
-const Message = memo(function Message({ from, text }: { from: "user" | "agent"; text: string }) {
+const Message = memo(function Message({
+  id,
+  from,
+  text,
+  onSave,
+}: {
+  id: string;
+  from: "user" | "agent";
+  text: string;
+  onSave: (messageId: string) => Promise<void>;
+}) {
   const mine = from === "user";
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSave(id);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       {/* Ответ агента — документ: ему нужна вся ширина, реплике человека — нет */}
@@ -344,6 +394,15 @@ const Message = memo(function Message({ from, text }: { from: "user" | "agent"; 
           }`}
         >
           {mine ? text : <Markdown>{text}</Markdown>}
+
+          {/* Разбор нужен на руках: переслать, распечатать, принести на защиту */}
+          {mine ? null : (
+            <div className="mt-3 flex justify-end border-t border-[color:var(--color-line)] pt-2.5">
+              <button onClick={() => void save()} disabled={saving} className="btn btn-glass text-[11.5px] disabled:opacity-50">
+                {saving ? "Собираю документ" : "Скачать в Word"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

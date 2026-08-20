@@ -470,3 +470,50 @@ export async function attachmentsFor(opts: {
 
   return out;
 }
+
+// ── Ответ агента файлом Word ──────────────────────────────────────────────────
+/**
+ * Разбор нужен человеку на руках: переслать, распечатать, принести на защиту.
+ * Собираем .docx по тексту ответа — с заголовками, жирным, списками и
+ * таблицами, а не «звёздочками» разметки. Файл не храним: собирается по
+ * запросу, значит всегда соответствует тому, что видно на экране.
+ */
+export const downloadAnswerServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; windowId: string; messageId: string; personId?: string }) => data)
+  .handler(async ({ data }): Promise<{ ok: boolean; name: string; base64: string }> => {
+    const deny = { ok: false, name: "", base64: "" };
+    const d = await import("./server-data");
+    const { list, me } = await d.whoIs(String(data.code ?? ""));
+    if (!me) return deny;
+
+    // Чужой разбор скачивает только администратор — как и чужую переписку.
+    const wanted = data.personId?.trim();
+    if (wanted && wanted !== me.id && me.role !== "admin") return deny;
+    const ownerId = wanted || me.id;
+
+    const windows = await d.readWindows(ownerId);
+    const w = windows.find((x) => x.id === data.windowId);
+    if (!w) return deny;
+
+    const at = w.messages.findIndex((m) => m.id === data.messageId && m.from === "agent");
+    const answer = at >= 0 ? w.messages[at] : undefined;
+    if (!answer) return deny;
+
+    // Вопрос — ближайшая реплика человека перед этим ответом.
+    const question =
+      [...w.messages.slice(0, at)].reverse().find((m) => m.from === "user")?.text || w.title;
+
+    const owner = list.find((p) => p.id === ownerId);
+    const { agentById } = await import("./shtab-data");
+    const meta = {
+      agent: agentById(w.agentId)?.name ?? "Агент",
+      person: owner?.name ?? "",
+      company: owner?.company ?? "",
+      question,
+      date: new Date(answer.at).toLocaleDateString("ru-RU"),
+    };
+
+    const { answerToDocx, docxFileName } = await import("./server-docx");
+    const file = await answerToDocx(answer.text, meta);
+    return { ok: true, name: docxFileName(meta), base64: file.toString("base64") };
+  });

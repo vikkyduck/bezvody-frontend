@@ -23,6 +23,8 @@ export type WindowDoc = {
   title: string;
   kind: string;
   at: string;
+  /** Какой ответ агента лёг в основу: по нему собирается файл Word */
+  messageId?: string;
 };
 
 export type StoredWindow = {
