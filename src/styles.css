@@ -1383,3 +1383,64 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
   .card-flat::after { opacity: 0; }
   .card-flat { transition: none; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Разметка ответов агента. Документ, а не чат: заголовки держат структуру,
+   таблицы читаются построчно, ничего не кричит.
+   ══════════════════════════════════════════════════════════════════════════ */
+.bv-md > *:first-child { margin-top: 0; }
+.bv-md > *:last-child { margin-bottom: 0; }
+.bv-md h1, .bv-md h2, .bv-md h3, .bv-md h4 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.4em 0 .5em;
+}
+.bv-md h1 { font-size: 1.28em; }
+.bv-md h2 { font-size: 1.15em; }
+.bv-md h3 { font-size: 1.05em; }
+.bv-md h4 { font-size: 1em; }
+.bv-md p { margin: .7em 0; }
+.bv-md ul, .bv-md ol { margin: .7em 0; padding-left: 1.3em; }
+.bv-md ul { list-style: disc; }
+.bv-md ol { list-style: decimal; }
+.bv-md li { margin: .3em 0; }
+.bv-md li::marker { color: var(--color-text-muted); }
+.bv-md strong { font-weight: 600; }
+.bv-md a { text-decoration: underline; text-underline-offset: 2px; }
+.bv-md hr { border: 0; border-top: 1px solid var(--color-line); margin: 1.4em 0; }
+.bv-md blockquote {
+  margin: .9em 0;
+  padding-left: .9em;
+  border-left: 2px solid var(--color-line);
+  color: var(--color-text-secondary);
+}
+.bv-md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .92em;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  padding: .1em .35em;
+}
+.bv-md pre {
+  margin: .9em 0;
+  padding: .8em 1em;
+  overflow-x: auto;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+}
+.bv-md pre code { background: none; padding: 0; }
+.bv-md table { width: 100%; border-collapse: collapse; font-size: .95em; }
+.bv-md th, .bv-md td {
+  border-bottom: 1px solid var(--color-line);
+  padding: .5em .7em;
+  text-align: left;
+  vertical-align: top;
+}
+.bv-md th {
+  font-weight: 600;
+  font-size: .88em;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}

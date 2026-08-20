@@ -65,23 +65,53 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     const file = windowsFile(d.dataDir(), me.id);
     const windows = await d.readJson<StoredWindow[]>(file, []);
 
+    const target = windows.find((w) => w.id === data.windowId);
+    if (!target) return { windows };
+
+    // Спрашиваем модель. Историю передаём ту, что была ДО этого вопроса.
+    const cfgAll = await d.readJson<Record<string, { prompt: string; model: string }>>(
+      `${d.dataDir()}/agents.json`,
+      {},
+    );
+    const cfg = cfgAll[target.agentId];
+    const { askAgent } = await import("./server-llm");
+    const answer = await askAgent({
+      systemPrompt: cfg?.prompt ?? "",
+      model: cfg?.model ?? "claude-opus-5",
+      history: target.messages,
+      question: text,
+    });
+
+    const reply = answer.ok
+      ? answer.text
+      : answer.reason === "no-key"
+        ? "Агент настроен, но ключ модели ещё не задан — администратор вписывает его в своей панели. Вопрос сохранён."
+        : answer.reason === "not-configured"
+          ? "Этому агенту ещё не задали инструкцию — администратор вписывает её в своей панели. Вопрос сохранён."
+          : `Не удалось получить ответ: ${answer.detail ?? "ошибка связи с моделью"}. Вопрос сохранён — попробуйте ещё раз.`;
+
     const next = windows.map((w) => {
       if (w.id !== data.windowId) return w;
+      const docs = answer.ok
+        ? [
+            ...w.docs,
+            {
+              id: rid("d"),
+              title: w.messages.length === 0 ? shortTitle(text) : `Ответ от ${new Date().toLocaleDateString("ru-RU")}`,
+              kind: "Разбор агента",
+              at: stamp(),
+            },
+          ]
+        : w.docs;
       return {
         ...w,
         title: w.messages.length === 0 ? shortTitle(text) : w.title,
         updatedAt: stamp(),
+        docs,
         messages: [
           ...w.messages,
           { id: rid("m"), from: "user" as const, text, at: stamp() },
-          {
-            id: rid("m"),
-            from: "agent" as const,
-            // Настоящего ответа пока нет: агенты не подключены к платформе.
-            // Здесь будет вызов бэкенда, и врать про работу мы не будем.
-            text: "Агент ещё не подключён к платформе — ответить пока нечем. Вопрос сохранён в этом окне.",
-            at: stamp(),
-          },
+          { id: rid("m"), from: "agent" as const, text: reply, at: stamp() },
         ],
       };
     });

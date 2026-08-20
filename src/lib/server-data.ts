@@ -47,3 +47,19 @@ export async function whoIs(code: string): Promise<{ list: Participant[]; me: Pa
 }
 
 export const today = () => new Date().toLocaleDateString("ru-RU");
+
+// ── Ключ модели ───────────────────────────────────────────────────────────────
+// Лежит отдельным файлом с правами 600 и наружу не отдаётся никогда.
+
+const secretsFile = () => `${dataDir()}/secrets.json`;
+
+export async function readApiKey(): Promise<string> {
+  const raw = await readJson<{ anthropicKey?: string }>(secretsFile(), {});
+  return raw.anthropicKey?.trim() || process.env["ANTHROPIC_API_KEY"]?.trim() || "";
+}
+
+export async function writeApiKey(key: string): Promise<void> {
+  const { chmod } = await import("node:fs/promises");
+  await writeJson(secretsFile(), { anthropicKey: key });
+  await chmod(secretsFile(), 0o600);
+}

@@ -133,7 +133,13 @@ export const mutateServer = createServerFn({ method: "POST" })
       case "remove":
         // Себя удалить нельзя: остаться без единственного администратора — значит
         // потерять вход в платформу насовсем.
-        next = m.id === me.id ? list : list.filter((p) => p.id !== m.id);
+        if (m.id !== me.id) {
+          next = list.filter((p) => p.id !== m.id);
+          // Вместе с кабинетом уходит и переписка: держать чужие разговоры
+          // после удаления человека незачем — ни нам, ни по 152-ФЗ.
+          const { rm } = await import("node:fs/promises");
+          await rm(`${d.dataDir()}/windows/${m.id}.json`, { force: true });
+        }
         break;
       case "toggleAgent":
         next = list.map((p) =>

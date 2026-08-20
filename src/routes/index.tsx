@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
+import { Markdown } from "@/components/Markdown";
 import type { StoredWindow } from "@/lib/conversations";
 import { useSession } from "@/lib/session";
 import { agentById, agents } from "@/lib/shtab-data";
@@ -264,13 +265,16 @@ function Message({ from, text }: { from: "user" | "agent"; text: string }) {
   const mine = from === "user";
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[86%] ${mine ? "text-right" : ""}`}>
+      {/* Ответ агента — документ: ему нужна вся ширина, реплике человека — нет */}
+      <div className={`${mine ? "max-w-[86%] text-right" : "w-full"}`}>
         <div
-          className={`whitespace-pre-line rounded-[14px] px-4 py-3 text-[13.5px] leading-relaxed ${
-            mine ? "bg-primary text-primary-foreground" : "border border-[color:var(--color-line)] text-foreground"
+          className={`rounded-[14px] px-4 py-3 ${
+            mine
+              ? "whitespace-pre-line bg-primary text-[13.5px] leading-relaxed text-primary-foreground"
+              : "border border-[color:var(--color-line)] text-foreground"
           }`}
         >
-          {text}
+          {mine ? text : <Markdown>{text}</Markdown>}
         </div>
       </div>
     </div>

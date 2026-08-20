@@ -3,10 +3,11 @@ import { useState, type FormEvent, type ReactNode } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
 import { AgentAccess, Contacts } from "@/components/AgentAccess";
+import { AgentSetup } from "@/components/AgentSetup";
+import { agents } from "@/lib/shtab-data";
 import { Conversations } from "@/components/Conversations";
 import { cleanTelegram, useDirectory, type Participant } from "@/lib/directory";
 import { roleLabel, type Role } from "@/lib/platform-data";
-import { agents } from "@/lib/shtab-data";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -70,7 +71,7 @@ function Body() {
 
       <div className="mt-7">
         {tab === "people" ? <People /> : null}
-        {tab === "agents" ? <Catalog /> : null}
+        {tab === "agents" ? <AgentSetup /> : null}
         {tab === "overview" ? <Overview /> : null}
       </div>
     </>
@@ -385,44 +386,6 @@ function EditFields({
         </button>
       </div>
     </form>
-  );
-}
-
-// ── Каталог агентов ───────────────────────────────────────────────────────────
-function Catalog() {
-  if (agents.length === 0) {
-    return (
-      <div className="card-flat px-6 py-10 text-center">
-        <h2 className="text-[16px] font-semibold">Каталог пуст</h2>
-        <p className="measure mx-auto mt-2.5 text-[13.5px] text-muted-foreground">
-          Агентов ещё не завели.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <h2 className="mb-1 text-[15px] font-semibold">Что умеет платформа</h2>
-      <p className="measure mb-5 text-[12.5px] text-muted-foreground">
-        Общий каталог. Кому именно открыт агент — решаете вы в карточке участника, а не здесь:
-        набор у каждого свой.
-      </p>
-
-      <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
-        {agents.map((a) => (
-          <li key={a.id} className="py-4">
-            <div className="text-[14.5px] font-semibold">{a.name}</div>
-            <p className="measure mt-1.5 text-[13px] text-muted-foreground">{a.result}</p>
-            <p className="mt-1 text-[11.5px] text-muted-foreground/80">{a.method}</p>
-          </li>
-        ))}
-      </ul>
-
-      <p className="mt-4 text-[11.5px] text-muted-foreground">
-        Пока это заглушки: имена и обещание результата. Настоящая работа появится вместе с бэкендом.
-      </p>
-    </div>
   );
 }
 

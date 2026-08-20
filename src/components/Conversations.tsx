@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Markdown } from "@/components/Markdown";
 import { agentById } from "@/lib/shtab-data";
 import type { StoredWindow } from "@/lib/conversations";
 import { readWindowsServer } from "@/lib/server-windows";
@@ -72,7 +73,13 @@ export function Conversations({ personId, personName }: { personId: string; pers
                             <div className="label-caps">
                               {m.from === "user" ? personName : (agent?.name ?? "Агент")}
                             </div>
-                            <p className="mt-0.5 whitespace-pre-line">{m.text}</p>
+                            {m.from === "user" ? (
+                              <p className="mt-0.5 whitespace-pre-line">{m.text}</p>
+                            ) : (
+                              <div className="mt-0.5">
+                                <Markdown>{m.text}</Markdown>
+                              </div>
+                            )}
                           </div>
                         ))
                       ) : (
