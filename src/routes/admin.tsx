@@ -6,6 +6,7 @@ import { AgentAccess, Contacts } from "@/components/AgentAccess";
 import { AgentSetup } from "@/components/AgentSetup";
 import { agents } from "@/lib/shtab-data";
 import { Conversations } from "@/components/Conversations";
+import { Reports } from "@/components/Reports";
 import { cleanTelegram, useDirectory, type Participant } from "@/lib/directory";
 import { roleLabel, type Role } from "@/lib/platform-data";
 
@@ -22,6 +23,7 @@ export const Route = createFileRoute("/admin")({
 
 const tabs = [
   { key: "people", label: "Участники" },
+  { key: "reports", label: "Отчёты" },
   { key: "agents", label: "Агенты" },
   { key: "overview", label: "Обзор" },
 ] as const;
@@ -71,6 +73,7 @@ function Body() {
 
       <div className="mt-7">
         {tab === "people" ? <People /> : null}
+        {tab === "reports" ? <Reports /> : null}
         {tab === "agents" ? <AgentSetup /> : null}
         {tab === "overview" ? <Overview /> : null}
       </div>
