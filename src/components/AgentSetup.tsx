@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { DEFAULT_ROLES, type AgentRole } from "@/lib/roles";
+
 import { Attachments } from "@/components/Attachments";
 import { MAX_AGENT_FILES, type StoredFile } from "@/lib/documents";
 import {
@@ -16,6 +18,7 @@ import {
   MODELS,
   getAgentSettingsServer,
   normalizeConfig,
+  rolesOf,
   saveAgentServer,
   saveApiKeyServer,
   testAgentServer,
@@ -161,6 +164,8 @@ function AgentCard({
   const [authHeader, setAuthHeader] = useState(saved.authHeader);
   const [format, setFormat] = useState<"openai" | "simple">(saved.format);
   const [auth, setAuth] = useState("");
+  const savedRoles = rolesOf(id, settings.agents[id]);
+  const [roles, setRoles] = useState<AgentRole[]>(savedRoles);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [test, setTest] = useState<{ ok: boolean; detail: string; raw: string; text: string } | null>(null);
@@ -175,7 +180,21 @@ function AgentCard({
     setEndpoint(saved.endpoint);
     setAuthHeader(saved.authHeader);
     setFormat(saved.format);
-  }, [open, saved.prompt, saved.finishRule, saved.model, saved.transport, saved.endpoint, saved.authHeader, saved.format]);
+    setRoles(savedRoles);
+    // savedRoles — новый массив на каждый рендер, поэтому в зависимостях он
+    // строкой: иначе эффект переустанавливал бы состояние без конца.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    open,
+    saved.prompt,
+    saved.finishRule,
+    saved.model,
+    saved.transport,
+    saved.endpoint,
+    saved.authHeader,
+    saved.format,
+    JSON.stringify(savedRoles),
+  ]);
 
   async function save() {
     if (!code) return;
@@ -185,7 +204,7 @@ function AgentCard({
     try {
       onSaved(
         await saveAgentServer({
-          data: { code, agentId: id, prompt, finishRule, model, transport, endpoint, authHeader, format, auth },
+          data: { code, agentId: id, prompt, finishRule, model, transport, endpoint, authHeader, format, auth, roles },
         }),
       );
       setAuth("");
@@ -216,20 +235,23 @@ function AgentCard({
             <span className="text-[15px] font-semibold">{name}</span>
             <span
               className={`rounded-[var(--radius-pill)] border px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] ${
-                saved.enabled
+                saved.enabled || savedRoles.length
                   ? "border-[color:var(--color-accent)] text-[color:var(--color-accent)]"
                   : "border-[color:var(--color-line)] text-muted-foreground"
               }`}
             >
-              {saved.enabled ? "настроен" : "не настроен"}
+              {saved.enabled || savedRoles.length ? "настроен" : "не настроен"}
             </span>
           </div>
           <p className="mt-1 text-[12px] text-muted-foreground">
-            {saved.enabled
+            {saved.enabled || savedRoles.length
               ? saved.transport === "http"
                 ? `${where} · ${saved.endpoint}`
-                : `${where} · инструкция ${saved.prompt.length} знаков`
+                : saved.prompt.length
+                  ? `${where} · инструкция ${saved.prompt.length} знаков`
+                  : where
               : "клиент увидит, что агент не настроен"}
+            {savedRoles.length ? ` · ролей ${savedRoles.length}` : ""}
             {files.length ? ` · документов ${files.length}` : ""}
           </p>
         </div>
@@ -357,6 +379,17 @@ function AgentCard({
             />
           </div>
 
+          {transport === "model" ? (
+            <Roles
+              agentId={id}
+              roles={roles}
+              onChange={(next) => {
+                setRoles(next);
+                setDone(false);
+              }}
+            />
+          ) : null}
+
           <div className="flex flex-wrap items-end gap-3">
             <label className="block">
               <span className="label-caps">Модель</span>
@@ -422,6 +455,132 @@ function AgentCard({
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Роли агента: от чьего лица он говорит.
+ *
+ * Обычный агент — один собеседник, и ролей у него нет. Здесь их несколько:
+ * клиент приносит документ и прогоняет его по тем, кто будет решение
+ * согласовывать. Инструкцию роли пишет методолог — она самодостаточна и
+ * работает без общей инструкции агента.
+ *
+ * Имён и фамилий в ролях быть не должно: роль переиспользуется, а человек
+ * в ней меняется — и персональные данные в настройках платформы нам не нужны.
+ */
+function Roles({
+  agentId,
+  roles,
+  onChange,
+}: {
+  agentId: string;
+  roles: AgentRole[];
+  onChange: (next: AgentRole[]) => void;
+}) {
+  const defaults = DEFAULT_ROLES[agentId] ?? [];
+  const changed = JSON.stringify(defaults) !== JSON.stringify(roles);
+
+  const patch = (i: number, field: keyof AgentRole, value: string) =>
+    onChange(roles.map((r, n) => (n === i ? { ...r, [field]: value } : r)));
+
+  return (
+    <div className="border-t border-[color:var(--color-line)] pt-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <span className="label-caps">Роли агента</span>
+        {defaults.length && changed ? (
+          <button
+            onClick={() => onChange(defaults)}
+            className="text-[11.5px] text-muted-foreground underline underline-offset-4"
+          >
+            вернуть роли по умолчанию
+          </button>
+        ) : null}
+      </div>
+      <p className="measure mt-1 mb-3 text-[12.5px] text-muted-foreground">
+        {roles.length
+          ? "Клиент видит их кнопками в своём окне и прогоняет документ по одной роли за раз. Инструкция роли самодостаточна: общую инструкцию агента можно оставить пустой. Фамилий в ролях не пишем — роль переиспользуется, а человек в ней меняется."
+          : "У этого агента ролей нет — он отвечает сам от себя. Добавьте роль, если нужен разговор от лица согласующих."}
+      </p>
+
+      <div className="space-y-2.5">
+        {roles.map((r, i) => (
+          <details key={r.id} className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3">
+            <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 text-[13px]">
+              <span className="font-medium">{r.name || "Роль без имени"}</span>
+              <span className="text-[11.5px] text-muted-foreground">
+                {r.group || "без группы"} · инструкция {r.prompt.length} знаков
+              </span>
+            </summary>
+
+            <div className="mt-3 space-y-2.5">
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <label className="block">
+                  <span className="label-caps">Имя на кнопке</span>
+                  <input value={r.name} onChange={(e) => patch(i, "name", e.target.value)} className={inputCls} />
+                </label>
+                <label className="block">
+                  <span className="label-caps">Группа</span>
+                  <input
+                    value={r.group}
+                    onChange={(e) => patch(i, "group", e.target.value)}
+                    placeholder="например: Лестница согласования"
+                    className={inputCls}
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="label-caps">Подпись под именем</span>
+                <input
+                  value={r.hint}
+                  onChange={(e) => patch(i, "hint", e.target.value)}
+                  placeholder="одна строка: что эта роль проверяет"
+                  className={inputCls}
+                />
+              </label>
+              <label className="block">
+                <span className="label-caps">Инструкция роли</span>
+                <textarea
+                  value={r.prompt}
+                  onChange={(e) => patch(i, "prompt", e.target.value)}
+                  rows={12}
+                  className="mt-1.5 w-full resize-y rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-3 text-[12.5px] leading-relaxed outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+                />
+              </label>
+              <button
+                onClick={() => onChange(roles.filter((_, n) => n !== i))}
+                className="btn btn-ghost text-[12px] text-[color:var(--color-error)]"
+              >
+                Убрать роль
+              </button>
+            </div>
+          </details>
+        ))}
+      </div>
+
+      <button
+        onClick={() =>
+          onChange([
+            ...roles,
+            {
+              id: `role-${Math.random().toString(36).slice(2, 8)}`,
+              name: "",
+              hint: "",
+              group: roles[roles.length - 1]?.group ?? "",
+              prompt: "",
+            },
+          ])
+        }
+        className="btn btn-glass mt-3 text-[12px]"
+      >
+        Добавить роль
+      </button>
+      <p className="mt-2 text-[11.5px] text-muted-foreground">
+        Роль без имени или без инструкции не сохраняется. Правила разговора — короткие ответы,
+        два-три вопроса за заход и прямой отказ, если документ роль не касается, — платформа
+        дописывает сама, повторять их в каждой роли не нужно.
+      </p>
     </div>
   );
 }

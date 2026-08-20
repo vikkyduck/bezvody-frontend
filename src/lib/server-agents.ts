@@ -11,6 +11,8 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 
+import { DEFAULT_ROLES, ROLE_RULES, type AgentRole } from "./roles";
+
 /** Чем работает агент: моделью напрямую или готовым сервисом по HTTP. */
 export type Transport = "model" | "http";
 
@@ -31,6 +33,12 @@ export type AgentConfig = {
   format: "openai" | "simple";
   /** Задан ли секрет доступа. Само значение наружу не отдаётся никогда */
   authSet: boolean;
+  /**
+   * Роли, от лица которых говорит агент. Есть не у всех: обычный агент —
+   * один собеседник. Не задано — берутся роли по умолчанию из кода
+   * (см. rolesOf); пустой список означает «ролей нет», и это разные вещи.
+   */
+  roles?: AgentRole[];
 };
 
 export type AgentConfigMap = Record<string, AgentConfig>;
@@ -113,13 +121,36 @@ export function normalizeConfig(c: Partial<AgentConfig> | undefined): AgentConfi
 }
 
 /** Что уедет модели: инструкция агента плюс правило завершения. */
-export function systemPromptOf(cfg: Partial<AgentConfig> | undefined): string {
+export function systemPromptOf(cfg: Partial<AgentConfig> | undefined, role?: AgentRole | null): string {
   const c = normalizeConfig(cfg);
-  const rule = c.finishRule.trim();
   const prompt = c.prompt.trim();
+
+  // Разговор от лица роли. Инструкция роли самодостаточна — она работает и
+  // тогда, когда общей инструкции агенту не задали. Правило завершения обычных
+  // агентов сюда не идёт: там на выходе документ, здесь — живой разговор,
+  // и требовать «# Документ» от собеседника бессмысленно.
+  if (role) {
+    return [prompt, role.prompt.trim(), ROLE_RULES.trim()].filter(Boolean).join("\n\n---\n\n");
+  }
+
+  const rule = c.finishRule.trim();
   if (!prompt) return "";
   return rule ? `${prompt}\n\n---\n\n${rule}` : prompt;
 }
+
+/**
+ * Роли агента: что настроил методолог, а пока не настроил — что лежит в коде.
+ *
+ * Разница между «не задано» и «пустой список» существенна: undefined значит
+ * «роли по умолчанию», [] — «методолог убрал роли осознанно».
+ */
+export function rolesOf(agentId: string, cfg?: Partial<AgentConfig> | null): AgentRole[] {
+  if (cfg && Array.isArray(cfg.roles)) return cfg.roles;
+  return DEFAULT_ROLES[agentId] ?? [];
+}
+
+export const roleById = (roles: AgentRole[], id: string | null | undefined) =>
+  roles.find((r) => r.id === id) ?? null;
 
 // ── Чтение и запись ───────────────────────────────────────────────────────────
 
@@ -159,6 +190,8 @@ export const saveAgentServer = createServerFn({ method: "POST" })
       endpoint?: string;
       authHeader?: string;
       format?: "openai" | "simple";
+      /** Роли агента целиком: undefined — не трогать */
+      roles?: AgentRole[];
       /** Пустая строка — не трогать; значение — заменить; "-" — стереть */
       auth?: string;
     }) => data,
@@ -178,9 +211,13 @@ export const saveAgentServer = createServerFn({ method: "POST" })
     if (data.auth === "-") await d.writeAgentAuth(data.agentId, "");
     else if (data.auth) await d.writeAgentAuth(data.agentId, data.auth.trim());
 
+    // Роли приходят списком целиком: правка одной роли — это новый список.
+    const roles = Array.isArray(data.roles) ? data.roles.map(cleanRole).filter((r) => r.name && r.prompt) : prev.roles;
+
     agents[data.agentId] = {
       ...prev,
       prompt,
+      ...(roles ? { roles } : {}),
       finishRule: data.finishRule ?? prev.finishRule,
       model: MODELS.some((m) => m.id === data.model) ? data.model : DEFAULT_MODEL,
       transport,
@@ -188,7 +225,12 @@ export const saveAgentServer = createServerFn({ method: "POST" })
       authHeader: (data.authHeader ?? prev.authHeader).trim() || "Authorization",
       format: data.format ?? prev.format,
       // Модели нужен промпт, чужому сервису — адрес. Без этого включать нечего.
-      enabled: transport === "model" ? prompt.length > 0 : endpoint.length > 0,
+      // У агента с ролями инструкция может быть пустой: говорят роли, и каждая
+      // инструкция роли самодостаточна.
+      enabled:
+        transport === "model"
+          ? prompt.length > 0 || (roles ?? rolesOf(data.agentId, prev)).length > 0
+          : endpoint.length > 0,
       updatedAt: new Date().toISOString(),
     };
     await d.writeJson(file, agents);
@@ -239,4 +281,35 @@ export const testAgentServer = createServerFn({ method: "POST" })
     return res.ok
       ? { ok: true, detail: "связь есть", raw: res.raw, text: res.text }
       : { ok: false, detail: res.detail, raw: res.raw, text: "" };
+  });
+
+/** Роль из админки: обрезаем и не даём завести роль без имени или без инструкции. */
+function cleanRole(r: AgentRole): AgentRole {
+  return {
+    id: String(r.id ?? "").trim() || `role-${Math.random().toString(36).slice(2, 8)}`,
+    name: String(r.name ?? "").trim().slice(0, 120),
+    hint: String(r.hint ?? "").trim().slice(0, 200),
+    group: String(r.group ?? "").trim().slice(0, 120),
+    prompt: String(r.prompt ?? "").trim(),
+  };
+}
+
+/**
+ * Роли агента для клиента — только имена и подписи, без инструкций.
+ *
+ * Инструкция роли — это методология, за которую заплатил заказчик; в браузер
+ * ей ехать незачем. Кнопке хватает имени, подписи и группы.
+ */
+export const getAgentRolesServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; agentId: string }) => data)
+  .handler(async ({ data }): Promise<{ roles: Array<Omit<AgentRole, "prompt">> }> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me) return { roles: [] };
+    // Чужого агента не показываем даже списком ролей.
+    if (me.role === "client" && !me.agentIds.includes(data.agentId)) return { roles: [] };
+
+    const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
+    const roles = rolesOf(data.agentId, agents[data.agentId]);
+    return { roles: roles.map(({ id, name, hint, group }) => ({ id, name, hint, group })) };
   });

@@ -7,6 +7,8 @@ import { Markdown } from "@/components/Markdown";
 import type { StoredWindow } from "@/lib/conversations";
 import { MAX_WINDOW_FILES } from "@/lib/documents";
 import { DOCX_MIME, saveFile } from "@/lib/download";
+import type { AgentRole } from "@/lib/roles";
+import { getAgentRolesServer } from "@/lib/server-agents";
 import { downloadAnswerServer } from "@/lib/server-files";
 import { useSession } from "@/lib/session";
 import { agentById, agents } from "@/lib/shtab-data";
@@ -38,7 +40,7 @@ function Body() {
 
   if (!person) return null;
   // Работа начинается с выбора агента — окно без него не открыть.
-  if (active) return <Conversation window={active} onBack={() => setActive(null)} />;
+  if (active) return <Conversation key={active.id} window={active} onBack={() => setActive(null)} />;
   return <Start ready={ready} windows={windows} />;
 }
 
@@ -139,12 +141,49 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
   const agent = agentById(w.agentId);
   const thinking = thinkingId === w.id;
 
+  // Роли агента. Имена приезжают с сервера — методолог правит их в админке,
+  // и клиент должен видеть его список, а не тот, что зашит в код.
+  const [roles, setRoles] = useState<RoleChip[]>([]);
+  // Какая роль сейчас говорит. При возврате в окно продолжаем последнюю.
+  const [roleId, setRoleId] = useState<string | null>(
+    () => [...w.messages].reverse().find((m) => m.roleId)?.roleId ?? null,
+  );
+
+  useEffect(() => {
+    if (!code) return;
+    let alive = true;
+    getAgentRolesServer({ data: { code, agentId: w.agentId } })
+      .then((r) => alive && setRoles(r.roles))
+      .catch(() => alive && setRoles([]));
+    return () => {
+      alive = false;
+    };
+  }, [code, w.agentId]);
+
+  const hasRoles = roles.length > 0;
+  const role = roles.find((r) => r.id === roleId) ?? null;
+  // Разговор с ролью — свой, отдельный от других ролей этого же окна.
+  const shown = hasRoles ? w.messages.filter((m) => m.roleId === roleId) : w.messages.filter((m) => !m.roleId);
+  const speaker = hasRoles ? role?.name ?? null : agent?.name ?? null;
+
   // Прокручиваем сам список, а не страницу: разговор живёт в своём окне,
   // и уводить человека вниз всей страницей незачем.
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [w.messages.length, thinking]);
+  }, [shown.length, roleId, thinking]);
+
+  /**
+   * Выбрали роль. Если она документ ещё не видела, а документ в окне есть —
+   * сразу отдаём ей материалы: человек нажал на роль, чтобы услышать её,
+   * а не чтобы нажать ещё одну кнопку.
+   */
+  function pickRole(id: string) {
+    setRoleId(id);
+    if (thinking) return;
+    const started = w.messages.some((m) => m.roleId === id);
+    if (!started && w.files.length) void send(w.id, "", { roleId: id, kind: "open" });
+  }
 
   // Ссылка стабильная: иначе memo на репликах перестанет работать и разговор
   // снова начнёт перерисовываться на каждую букву.
@@ -160,8 +199,11 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
   function submit() {
     const text = draft.trim();
     if (!text || thinking) return;
+    // У агента с ролями реплика всегда адресована конкретной роли: без неё
+    // непонятно, кто отвечает, и история разговора смешалась бы.
+    if (hasRoles && !role) return;
     setDraft("");
-    void send(w.id, text);
+    void send(w.id, text, hasRoles ? { roleId: role!.id } : undefined);
   }
 
   return (
@@ -189,6 +231,16 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
         )}
       </div>
 
+      {hasRoles ? (
+        <RoleBar
+          roles={roles}
+          activeId={roleId}
+          spokeWith={(id) => w.messages.some((m) => m.roleId === id)}
+          disabled={thinking}
+          onPick={pickRole}
+        />
+      ) : null}
+
       {/* talk-pane: высота окна ограничена экраном. Без этого карточка растёт
           вместе с разговором — на шести ответах агента это шестьдесят тысяч
           пикселей стекла, которые браузер перерисовывает на каждый кадр. */}
@@ -198,25 +250,53 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
             <div className="truncate text-[15px] font-semibold leading-snug">{w.title}</div>
             <div className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
               <span aria-hidden className="h-[5px] w-[5px] flex-none rounded-full bg-[color:var(--color-accent)]" />
-              {agent?.name ?? "агент недоступен"}
+              {hasRoles
+                ? role
+                  ? `${agent?.name ?? "Роли"} · говорит ${role.name}`
+                  : `${agent?.name ?? "Роли"} · роль не выбрана`
+                : agent?.name ?? "агент недоступен"}
             </div>
           </div>
         </div>
 
         <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
-          {w.messages.length === 0 && !thinking ? (
-            <div className="flex h-full min-h-[280px] flex-col items-center justify-center text-center">
-              <p className="measure text-[13.5px] text-muted-foreground">
-                {agent ? `${agent.result}. Опишите задачу своими словами.` : "Опишите задачу своими словами."}
-              </p>
+          {shown.length === 0 && !thinking ? (
+            <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 text-center">
+              {hasRoles ? (
+                role ? (
+                  <>
+                    <p className="measure text-[13.5px] text-muted-foreground">
+                      {w.files.length
+                        ? `«${role.name}» ещё не читал ваш документ.`
+                        : `«${role.name}» читает документ. Принесите файл ниже или пришлите ссылку — и роль начнёт разговор.`}
+                    </p>
+                    <button
+                      onClick={() => void send(w.id, "", { roleId: role.id, kind: "open" })}
+                      disabled={!w.files.length || thinking}
+                      className="btn btn-primary text-[12.5px] disabled:opacity-40"
+                    >
+                      Показать документ роли
+                    </button>
+                  </>
+                ) : (
+                  <p className="measure text-[13.5px] text-muted-foreground">
+                    Принесите документ в окно и выберите роль выше — она прочитает его и начнёт
+                    разговор. По одной роли за раз: отработали возражения — идёте к следующей.
+                  </p>
+                )
+              ) : (
+                <p className="measure text-[13.5px] text-muted-foreground">
+                  {agent ? `${agent.result}. Опишите задачу своими словами.` : "Опишите задачу своими словами."}
+                </p>
+              )}
             </div>
           ) : null}
 
-          {w.messages.map((m) => (
+          {shown.map((m) => (
             <Message key={m.id} id={m.id} from={m.from} text={m.text} onSave={saveAnswer} />
           ))}
 
-          {thinking ? <Waiting name={agent?.name ?? "Агент"} /> : null}
+          {thinking ? <Waiting name={speaker ?? "Агент"} /> : null}
         </div>
 
         {note ? (
@@ -258,13 +338,32 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
               }
             }}
             rows={2}
-            placeholder="Опишите задачу своими словами"
-            aria-label={`Сообщение агенту ${agent?.name ?? ""}`}
+            disabled={hasRoles && !role}
+            placeholder={
+              hasRoles
+                ? role
+                  ? `Ответьте роли «${role.name}»`
+                  : "Сначала выберите роль выше"
+                : "Опишите задачу своими словами"
+            }
+            aria-label={`Сообщение агенту ${speaker ?? ""}`}
             className="min-h-[52px] flex-1 resize-none rounded-[12px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-2.5 text-[13.5px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
           />
+          {/* Роль заканчивает вердиктом — иначе разговор обрывается на полуслове,
+              а участнику нужно понять, с чем он идёт на следующую ступень. */}
+          {hasRoles && role && shown.length >= 2 ? (
+            <button
+              type="button"
+              onClick={() => void send(w.id, "", { roleId: role.id, kind: "verdict" })}
+              disabled={thinking}
+              className="btn btn-glass text-[12.5px] disabled:opacity-40"
+            >
+              Подвести итог
+            </button>
+          ) : null}
           <button
             type="submit"
-            disabled={!draft.trim() || thinking}
+            disabled={!draft.trim() || thinking || (hasRoles && !role)}
             className="btn btn-primary text-[13px] disabled:opacity-40"
           >
             Отправить
@@ -330,6 +429,85 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
         )}
       </section>
     </>
+  );
+}
+
+/** Роль на кнопке: инструкции ролей в браузер не уезжают, только имена. */
+type RoleChip = Omit<AgentRole, "prompt">;
+
+/**
+ * Кнопки ролей.
+ *
+ * Роли разложены по группам, и группа — не украшение. В лестнице согласования
+ * у собеседника есть право пропустить решение дальше или вернуть на доработку,
+ * и порядок обхода там жёсткий: снизу вверх, с подготовленной позицией на
+ * каждой ступени. В горизонтали никто ничего не утверждает — там либо
+ * договариваются, либо расхождение уходит на эскалацию отдельно.
+ */
+function RoleBar({
+  roles,
+  activeId,
+  spokeWith,
+  disabled,
+  onPick,
+}: {
+  roles: RoleChip[];
+  activeId: string | null;
+  spokeWith: (id: string) => boolean;
+  disabled: boolean;
+  onPick: (id: string) => void;
+}) {
+  const groups: string[] = [];
+  for (const r of roles) if (r.group && !groups.includes(r.group)) groups.push(r.group);
+  if (!groups.length) groups.push("");
+
+  return (
+    <section className="card-flat mb-4 px-5 py-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h2 className="text-[14px] font-semibold">Чью реакцию слушаем</h2>
+        <p className="text-[12px] text-muted-foreground">
+          Роль читает документ окна и разбирает его со своей колокольни
+        </p>
+      </div>
+
+      {groups.map((g) => (
+        <div key={g} className="mt-3.5">
+          {g ? <div className="label-caps mb-2">{g}</div> : null}
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {roles
+              .filter((r) => (r.group || "") === g)
+              .map((r) => {
+                const active = r.id === activeId;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => onPick(r.id)}
+                    disabled={disabled}
+                    className={`rounded-[12px] border px-3.5 py-2.5 text-left transition-colors disabled:opacity-50 ${
+                      active
+                        ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent-soft)]"
+                        : "border-[color:var(--color-line)] hover:border-[color:var(--color-text-primary)]/35"
+                    }`}
+                  >
+                    <span className="flex items-baseline gap-1.5">
+                      {spokeWith(r.id) ? (
+                        <span
+                          aria-hidden
+                          className="mt-[1px] h-[5px] w-[5px] flex-none rounded-full bg-[color:var(--color-accent)]"
+                        />
+                      ) : null}
+                      <span className="text-[13px] font-medium leading-snug">{r.name}</span>
+                    </span>
+                    {r.hint ? (
+                      <span className="mt-1 block text-[11.5px] leading-snug text-muted-foreground">{r.hint}</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 

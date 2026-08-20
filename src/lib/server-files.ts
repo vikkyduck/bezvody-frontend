@@ -10,6 +10,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import type { StoredWindow } from "./conversations";
+import type { AgentConfig } from "./server-agents";
 import {
   MAX_AGENT_FILES,
   MAX_AGENT_BYTES,
@@ -499,14 +500,23 @@ export const downloadAnswerServer = createServerFn({ method: "POST" })
     const answer = at >= 0 ? w.messages[at] : undefined;
     if (!answer) return deny;
 
-    // Вопрос — ближайшая реплика человека перед этим ответом.
-    const question =
-      [...w.messages.slice(0, at)].reverse().find((m) => m.from === "user")?.text || w.title;
+    // Вопрос — ближайшая реплика человека перед этим ответом. Первую реплику
+    // разговора с ролью пишет платформа, и в шапке файла она бесполезна:
+    // вместо неё ставим то, что роль разбирала.
+    const { ROLE_OPENING, ROLE_VERDICT } = await import("./roles");
+    const asked = [...w.messages.slice(0, at)].reverse().find((m) => m.from === "user")?.text || w.title;
+    const question = asked === ROLE_OPENING || asked === ROLE_VERDICT ? w.title : asked;
 
     const owner = list.find((p) => p.id === ownerId);
     const { agentById } = await import("./shtab-data");
+    // Ответ роли подписан ролью: через месяц «Стейкхолдеры» ни о чём не скажет,
+    // а «Стейкхолдеры · Логистика» — скажет.
+    const { rolesOf, roleById } = await import("./server-agents");
+    const cfgAll = await d.readJson<Record<string, Partial<AgentConfig>>>(`${d.dataDir()}/agents.json`, {});
+    const role = answer.roleId ? roleById(rolesOf(w.agentId, cfgAll[w.agentId]), answer.roleId) : null;
+    const agentName = agentById(w.agentId)?.name ?? "Агент";
     const meta = {
-      agent: agentById(w.agentId)?.name ?? "Агент",
+      agent: role ? `${agentName} · ${role.name}` : agentName,
       person: owner?.name ?? "",
       company: owner?.company ?? "",
       question,

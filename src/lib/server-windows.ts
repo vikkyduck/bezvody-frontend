@@ -8,9 +8,12 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { shortTitle, type StoredWindow } from "./conversations";
-import { systemPromptOf, type AgentConfig } from "./server-agents";
+import { ROLE_OPENING, ROLE_VERDICT } from "./roles";
+import { roleById, rolesOf, systemPromptOf, type AgentConfig } from "./server-agents";
 
 const stamp = () => new Date().toISOString();
+/** Окно ещё не назвали по-человечески: имя дал не участник, а платформа. */
+const isDefaultTitle = (t: string) => !t.trim() || t.trim() === "Новый вопрос";
 const rid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 9)}`;
 
 /** Свои окна — по коду. */
@@ -53,11 +56,24 @@ export const openWindowServer = createServerFn({ method: "POST" })
   });
 
 export const sendMessageServer = createServerFn({ method: "POST" })
-  .validator((data: { code: string; windowId: string; text: string }) => data)
+  .validator(
+    (data: {
+      code: string;
+      windowId: string;
+      text: string;
+      /** С какой ролью говорим — у агента с ролями */
+      roleId?: string;
+      /** open — роль читает документ и начинает; verdict — подводит итог */
+      kind?: "chat" | "open" | "verdict";
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    const text = String(data.text ?? "").trim();
+    // Первую и последнюю реплику пишет платформа, а не человек: роль должна
+    // сама открыть разговор по документу и сама закончить вердиктом.
+    const text =
+      data.kind === "open" ? ROLE_OPENING : data.kind === "verdict" ? ROLE_VERDICT : String(data.text ?? "").trim();
     if (!me || !text) return { windows: [] as StoredWindow[], note: "" };
 
     const q = await import("./server-queue");
@@ -102,9 +118,16 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     // Спрашиваем модель. Историю передаём ту, что была ДО этого вопроса.
     const cfgAll = await d.readJson<Record<string, Partial<AgentConfig>>>(`${d.dataDir()}/agents.json`, {});
     const cfg = cfgAll[target.agentId];
+    // Роль берём на сервере по её ключу: из браузера приходит только ключ,
+    // инструкции ролей туда не уезжают.
+    const role = data.roleId ? roleById(rolesOf(target.agentId, cfg), data.roleId) : null;
     // Инструкция агента плюс правило завершения: команда должна получить
-    // документ, а не переписку с уточнениями.
-    const systemPrompt = systemPromptOf(cfg);
+    // документ, а не переписку с уточнениями. У роли правило своё — разговор.
+    const systemPrompt = systemPromptOf(cfg, role);
+
+    // История — только та, что шла с этой же ролью. Разговоры с разными
+    // ролями в одном окне не смешиваются: каждая читает документ своими глазами.
+    const history = role ? target.messages.filter((m) => m.roleId === role.id) : target.messages.filter((m) => !m.roleId);
     q.startAsking(key);
 
     // Документы: постоянные у агента, принесённые в окно и прочитанные по ссылкам.
@@ -136,7 +159,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
             },
             auth: agentAuth,
             systemPrompt,
-            history: target.messages,
+            history,
             question: text,
             attachments,
           });
@@ -149,10 +172,10 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         return askAgent({
           systemPrompt,
           model: cfg?.model ?? "claude-opus-5",
-          history: target.messages,
+          history,
           question: text,
           attachments,
-          label: `${target.agentId} · ${me.name}`,
+          label: `${target.agentId}${role ? `/${role.id}` : ""} · ${me.name}`,
         });
       });
     } finally {
@@ -181,8 +204,12 @@ export const sendMessageServer = createServerFn({ method: "POST" })
             ...w.docs,
             {
               id: rid("d"),
-              title: w.messages.length === 0 ? shortTitle(text) : `Ответ от ${new Date().toLocaleDateString("ru-RU")}`,
-              kind: "Разбор агента",
+              title: role
+                ? `${role.name} — ${data.kind === "verdict" ? "вердикт" : "разбор"}`
+                : w.messages.length === 0
+                  ? shortTitle(text)
+                  : `Ответ от ${new Date().toLocaleDateString("ru-RU")}`,
+              kind: role ? "Разговор с ролью" : "Разбор агента",
               at: stamp(),
               messageId: answerId,
             },
@@ -190,13 +217,21 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         : w.docs;
       return {
         ...w,
-        title: w.messages.length === 0 ? shortTitle(text) : w.title,
+        // Заголовок окна с ролями — имя документа, который прогоняют: реплика
+        // «посмотри материалы» в списке окон не говорит ни о чём.
+        title: role
+          ? isDefaultTitle(w.title)
+            ? shortTitle(files[0]?.name ?? w.title)
+            : w.title
+          : w.messages.length === 0
+            ? shortTitle(text)
+            : w.title,
         updatedAt: stamp(),
         docs,
         messages: [
           ...w.messages,
-          { id: rid("m"), from: "user" as const, text, at: stamp() },
-          { id: answerId, from: "agent" as const, text: reply, at: stamp() },
+          { id: rid("m"), from: "user" as const, text, at: stamp(), ...(role ? { roleId: role.id } : {}) },
+          { id: answerId, from: "agent" as const, text: reply, at: stamp(), ...(role ? { roleId: role.id } : {}) },
         ],
       };
     });

@@ -28,7 +28,7 @@ type Store = {
   activeId: string | null;
   setActive: (id: string | null) => void;
   open: (agentId: string, title?: string) => Promise<void>;
-  send: (windowId: string, text: string) => Promise<void>;
+  send: (windowId: string, text: string, opts?: SendOpts) => Promise<void>;
   remove: (windowId: string) => Promise<void>;
   /** Принести документ в окно. Вернёт текст ошибки или пустую строку */
   attach: (windowId: string, file: File) => Promise<string>;
@@ -40,6 +40,9 @@ type Store = {
   note: string;
   clearNote: () => void;
 };
+
+/** С какой ролью говорим и что это за реплика — у агента с ролями. */
+export type SendOpts = { roleId?: string; kind?: "chat" | "open" | "verdict" };
 
 const Ctx = createContext<Store | null>(null);
 
@@ -75,12 +78,17 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
   );
 
   const send = useCallback(
-    async (windowId: string, text: string) => {
-      if (!code || !text.trim()) return;
+    async (windowId: string, text: string, opts: SendOpts = {}) => {
+      // Открытие разговора с ролью и просьба подвести итог текста не несут:
+      // их пишет сервер, чтобы формулировка была одна и та же у всех.
+      const composed = opts.kind === "open" || opts.kind === "verdict";
+      if (!code || (!text.trim() && !composed)) return;
       setThinking(windowId);
       setNote("");
       try {
-        const res = await sendMessageServer({ data: { code, windowId, text } });
+        const res = await sendMessageServer({
+          data: { code, windowId, text, kind: opts.kind ?? "chat", ...(opts.roleId ? { roleId: opts.roleId } : {}) },
+        });
         setWindows(res.windows);
         setNote(res.note ?? "");
       } catch {
