@@ -69,18 +69,50 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     if (!target) return { windows };
 
     // Спрашиваем модель. Историю передаём ту, что была ДО этого вопроса.
-    const cfgAll = await d.readJson<Record<string, { prompt: string; model: string }>>(
+    const cfgAll = await d.readJson<
+      Record<
+        string,
+        {
+          prompt: string;
+          model: string;
+          transport?: "model" | "http";
+          endpoint?: string;
+          authHeader?: string;
+          format?: "openai" | "simple";
+        }
+      >
+    >(
       `${d.dataDir()}/agents.json`,
       {},
     );
     const cfg = cfgAll[target.agentId];
-    const { askAgent } = await import("./server-llm");
-    const answer = await askAgent({
-      systemPrompt: cfg?.prompt ?? "",
-      model: cfg?.model ?? "claude-opus-5",
-      history: target.messages,
-      question: text,
-    });
+    let answer: { ok: true; text: string } | { ok: false; reason: string; detail?: string };
+
+    if (cfg?.transport === "http") {
+      // Агент живёт за вашим сервисом — идём туда, а не к модели напрямую.
+      const { callHttpAgent } = await import("./server-http-agent");
+      const res = await callHttpAgent({
+        settings: {
+          endpoint: cfg.endpoint ?? "",
+          authHeader: cfg.authHeader ?? "Authorization",
+          format: cfg.format ?? "openai",
+          ...(cfg.model ? { model: cfg.model } : {}),
+        },
+        auth: await d.readAgentAuth(target.agentId),
+        systemPrompt: cfg.prompt ?? "",
+        history: target.messages,
+        question: text,
+      });
+      answer = res.ok ? { ok: true, text: res.text } : { ok: false, reason: "failed", detail: res.detail };
+    } else {
+      const { askAgent } = await import("./server-llm");
+      answer = await askAgent({
+        systemPrompt: cfg?.prompt ?? "",
+        model: cfg?.model ?? "claude-opus-5",
+        history: target.messages,
+        question: text,
+      });
+    }
 
     const reply = answer.ok
       ? answer.text

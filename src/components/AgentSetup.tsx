@@ -4,11 +4,13 @@ import { useSession } from "@/lib/session";
 import {
   DEFAULT_MODEL,
   MODELS,
-  emptyConfig,
   getAgentSettingsServer,
+  normalizeConfig,
   saveAgentServer,
   saveApiKeyServer,
+  testAgentServer,
   type AgentSettings,
+  type Transport,
 } from "@/lib/server-agents";
 import { agents } from "@/lib/shtab-data";
 
@@ -119,32 +121,60 @@ function AgentCard({
   onSaved: (s: AgentSettings) => void;
 }) {
   const { code } = useSession();
-  const saved = settings.agents[id] ?? emptyConfig();
+  const saved = normalizeConfig(settings.agents[id]);
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState(saved.prompt);
   const [model, setModel] = useState(saved.model || DEFAULT_MODEL);
+  const [transport, setTransport] = useState<Transport>(saved.transport);
+  const [endpoint, setEndpoint] = useState(saved.endpoint);
+  const [authHeader, setAuthHeader] = useState(saved.authHeader);
+  const [format, setFormat] = useState<"openai" | "simple">(saved.format);
+  const [auth, setAuth] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [test, setTest] = useState<{ ok: boolean; detail: string; raw: string; text: string } | null>(null);
 
-  // Сохранили из другого места — подхватываем, пока поле не трогали.
+  // Сохранили из другого места — подхватываем, пока карточка свёрнута.
   useEffect(() => {
-    if (!open) {
-      setPrompt(saved.prompt);
-      setModel(saved.model || DEFAULT_MODEL);
-    }
-  }, [open, saved.prompt, saved.model]);
+    if (open) return;
+    setPrompt(saved.prompt);
+    setModel(saved.model || DEFAULT_MODEL);
+    setTransport(saved.transport);
+    setEndpoint(saved.endpoint);
+    setAuthHeader(saved.authHeader);
+    setFormat(saved.format);
+  }, [open, saved.prompt, saved.model, saved.transport, saved.endpoint, saved.authHeader, saved.format]);
 
   async function save() {
     if (!code) return;
     setBusy(true);
     setDone(false);
+    setTest(null);
     try {
-      onSaved(await saveAgentServer({ data: { code, agentId: id, prompt, model } }));
+      onSaved(
+        await saveAgentServer({
+          data: { code, agentId: id, prompt, model, transport, endpoint, authHeader, format, auth },
+        }),
+      );
+      setAuth("");
       setDone(true);
     } finally {
       setBusy(false);
     }
   }
+
+  async function checkLink() {
+    if (!code) return;
+    setBusy(true);
+    setTest(null);
+    try {
+      setTest(await testAgentServer({ data: { code, agentId: id } }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const where = saved.transport === "http" ? "ваш сервис" : MODELS.find((m) => m.id === saved.model)?.label ?? saved.model;
 
   return (
     <div className="card-flat px-5 py-5">
@@ -159,31 +189,106 @@ function AgentCard({
                   : "border-[color:var(--color-line)] text-muted-foreground"
               }`}
             >
-              {saved.enabled ? "настроен" : "без инструкции"}
+              {saved.enabled ? "настроен" : "не настроен"}
             </span>
           </div>
           <p className="mt-1 text-[12px] text-muted-foreground">
             {saved.enabled
-              ? `${MODELS.find((m) => m.id === saved.model)?.label ?? saved.model} · инструкция ${saved.prompt.length} знаков`
+              ? saved.transport === "http"
+                ? `${where} · ${saved.endpoint}`
+                : `${where} · инструкция ${saved.prompt.length} знаков`
               : "клиент увидит, что агент не настроен"}
           </p>
         </div>
         <button onClick={() => setOpen((v) => !v)} className="btn btn-glass text-[12.5px]">
-          {open ? "Свернуть" : saved.enabled ? "Изменить инструкцию" : "Вписать инструкцию"}
+          {open ? "Свернуть" : "Настроить"}
         </button>
       </div>
 
       {open ? (
-        <div className="mt-5 space-y-3 border-t border-[color:var(--color-line)] pt-5">
+        <div className="mt-5 space-y-4 border-t border-[color:var(--color-line)] pt-5">
+          <div>
+            <span className="label-caps">Кто отвечает</span>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => setTransport("model")}
+                className={`btn text-[12px] ${transport === "model" ? "btn-primary" : "btn-glass"}`}
+              >
+                Модель напрямую
+              </button>
+              <button
+                onClick={() => setTransport("http")}
+                className={`btn text-[12px] ${transport === "http" ? "btn-primary" : "btn-glass"}`}
+              >
+                Ваш готовый сервис
+              </button>
+            </div>
+          </div>
+
+          {transport === "http" ? (
+            <div className="space-y-3">
+              <label className="block">
+                <span className="label-caps">Адрес сервиса</span>
+                <input
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder="https://ваш-сервис.ру/api/agent"
+                  spellCheck={false}
+                  className={inputCls}
+                />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="label-caps">Ключ или токен доступа</span>
+                  <input
+                    type="password"
+                    value={auth}
+                    onChange={(e) => setAuth(e.target.value)}
+                    placeholder={saved.authSet ? "задан — впишите новый, чтобы заменить" : "если сервис требует"}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={inputCls}
+                  />
+                </label>
+                <label className="block">
+                  <span className="label-caps">Заголовок авторизации</span>
+                  <input
+                    value={authHeader}
+                    onChange={(e) => setAuthHeader(e.target.value)}
+                    placeholder="Authorization"
+                    spellCheck={false}
+                    className={inputCls}
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="label-caps">Формат запроса</span>
+                <select value={format} onChange={(e) => setFormat(e.target.value as "openai" | "simple")} className={inputCls}>
+                  <option value="openai">Как у OpenAI — messages[], ответ в choices[0].message.content</option>
+                  <option value="simple">Простой — шлём message + history, ответ ищем в reply / text / answer</option>
+                </select>
+              </label>
+
+              <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+                Не знаете формат — сохраните и нажмите «Проверить связь»: платформа покажет, что ответил
+                сервис, и по этому ответу разбор допишется точно.
+              </p>
+            </div>
+          ) : null}
+
           <label className="block">
-            <span className="label-caps">Инструкция агента</span>
+            <span className="label-caps">
+              {transport === "http" ? "Инструкция (уйдёт в сервис как системная, если он её принимает)" : "Инструкция агента"}
+            </span>
             <textarea
               value={prompt}
               onChange={(e) => {
                 setPrompt(e.target.value);
                 setDone(false);
               }}
-              rows={16}
+              rows={transport === "http" ? 6 : 16}
               placeholder="Вставьте сюда текст инструкции: кто агент, что делает, в каком виде отдаёт результат"
               className="mt-1.5 w-full resize-y rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-3 text-[13px] leading-relaxed outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
             />
@@ -207,10 +312,33 @@ function AgentCard({
             <button onClick={save} disabled={busy} className="btn btn-primary text-[13px] disabled:opacity-50">
               {busy ? "Сохраняю" : "Сохранить"}
             </button>
+            {transport === "http" && saved.endpoint ? (
+              <button onClick={checkLink} disabled={busy} className="btn btn-glass text-[13px] disabled:opacity-50">
+                Проверить связь
+              </button>
+            ) : null}
             {done ? <span className="text-[12px] text-muted-foreground">Сохранено</span> : null}
           </div>
+
+          {test ? (
+            <div className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3">
+              <div className="label-caps">{test.ok ? "Связь есть" : "Связи нет"}</div>
+              <p className="mt-1.5 text-[12.5px]">{test.ok ? test.text.slice(0, 400) : test.detail}</p>
+              {test.raw ? (
+                <details className="mt-2.5">
+                  <summary className="cursor-pointer text-[11.5px] text-muted-foreground">Сырой ответ сервиса</summary>
+                  <pre className="mt-2 max-h-[240px] overflow-auto rounded-[8px] bg-[color:var(--color-bg-secondary)] p-3 text-[11px] leading-relaxed">
+                    {test.raw}
+                  </pre>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 }
+
+const inputCls =
+  "mt-1.5 w-full rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40";

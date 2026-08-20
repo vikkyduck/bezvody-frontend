@@ -53,13 +53,36 @@ export const today = () => new Date().toLocaleDateString("ru-RU");
 
 const secretsFile = () => `${dataDir()}/secrets.json`;
 
+type Secrets = { anthropicKey?: string; agentAuth?: Record<string, string> };
+
+const readSecrets = () => readJson<Secrets>(secretsFile(), {});
+
+async function writeSecrets(next: Secrets): Promise<void> {
+  const { chmod } = await import("node:fs/promises");
+  await writeJson(secretsFile(), next);
+  await chmod(secretsFile(), 0o600);
+}
+
 export async function readApiKey(): Promise<string> {
-  const raw = await readJson<{ anthropicKey?: string }>(secretsFile(), {});
+  const raw = await readSecrets();
   return raw.anthropicKey?.trim() || process.env["ANTHROPIC_API_KEY"]?.trim() || "";
 }
 
 export async function writeApiKey(key: string): Promise<void> {
-  const { chmod } = await import("node:fs/promises");
-  await writeJson(secretsFile(), { anthropicKey: key });
-  await chmod(secretsFile(), 0o600);
+  const cur = await readSecrets();
+  await writeSecrets({ ...cur, anthropicKey: key });
+}
+
+/** Секрет доступа к чужому API — свой на каждого агента. */
+export async function readAgentAuth(agentId: string): Promise<string> {
+  const raw = await readSecrets();
+  return raw.agentAuth?.[agentId]?.trim() ?? "";
+}
+
+export async function writeAgentAuth(agentId: string, value: string): Promise<void> {
+  const cur = await readSecrets();
+  const agentAuth = { ...(cur.agentAuth ?? {}) };
+  if (value) agentAuth[agentId] = value;
+  else delete agentAuth[agentId];
+  await writeSecrets({ ...cur, agentAuth });
 }
