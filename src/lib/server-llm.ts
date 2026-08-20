@@ -89,12 +89,14 @@ export async function askAgent(opts: {
   attachments?: Attachment[];
   /** Чем думает агент. По умолчанию Claude — так было до появления выбора */
   provider?: Provider;
+  /** ID агента, для per-agent ключа провайдера */
+  agentId?: string;
   /** Для журнала: кто и с каким агентом говорит */
   label?: string;
 }): Promise<AskResult> {
   const provider: Provider = opts.provider ?? "anthropic";
   const { readApiKey } = await import("./server-data");
-  const apiKey = await readApiKey(provider);
+  const apiKey = await readApiKey(provider, opts.agentId);
   // Ключ свой у каждого провайдера — человеку важно знать, какого не хватает.
   if (!apiKey) return { ok: false, reason: "no-key", detail: providerLabel(provider) };
   if (!opts.systemPrompt.trim()) return { ok: false, reason: "not-configured" };
@@ -103,7 +105,7 @@ export async function askAgent(opts: {
   // другая работа с документами, и мешать это с кодом Claude незачем.
   if (provider !== "anthropic") {
     const { askAlt } = await import("./server-llm-alt");
-    return askAlt(provider, opts, apiKey);
+    return askAlt(provider, opts as any, apiKey);
   }
 
   const { default: Anthropic } = await import("@anthropic-ai/sdk");

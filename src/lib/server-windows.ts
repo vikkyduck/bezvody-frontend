@@ -173,6 +173,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
           systemPrompt,
           model: cfg?.model ?? "claude-opus-5",
           ...(cfg?.provider ? { provider: cfg.provider } : {}),
+          agentId: target.agentId,
           history,
           question: text,
           attachments,

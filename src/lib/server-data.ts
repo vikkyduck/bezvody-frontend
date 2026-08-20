@@ -75,6 +75,9 @@ type Secrets = {
   anthropicKey?: string;
   openaiKey?: string;
   geminiKey?: string;
+  /** Ключ провайдера конкретного агента: override глобального ключа */
+  agentProviderKeys?: Record<string, Partial<Record<string, string>>>;
+  /** Ключ для HTTP-сервиса агента */
   agentAuth?: Record<string, string>;
 };
 
@@ -95,16 +98,34 @@ async function writeSecrets(next: Secrets): Promise<void> {
   await chmod(secretsFile(), 0o600);
 }
 
-export async function readApiKey(provider: KeyProvider = "anthropic"): Promise<string> {
+export async function readApiKey(provider: KeyProvider = "anthropic", agentId?: string): Promise<string> {
+  // Сначала проверяем ключ агента (per-agent override).
+  if (agentId) {
+    const raw = await readSecrets();
+    const agentKey = raw.agentProviderKeys?.[agentId]?.[provider]?.trim();
+    if (agentKey) return agentKey;
+  }
+  // Потом глобальный ключ провайдера.
   const { field, env } = KEY_FIELD[provider] ?? KEY_FIELD.anthropic;
   const raw = await readSecrets();
   return raw[field]?.trim() || process.env[env]?.trim() || "";
 }
 
-export async function writeApiKey(provider: KeyProvider, key: string): Promise<void> {
-  const { field } = KEY_FIELD[provider] ?? KEY_FIELD.anthropic;
+export async function writeApiKey(provider: KeyProvider, key: string, agentId?: string): Promise<void> {
   const cur = await readSecrets();
-  await writeSecrets({ ...cur, [field]: key });
+  if (agentId) {
+    // Per-agent ключ.
+    const agentProviderKeys = { ...(cur.agentProviderKeys ?? {}) };
+    if (!agentProviderKeys[agentId]) agentProviderKeys[agentId] = {};
+    if (key) agentProviderKeys[agentId][provider] = key;
+    else delete agentProviderKeys[agentId][provider];
+    if (!Object.keys(agentProviderKeys[agentId]).length) delete agentProviderKeys[agentId];
+    await writeSecrets({ ...cur, agentProviderKeys });
+  } else {
+    // Глобальный ключ.
+    const { field } = KEY_FIELD[provider] ?? KEY_FIELD.anthropic;
+    await writeSecrets({ ...cur, [field]: key });
+  }
 }
 
 /** Секрет доступа к чужому API — свой на каждого агента. */

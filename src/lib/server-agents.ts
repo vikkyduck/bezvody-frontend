@@ -77,6 +77,12 @@ export const MODELS = [
 
 export const DEFAULT_MODEL = "claude-opus-5";
 
+/** Модель по умолчанию для агента. Архитектор и советы на Sonnet, остальные тоже. */
+export const defaultModelOf = (agentId: string): string => {
+  if (agentId === "neurocouncil") return "claude-opus-5";
+  return "claude-sonnet-5";
+};
+
 /**
  * Правило завершения работы. Дописывается к инструкции каждого агента.
  *
@@ -114,11 +120,11 @@ export const DEFAULT_FINISH_RULE = `Ответ всегда состоит из 
 
 Заголовки двух частей пиши ровно так: «# Документ» и «# Разбор и вопросы». По ним платформа собирает файл Word: документ идёт основной частью, разбор — отдельным приложением с новой страницы.`;
 
-export const emptyConfig = (): AgentConfig => ({
+export const emptyConfig = (agentId?: string): AgentConfig => ({
   prompt: "",
   provider: "anthropic",
+  model: agentId ? defaultModelOf(agentId) : DEFAULT_MODEL,
   finishRule: DEFAULT_FINISH_RULE,
-  model: DEFAULT_MODEL,
   enabled: false,
   updatedAt: null,
   transport: "model",
@@ -129,14 +135,13 @@ export const emptyConfig = (): AgentConfig => ({
 });
 
 /** Старая запись могла быть без новых полей — добиваем значениями по умолчанию. */
-export function normalizeConfig(c: Partial<AgentConfig> | undefined): AgentConfig {
-  const base = { ...emptyConfig(), ...(c ?? {}) };
+export function normalizeConfig(c: Partial<AgentConfig> | undefined, agentId?: string): AgentConfig {
+  const base = { ...emptyConfig(agentId), ...(c ?? {}) };
   // Запись, сделанная до появления правила, получает его по умолчанию:
   // включать руками каждому агенту — лишний повод забыть.
   return {
     ...base,
     finishRule: c && "finishRule" in c ? (c.finishRule ?? "") : DEFAULT_FINISH_RULE,
-    // Записи, сделанные до появления выбора модели, работали на Claude.
     provider: isProvider(base.provider) ? base.provider : "anthropic",
     authSet: Boolean(base.authSet),
   };
@@ -235,7 +240,7 @@ export const saveAgentServer = createServerFn({ method: "POST" })
 
     const file = `${d.dataDir()}/agents.json`;
     const agents = await d.readJson<AgentConfigMap>(file, {});
-    const prev = normalizeConfig(agents[data.agentId]);
+    const prev = normalizeConfig(agents[data.agentId], data.agentId);
     const prompt = String(data.prompt ?? "").trim();
     const transport = data.transport ?? prev.transport;
     const provider: Provider = isProvider(data.provider) ? data.provider : prev.provider;
@@ -259,7 +264,7 @@ export const saveAgentServer = createServerFn({ method: "POST" })
         provider === "anthropic"
           ? MODELS.some((m) => m.id === data.model)
             ? data.model
-            : DEFAULT_MODEL
+            : defaultModelOf(data.agentId)
           : String(data.model ?? "").trim().slice(0, 100) || DEFAULT_MODEL_OF[provider],
       transport,
       endpoint,
@@ -305,7 +310,7 @@ export const testAgentServer = createServerFn({ method: "POST" })
     if (!me || me.role !== "admin") return { ok: false, detail: "нет доступа", raw: "", text: "" };
 
     const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
-    const cfg = normalizeConfig(agents[data.agentId]);
+    const cfg = normalizeConfig(agents[data.agentId], data.agentId);
 
     // Агент на модели: проверяем, что ключ и имя модели рабочие. Это главный
     // способ узнать правду про чужого провайдера — их линейки меняются, и
