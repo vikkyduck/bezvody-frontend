@@ -128,7 +128,7 @@ function Start({ ready, windows }: { ready: boolean; windows: StoredWindow[] }) 
 // ── Разговор ──────────────────────────────────────────────────────────────────
 
 function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () => void }) {
-  const { send, remove, attach, detach, download, thinkingId } = useWindows();
+  const { send, remove, attach, detach, download, thinkingId, note, clearNote } = useWindows();
   const [draft, setDraft] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -204,6 +204,15 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
 
           {thinking ? <Waiting name={agent?.name ?? "Агент"} /> : null}
         </div>
+
+        {note ? (
+          <div className="flex items-start gap-3 border-t border-[color:var(--color-line)] px-5 py-3 text-[12.5px] text-[color:var(--color-accent)]">
+            <span className="flex-1">{note}</span>
+            <button onClick={clearNote} aria-label="Скрыть сообщение" className="text-muted-foreground">
+              ✕
+            </button>
+          </div>
+        ) : null}
 
         {/* Документы окна — на виду у поля ввода: агент читает их при каждом вопросе */}
         <div className="border-t border-[color:var(--color-line)] px-5 py-3">

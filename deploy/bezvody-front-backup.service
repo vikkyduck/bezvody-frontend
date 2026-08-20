@@ -1,0 +1,6 @@
+[Unit]
+Description=Платформа «Без Воды» — резервная копия данных фронта
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bezvody-front-backup.sh

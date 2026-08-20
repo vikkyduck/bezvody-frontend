@@ -57,12 +57,33 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
     const text = String(data.text ?? "").trim();
-    if (!me || !text) return { windows: [] as StoredWindow[] };
+    if (!me || !text) return { windows: [] as StoredWindow[], note: "" };
+
+    const q = await import("./server-queue");
+    const key = `${me.id}:${data.windowId}`;
+
+    // Тот же вопрос уже в работе: так бывает, когда у человека оборвалась
+    // связь и он нажал «Отправить» ещё раз. Два ответа в одно окно пишут
+    // один поверх другого — и переписка теряется. Лучше вежливо подождать.
+    if (q.isAsking(key)) {
+      return {
+        windows: await d.readWindows(me.id),
+        note: "Предыдущий вопрос ещё в работе — ответ появится сам, повторять не нужно.",
+      };
+    }
+
+    // Очередь переполнена — честно говорим об этом, а не держим человека час.
+    if (q.modelGate.full) {
+      return {
+        windows: await d.readWindows(me.id),
+        note: "Сейчас к агентам очень много обращений. Подождите пару минут и отправьте вопрос снова.",
+      };
+    }
 
     let windows = await d.readWindows(me.id);
 
     const target = windows.find((w) => w.id === data.windowId);
-    if (!target) return { windows };
+    if (!target) return { windows, note: "" };
 
     // Ссылки из вопроса читаем ДО того, как спросить агента: он должен
     // получить документ, а не отвечать «доступа к внешним файлам у меня нет».
@@ -95,6 +116,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
       {},
     );
     const cfg = cfgAll[target.agentId];
+    q.startAsking(key);
 
     // Документы: постоянные у агента, принесённые в окно и прочитанные по ссылкам.
     const attachments = await attachmentsFor({
@@ -105,32 +127,49 @@ export const sendMessageServer = createServerFn({ method: "POST" })
 
     let answer: { ok: true; text: string } | { ok: false; reason: string; detail?: string };
 
-    if (cfg?.transport === "http") {
-      // Агент живёт за вашим сервисом — идём туда, а не к модели напрямую.
-      const { callHttpAgent } = await import("./server-http-agent");
-      const res = await callHttpAgent({
-        settings: {
-          endpoint: cfg.endpoint ?? "",
-          authHeader: cfg.authHeader ?? "Authorization",
-          format: cfg.format ?? "openai",
-          ...(cfg.model ? { model: cfg.model } : {}),
-        },
-        auth: await d.readAgentAuth(target.agentId),
-        systemPrompt: cfg.prompt ?? "",
-        history: target.messages,
-        question: text,
-        attachments,
+    // Секрет чужого сервиса читаем ДО очереди: в очереди уже не до файлов.
+    const agentAuth = cfg?.transport === "http" ? await d.readAgentAuth(target.agentId) : "";
+
+    try {
+      // Через очередь: одновременных разговоров с моделью столько, сколько
+      // она готова тянуть, остальные ждут. Ждать дольше лучше, чем получить
+      // «слишком часто» вместо разбора.
+      answer = await q.modelGate.run(async () => {
+        if (cfg?.transport === "http") {
+          // Агент живёт за вашим сервисом — идём туда, а не к модели напрямую.
+          const { callHttpAgent } = await import("./server-http-agent");
+          const res = await callHttpAgent({
+            settings: {
+              endpoint: cfg.endpoint ?? "",
+              authHeader: cfg.authHeader ?? "Authorization",
+              format: cfg.format ?? "openai",
+              ...(cfg.model ? { model: cfg.model } : {}),
+            },
+            auth: agentAuth,
+            systemPrompt: cfg.prompt ?? "",
+            history: target.messages,
+            question: text,
+            attachments,
+          });
+          return res.ok
+            ? { ok: true as const, text: res.text }
+            : { ok: false as const, reason: "failed", detail: res.detail };
+        }
+
+        const { askAgent } = await import("./server-llm");
+        return askAgent({
+          systemPrompt: cfg?.prompt ?? "",
+          model: cfg?.model ?? "claude-opus-5",
+          history: target.messages,
+          question: text,
+          attachments,
+          label: `${target.agentId} · ${me.name}`,
+        });
       });
-      answer = res.ok ? { ok: true, text: res.text } : { ok: false, reason: "failed", detail: res.detail };
-    } else {
-      const { askAgent } = await import("./server-llm");
-      answer = await askAgent({
-        systemPrompt: cfg?.prompt ?? "",
-        model: cfg?.model ?? "claude-opus-5",
-        history: target.messages,
-        question: text,
-        attachments,
-      });
+    } finally {
+      // Отпускаем человека в любом случае: иначе после сбоя он не сможет
+      // задать вопрос до перезапуска сервиса.
+      q.doneAsking(key);
     }
 
     const reply = answer.ok
@@ -139,7 +178,9 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         ? "Агент настроен, но ключ модели ещё не задан — администратор вписывает его в своей панели. Вопрос сохранён."
         : answer.reason === "not-configured"
           ? "Этому агенту ещё не задали инструкцию — администратор вписывает её в своей панели. Вопрос сохранён."
-          : `Не удалось получить ответ: ${answer.detail ?? "ошибка связи с моделью"}. Вопрос сохранён — попробуйте ещё раз.`;
+          : answer.reason === "busy"
+            ? "Сейчас к агенту очередь: слишком много обращений разом. Вопрос сохранён — отправьте его ещё раз через минуту."
+            : `Не удалось получить ответ: ${answer.detail ?? "ошибка связи с моделью"}. Вопрос сохранён — попробуйте ещё раз.`;
 
     const next = windows.map((w) => {
       if (w.id !== data.windowId) return w;
@@ -168,7 +209,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     });
 
     await d.writeWindows(me.id, next);
-    return { windows: next };
+    return { windows: next, note: "" };
   });
 
 export const deleteWindowServer = createServerFn({ method: "POST" })

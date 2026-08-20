@@ -17,7 +17,7 @@ const BASE_URL = process.env["ANTHROPIC_BASE_URL"]?.trim() || "http://127.0.0.1:
 
 export type AskResult =
   | { ok: true; text: string }
-  | { ok: false; reason: "no-key" | "not-configured" | "failed"; detail?: string };
+  | { ok: false; reason: "no-key" | "not-configured" | "busy" | "failed"; detail?: string };
 
 /** Картинки модель принимает не любые — тип проверяется строго. */
 const imageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
@@ -86,6 +86,8 @@ export async function askAgent(opts: {
   history: StoredMessage[];
   question: string;
   attachments?: Attachment[];
+  /** Для журнала: кто и с каким агентом говорит */
+  label?: string;
 }): Promise<AskResult> {
   const { readApiKey } = await import("./server-data");
   const apiKey = await readApiKey();
@@ -93,7 +95,10 @@ export async function askAgent(opts: {
   if (!opts.systemPrompt.trim()) return { ok: false, reason: "not-configured" };
 
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic({ apiKey, baseURL: BASE_URL });
+  // Повторы — не роскошь: при тридцати одновременных разговорах модель
+  // отвечает «слишком часто», и это лечится паузой, а не сообщением об
+  // ошибке. Пакет сам выдерживает паузу, которую просит сервер.
+  const client = new Anthropic({ apiKey, baseURL: BASE_URL, maxRetries: 4 });
 
   // История разговора: платформа не помнит контекст за модель — он передаётся
   // целиком каждый раз, иначе агент забудет, о чём шла речь двумя репликами выше.
@@ -105,16 +110,30 @@ export async function askAgent(opts: {
     { role: "user" as const, content: contentFor(opts.question, opts.attachments ?? []) },
   ];
 
+  const started = Date.now();
   try {
     const stream = client.messages.stream({
       model: opts.model,
       max_tokens: 32000,
-      system: opts.systemPrompt,
+      // Инструкция агента — двадцать пять тысяч знаков, и она одна и та же у
+      // всех клиентов этого агента. Помечаем её как кешируемую: модель хранит
+      // разобранный кусок и не пересчитывает его на каждый вопрос. Это и
+      // дешевле в разы, и заметно быстрее на первом токене — а при тридцати
+      // работающих одновременно ещё и снимает нагрузку с лимита по токенам.
+      system: [{ type: "text", text: opts.systemPrompt, cache_control: { type: "ephemeral" } }],
       thinking: { type: "adaptive" },
       output_config: { effort: "high" },
       messages,
     });
     const final = await stream.finalMessage();
+
+    // Строка в журнал сервера: видно, сколько шёл ответ, сколько стоил
+    // и сработал ли кеш инструкции.
+    const u = final.usage;
+    console.log(
+      `[агент] ${opts.label ?? opts.model} · ${Math.round((Date.now() - started) / 1000)}с · ` +
+        `вход ${u.input_tokens} · из кеша ${u.cache_read_input_tokens ?? 0} · записано в кеш ${u.cache_creation_input_tokens ?? 0} · выход ${u.output_tokens}`,
+    );
 
     if (final.stop_reason === "refusal") {
       return { ok: false, reason: "failed", detail: "модель отказалась отвечать на этот запрос" };
@@ -130,8 +149,18 @@ export async function askAgent(opts: {
   } catch (err) {
     // Наружу отдаём короткую причину: подробности с ключами и адресами
     // остаются в журнале сервера, а не на экране клиента.
+    const status = (err as { status?: number } | null)?.status;
     const detail = err instanceof Error ? err.message.slice(0, 200) : "неизвестная ошибка";
-    console.error("Вызов модели не удался:", detail);
+    const secs = Math.round((Date.now() - started) / 1000);
+
+    // 429 — «слишком часто», 529 — «модель перегружена». Это не поломка,
+    // а очередь: человеку надо сказать именно это, иначе он решит, что сломалось.
+    if (status === 429 || status === 529) {
+      console.warn(`[агент] ${opts.label ?? opts.model} · ${secs}с · модель отвечает «занято» (${status})`);
+      return { ok: false, reason: "busy" };
+    }
+
+    console.error(`[агент] ${opts.label ?? opts.model} · ${secs}с · сорвалось: ${detail}`);
     return { ok: false, reason: "failed", detail };
   }
 }

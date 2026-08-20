@@ -70,6 +70,11 @@ async function saveFile(
   const kind = kindOf(name)!;
   await writeFile(`${dir}/${id}.bin`, bytes);
 
+  // Разбор документа — работа памятью и процессором: стомегабайтная книга
+  // разворачивается в сотни мегабайт XML. Пропускаем через очередь, чтобы
+  // тридцать одновременных загрузок не сложили сервис.
+  const { fileGate } = await import("./server-queue");
+  const parsed = await fileGate.run(async () => {
   let text = "";
   let note = "";
   if (kind === "office") {
@@ -105,6 +110,10 @@ async function saveFile(
     if (!note) note = "документ очень большой — сохранена первая часть текста";
   }
 
+  return { text, note };
+  });
+
+  const { text, note } = parsed;
   if (text.trim()) await writeFile(`${dir}/${id}.txt`, text, "utf8");
 
   return {

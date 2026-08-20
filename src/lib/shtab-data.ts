@@ -22,7 +22,7 @@ export type Agent = {
 export const agents: Agent[] = [
   {
     id: "architect",
-    name: "Архитектор",
+    name: "Никита",
     result: "Решение на шести страницах — читается за двадцать минут",
     method: "Собирает «6-pager»: связный документ вместо слайдов",
   },

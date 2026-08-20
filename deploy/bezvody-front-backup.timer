@@ -1,0 +1,11 @@
+[Unit]
+Description=Копия данных платформы «Без Воды» раз в час
+
+[Timer]
+OnCalendar=hourly
+# Пропущенный запуск (сервер был выключен) отрабатывается при старте.
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

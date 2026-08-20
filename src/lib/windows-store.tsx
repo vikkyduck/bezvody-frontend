@@ -36,6 +36,9 @@ type Store = {
   download: (file: StoredFile) => Promise<{ ok: boolean; name: string; mime: string; base64: string }>;
   /** Окно, где агент сейчас отвечает */
   thinkingId: string | null;
+  /** Сообщение платформы человеку: очередь, повтор вопроса и подобное */
+  note: string;
+  clearNote: () => void;
 };
 
 const Ctx = createContext<Store | null>(null);
@@ -46,6 +49,7 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [activeId, setActive] = useState<string | null>(null);
   const [thinkingId, setThinking] = useState<string | null>(null);
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     // Окна есть только у того, кто работает в них сам.
@@ -74,9 +78,15 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
     async (windowId: string, text: string) => {
       if (!code || !text.trim()) return;
       setThinking(windowId);
+      setNote("");
       try {
         const res = await sendMessageServer({ data: { code, windowId, text } });
         setWindows(res.windows);
+        setNote(res.note ?? "");
+      } catch {
+        // Связь оборвалась, а ответ на сервере пишется дальше и сохранится:
+        // человеку честнее сказать «вернитесь», чем показать пустоту.
+        setNote("Связь прервалась. Ответ дописывается на сервере — обновите страницу через минуту.");
       } finally {
         setThinking(null);
       }
@@ -127,8 +137,11 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<Store>(
-    () => ({ windows, ready, activeId, setActive, open, send, remove, attach, detach, download, thinkingId }),
-    [windows, ready, activeId, open, send, remove, attach, detach, download, thinkingId],
+    () => ({
+      windows, ready, activeId, setActive, open, send, remove, attach, detach, download, thinkingId,
+      note, clearNote: () => setNote(""),
+    }),
+    [windows, ready, activeId, open, send, remove, attach, detach, download, thinkingId, note],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
