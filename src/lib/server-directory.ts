@@ -135,10 +135,15 @@ export const mutateServer = createServerFn({ method: "POST" })
         // потерять вход в платформу насовсем.
         if (m.id !== me.id) {
           next = list.filter((p) => p.id !== m.id);
-          // Вместе с кабинетом уходит и переписка: держать чужие разговоры
-          // после удаления человека незачем — ни нам, ни по 152-ФЗ.
-          const { rm } = await import("node:fs/promises");
-          await rm(`${d.dataDir()}/windows/${m.id}.json`, { force: true });
+          // Вместе с кабинетом уходит и переписка, и принесённые документы:
+          // держать чужие материалы после удаления человека незачем — ни нам,
+          // ни по 152-ФЗ. id перед подстановкой в путь чистим: он приходит извне.
+          const who = m.id.replace(/[^a-zA-Z0-9_-]/g, "");
+          if (who) {
+            const { rm } = await import("node:fs/promises");
+            await rm(`${d.dataDir()}/windows/${who}.json`, { force: true });
+            await rm(`${d.dataDir()}/files/w/${who}`, { recursive: true, force: true });
+          }
         }
         break;
       case "toggleAgent":

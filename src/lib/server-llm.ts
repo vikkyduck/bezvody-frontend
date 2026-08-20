@@ -7,6 +7,9 @@
  * Стримим и берём финальное сообщение: 6-pager — длинный ответ, и обычный
  * запрос успел бы упереться в таймаут раньше, чем модель договорит.
  */
+import type Anthropic from "@anthropic-ai/sdk";
+
+import type { Attachment } from "./documents";
 import type { StoredMessage } from "./conversations";
 
 /** Локальный вход в транзит — тот же, через который ходит Kotu. */
@@ -16,11 +19,73 @@ export type AskResult =
   | { ok: true; text: string }
   | { ok: false; reason: "no-key" | "not-configured" | "failed"; detail?: string };
 
+/** Картинки модель принимает не любые — тип проверяется строго. */
+const imageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+type ImageType = (typeof imageTypes)[number];
+const asImageType = (mime: string): ImageType | null =>
+  (imageTypes as readonly string[]).includes(mime) ? (mime as ImageType) : null;
+
+/**
+ * Вопрос вместе с документами.
+ *
+ * PDF и картинки уезжают как есть — модель читает их сама, с таблицами и
+ * подписями под графиками. Всё остальное приезжает распознанным текстом,
+ * обёрнутым в рамку с именем файла: без неё модель не понимает, где кончился
+ * один документ и начался другой.
+ *
+ * Документы идут перед вопросом, а не после: так их видно раньше, чем задачу.
+ */
+function contentFor(question: string, attachments: Attachment[]) {
+  if (!attachments.length) return question;
+
+  const blocks: Anthropic.ContentBlockParam[] = [
+    {
+      type: "text",
+      text:
+        "К работе приложены документы. Опирайтесь на них как на источник: " +
+        "что взято оттуда — помечайте, чего в них нет — не выдумывайте.",
+    },
+  ];
+
+  for (const a of attachments) {
+    const whose = a.origin === "agent" ? "документ агента" : "документ от клиента";
+    if (a.base64 && a.kind === "pdf") {
+      blocks.push({
+        type: "document",
+        title: a.title,
+        context: whose,
+        source: { type: "base64", media_type: "application/pdf", data: a.base64 },
+      });
+      continue;
+    }
+    const imageType = a.base64 ? asImageType(a.mime) : null;
+    if (imageType) {
+      blocks.push({ type: "text", text: `Изображение «${a.title}» (${whose}):` });
+      blocks.push({ type: "image", source: { type: "base64", media_type: imageType, data: a.base64 } });
+      continue;
+    }
+    blocks.push({ type: "text", text: `<документ имя="${a.title}" чей="${whose}">\n${a.text}\n</документ>` });
+  }
+
+  // Кеш на последнем документе: в разговоре из пяти вопросов материалы иначе
+  // оплачиваются пять раз. Ставим только когда есть что кешировать — на
+  // коротком куске кеш всё равно не заводится.
+  const weight = attachments.reduce((n, a) => n + a.text.length + a.base64.length / 4, 0);
+  const last = blocks[blocks.length - 1];
+  if (weight > 8000 && last && last.type !== "thinking" && last.type !== "redacted_thinking") {
+    (last as { cache_control?: { type: "ephemeral" } }).cache_control = { type: "ephemeral" };
+  }
+
+  blocks.push({ type: "text", text: question });
+  return blocks;
+}
+
 export async function askAgent(opts: {
   systemPrompt: string;
   model: string;
   history: StoredMessage[];
   question: string;
+  attachments?: Attachment[];
 }): Promise<AskResult> {
   const { readApiKey } = await import("./server-data");
   const apiKey = await readApiKey();
@@ -37,7 +102,7 @@ export async function askAgent(opts: {
       role: m.from === "user" ? ("user" as const) : ("assistant" as const),
       content: m.text,
     })),
-    { role: "user" as const, content: opts.question },
+    { role: "user" as const, content: contentFor(opts.question, opts.attachments ?? []) },
   ];
 
   try {

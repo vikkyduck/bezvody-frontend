@@ -1,13 +1,18 @@
 import { useState } from "react";
 
+import { Attachments } from "@/components/Attachments";
 import { Markdown } from "@/components/Markdown";
 import { agentById } from "@/lib/shtab-data";
 import type { StoredWindow } from "@/lib/conversations";
+import { MAX_WINDOW_FILES } from "@/lib/documents";
+import { downloadFileServer } from "@/lib/server-files";
 import { readWindowsServer } from "@/lib/server-windows";
 import { useSession } from "@/lib/session";
 
 /**
  * Чужая переписка глазами администратора — только чтение и только по запросу.
+ * Вместе с репликами видно и документы, которые клиент принёс в окно: без них
+ * половина разговора непонятна, а скачать их иногда нужно, чтобы разобраться.
  *
  * Раздел свёрнут и ничего не грузит, пока его не откроют: в списке участников
  * это одна строка, а не стена текста. Отвечать за клиента отсюда нельзя —
@@ -57,6 +62,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
                       <span className="block text-[13.5px] font-medium leading-snug">{w.title}</span>
                       <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
                         {agent?.name ?? "агент недоступен"} · сообщений {w.messages.length}
+                        {w.files.length ? ` · документов ${w.files.length}` : ""}
                       </span>
                     </span>
                     <span className="flex-none text-[11.5px] text-muted-foreground">
@@ -66,6 +72,21 @@ export function Conversations({ personId, personName }: { personId: string; pers
 
                   {shown ? (
                     <div className="mt-3 space-y-2.5 border-t border-[color:var(--color-line)] pt-3">
+                      {w.files.length ? (
+                        <div className="pb-1">
+                          <div className="label-caps mb-1.5">Документы в окне</div>
+                          <Attachments
+                            files={w.files}
+                            max={MAX_WINDOW_FILES}
+                            onDownload={(f) =>
+                              code
+                                ? downloadFileServer({ data: { code, scope: "window", ownerId: personId, fileId: f.id } })
+                                : Promise.resolve({ ok: false, name: "", mime: "", base64: "" })
+                            }
+                          />
+                        </div>
+                      ) : null}
+
                       {w.messages.length ? (
                         w.messages.map((m) => (
                           <div key={m.id} className="text-[12.5px] leading-relaxed">

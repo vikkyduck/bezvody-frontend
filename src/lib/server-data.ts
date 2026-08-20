@@ -6,6 +6,7 @@
  * /opt/bezvody-front целиком с --delete, и данные внутри неё не пережили бы
  * ни одной выкатки.
  */
+import type { StoredWindow } from "./conversations";
 import { normalize, seedParticipants, type Participant } from "./participants";
 
 export const dataDir = () => process.env["BV_DATA_DIR"]?.trim() || ".data";
@@ -45,6 +46,21 @@ export async function whoIs(code: string): Promise<{ list: Participant[]; me: Pa
   const me = list.find((p) => p.code && p.code === wanted && p.active) ?? null;
   return { list, me };
 }
+
+// ── Окна разговоров ───────────────────────────────────────────────────────────
+// Лежат по человеку: файл на каждого. Читают их и разговоры, и документы,
+// поэтому доступ к файлу — один на всех, здесь.
+
+const windowsFile = (personId: string) => `${dataDir()}/windows/${personId}.json`;
+
+/** Запись со старой выкатки могла быть без новых полей — добиваем пустыми. */
+export async function readWindows(personId: string): Promise<StoredWindow[]> {
+  const raw = await readJson<StoredWindow[]>(windowsFile(personId), []);
+  return raw.map((w) => ({ ...w, docs: w.docs ?? [], files: w.files ?? [] }));
+}
+
+export const writeWindows = (personId: string, list: StoredWindow[]) =>
+  writeJson(windowsFile(personId), list);
 
 export const today = () => new Date().toLocaleDateString("ru-RU");
 

@@ -7,6 +7,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { StoredWindow } from "./conversations";
+import type { StoredFile } from "./documents";
+import {
+  deleteWindowFileServer,
+  downloadFileServer,
+  uploadWindowFileServer,
+} from "./server-files";
 import {
   deleteWindowServer,
   listWindowsServer,
@@ -24,6 +30,10 @@ type Store = {
   open: (agentId: string, title?: string) => Promise<void>;
   send: (windowId: string, text: string) => Promise<void>;
   remove: (windowId: string) => Promise<void>;
+  /** Принести документ в окно. Вернёт текст ошибки или пустую строку */
+  attach: (windowId: string, file: File) => Promise<string>;
+  detach: (windowId: string, fileId: string) => Promise<void>;
+  download: (file: StoredFile) => Promise<{ ok: boolean; name: string; mime: string; base64: string }>;
   /** Окно, где агент сейчас отвечает */
   thinkingId: string | null;
 };
@@ -31,7 +41,7 @@ type Store = {
 const Ctx = createContext<Store | null>(null);
 
 export function WindowsProvider({ children }: { children: ReactNode }) {
-  const { code, role } = useSession();
+  const { code, role, person } = useSession();
   const [windows, setWindows] = useState<StoredWindow[]>([]);
   const [ready, setReady] = useState(false);
   const [activeId, setActive] = useState<string | null>(null);
@@ -84,9 +94,41 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
     [code],
   );
 
+  const attach = useCallback(
+    async (windowId: string, file: File) => {
+      if (!code) return "нет доступа";
+      const form = new FormData();
+      form.set("code", code);
+      form.set("windowId", windowId);
+      form.set("file", file);
+      const res = await uploadWindowFileServer({ data: form });
+      // Файл мог загрузиться, но не прочитаться — окна тогда всё равно новые.
+      if (res.windows.length) setWindows(res.windows);
+      return res.error;
+    },
+    [code],
+  );
+
+  const detach = useCallback(
+    async (windowId: string, fileId: string) => {
+      if (!code) return;
+      const res = await deleteWindowFileServer({ data: { code, windowId, fileId } });
+      if (res.windows.length) setWindows(res.windows);
+    },
+    [code],
+  );
+
+  const download = useCallback(
+    async (file: StoredFile) => {
+      if (!code || !person) return { ok: false, name: "", mime: "", base64: "" };
+      return downloadFileServer({ data: { code, scope: "window", ownerId: person.id, fileId: file.id } });
+    },
+    [code, person],
+  );
+
   const value = useMemo<Store>(
-    () => ({ windows, ready, activeId, setActive, open, send, remove, thinkingId }),
-    [windows, ready, activeId, open, send, remove, thinkingId],
+    () => ({ windows, ready, activeId, setActive, open, send, remove, attach, detach, download, thinkingId }),
+    [windows, ready, activeId, open, send, remove, attach, detach, download, thinkingId],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

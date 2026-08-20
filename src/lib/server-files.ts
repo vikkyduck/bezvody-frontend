@@ -1,0 +1,352 @@
+/**
+ * Документы: приём, хранение, выдача. Только сервер.
+ *
+ * Файл кладём на диск рядом с перепиской — в РФ, вне папки приложения
+ * (её деплой перезаписывает целиком). Рядом с файлом лежит распознанный
+ * текст: разбираем один раз при загрузке, а не на каждый вопрос агенту.
+ * Заодно человек сразу видит, что документ прочитался, — а не узнаёт об
+ * этом из пустого ответа через пять минут.
+ */
+import { createServerFn } from "@tanstack/react-start";
+
+import type { StoredWindow } from "./conversations";
+import {
+  MAX_AGENT_FILES,
+  MAX_AGENT_BYTES,
+  MAX_FILE_BYTES,
+  MAX_RAW_BYTES,
+  MAX_TEXT_CHARS,
+  MAX_WINDOW_BYTES,
+  MAX_WINDOW_FILES,
+  humanSize,
+  kindOf,
+  mimeOf,
+  rejectReason,
+  type Attachment,
+  type StoredFile,
+} from "./documents";
+
+export type AgentFilesMap = Record<string, StoredFile[]>;
+
+const rid = () => `f-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+// ── Диск ──────────────────────────────────────────────────────────────────────
+
+/** Папки две: у человека — материалы его окон, у агента — его постоянные документы. */
+const folder = async (scope: "window" | "agent", ownerId: string) => {
+  const { dataDir } = await import("./server-data");
+  // id мы выдаём сами, но чужой ввод в путь не пускаем ни при каких условиях.
+  const safe = ownerId.replace(/[^a-zA-Z0-9_-]/g, "");
+  return `${dataDir()}/files/${scope === "window" ? "w" : "a"}/${safe}`;
+};
+
+/** Текст из простого файла: пробуем UTF-8, а если получилась каша — 1251. */
+function plainText(bytes: Buffer): string {
+  const utf8 = bytes.toString("utf8");
+  const broken = (utf8.match(/�/g) ?? []).length;
+  if (broken * 200 <= utf8.length) return utf8;
+  try {
+    // Выгрузки из 1С и Excel до сих пор приезжают в windows-1251.
+    return new TextDecoder("windows-1251").decode(bytes);
+  } catch {
+    return utf8;
+  }
+}
+
+async function saveFile(
+  scope: "window" | "agent",
+  ownerId: string,
+  name: string,
+  mime: string,
+  bytes: Buffer,
+): Promise<StoredFile> {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const dir = await folder(scope, ownerId);
+  await mkdir(dir, { recursive: true });
+
+  const id = rid();
+  const kind = kindOf(name)!;
+  await writeFile(`${dir}/${id}.bin`, bytes);
+
+  let text = "";
+  let note = "";
+  if (kind === "office") {
+    try {
+      const { officeText } = await import("./server-office");
+      text = await officeText(name, bytes);
+    } catch (err) {
+      note = `не удалось прочитать: ${err instanceof Error ? err.message : "неизвестная ошибка"}`;
+    }
+  } else if (kind === "text") {
+    text = plainText(bytes);
+  }
+
+  if (text.trim()) await writeFile(`${dir}/${id}.txt`, text, "utf8");
+
+  return {
+    id,
+    name,
+    mime: mimeOf(name, mime),
+    size: bytes.length,
+    kind,
+    at: new Date().toISOString(),
+    chars: text.trim().length,
+    note,
+  };
+}
+
+async function dropFiles(scope: "window" | "agent", ownerId: string, ids: string[]): Promise<void> {
+  const { rm } = await import("node:fs/promises");
+  const dir = await folder(scope, ownerId);
+  for (const raw of ids) {
+    // id приходит из браузера, а уходит в путь на диске: всё, кроме букв,
+    // цифр и дефиса, режем — иначе «../» удалит не то, что просили.
+    const id = raw.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!id) continue;
+    await rm(`${dir}/${id}.bin`, { force: true });
+    await rm(`${dir}/${id}.txt`, { force: true });
+  }
+}
+
+/** Сколько ещё влезет: считаем вместе с тем, что уже лежит. */
+const tooHeavy = (existing: StoredFile[], incoming: number, limit: number) =>
+  existing.reduce((n, f) => n + f.size, 0) + incoming > limit;
+
+/** Содержимое для модели: распознанный текст либо сам файл. */
+export async function loadForModel(
+  scope: "window" | "agent",
+  ownerId: string,
+  file: StoredFile,
+): Promise<{ text: string; base64: string }> {
+  const { readFile } = await import("node:fs/promises");
+  const dir = await folder(scope, ownerId);
+  try {
+    if (file.kind === "pdf" || file.kind === "image") {
+      return { text: "", base64: (await readFile(`${dir}/${file.id}.bin`)).toString("base64") };
+    }
+    return { text: await readFile(`${dir}/${file.id}.txt`, "utf8"), base64: "" };
+  } catch {
+    // Файл пропал с диска — молчим и работаем без него: лучше ответ без
+    // одного документа, чем упавшее окно.
+    return { text: "", base64: "" };
+  }
+}
+
+// ── Документы окна (клиент) ───────────────────────────────────────────────────
+
+export type WindowFilesResult = { ok: boolean; error: string; windows: StoredWindow[] };
+
+export const uploadWindowFileServer = createServerFn({ method: "POST" })
+  .validator((data: FormData) => data)
+  .handler(async ({ data }): Promise<WindowFilesResult> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.get("code") ?? ""));
+    if (!me) return { ok: false, error: "нет доступа", windows: [] };
+
+    const windowId = String(data.get("windowId") ?? "");
+    const upload = data.get("file");
+    if (!(upload instanceof File)) return { ok: false, error: "файл не приехал", windows: [] };
+
+    const windows = await d.readWindows(me.id);
+    const target = windows.find((w) => w.id === windowId);
+    if (!target) return { ok: false, error: "окно не найдено", windows };
+
+    if (target.files.length >= MAX_WINDOW_FILES) {
+      return { ok: false, error: `в одном окне не больше ${MAX_WINDOW_FILES} документов`, windows };
+    }
+
+    const bad = rejectReason(upload.name, upload.size);
+    if (bad) return { ok: false, error: bad, windows };
+
+    if (tooHeavy(target.files, upload.size, MAX_WINDOW_BYTES)) {
+      return { ok: false, error: `документы окна весят больше ${humanSize(MAX_WINDOW_BYTES)} — уберите лишние`, windows };
+    }
+
+    const bytes = Buffer.from(await upload.arrayBuffer());
+    if (bytes.length > MAX_FILE_BYTES) return { ok: false, error: "файл слишком большой", windows };
+
+    const saved = await saveFile("window", me.id, upload.name, upload.type, bytes);
+    const next = windows.map((w) =>
+      w.id === windowId ? { ...w, files: [...w.files, saved], updatedAt: new Date().toISOString() } : w,
+    );
+    await d.writeWindows(me.id, next);
+    return { ok: !saved.note, error: saved.note, windows: next };
+  });
+
+export const deleteWindowFileServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; windowId: string; fileId: string }) => data)
+  .handler(async ({ data }): Promise<WindowFilesResult> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me) return { ok: false, error: "нет доступа", windows: [] };
+
+    const windows = await d.readWindows(me.id);
+    const next = windows.map((w) =>
+      w.id === data.windowId ? { ...w, files: w.files.filter((f) => f.id !== data.fileId) } : w,
+    );
+    await d.writeWindows(me.id, next);
+    await dropFiles("window", me.id, [data.fileId]);
+    return { ok: true, error: "", windows: next };
+  });
+
+/** Окно удалили — уносим и его файлы, чтобы диск не копил мусор. */
+export const forgetWindowFiles = (personId: string, files: StoredFile[]) =>
+  dropFiles("window", personId, files.map((f) => f.id));
+
+// ── Документы агента (администратор) ──────────────────────────────────────────
+
+const agentFilesPath = async () => `${(await import("./server-data")).dataDir()}/agent-files.json`;
+
+export async function readAgentFiles(): Promise<AgentFilesMap> {
+  const d = await import("./server-data");
+  return d.readJson<AgentFilesMap>(await agentFilesPath(), {});
+}
+
+export const listAgentFilesServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string }) => data)
+  .handler(async ({ data }): Promise<AgentFilesMap> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me || me.role !== "admin") return {};
+    return readAgentFiles();
+  });
+
+export type AgentFilesResult = { ok: boolean; error: string; files: AgentFilesMap };
+
+export const uploadAgentFileServer = createServerFn({ method: "POST" })
+  .validator((data: FormData) => data)
+  .handler(async ({ data }): Promise<AgentFilesResult> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.get("code") ?? ""));
+    if (!me || me.role !== "admin") return { ok: false, error: "нет доступа", files: {} };
+
+    const agentId = String(data.get("agentId") ?? "");
+    const upload = data.get("file");
+    if (!agentId || !(upload instanceof File)) return { ok: false, error: "файл не приехал", files: await readAgentFiles() };
+
+    const all = await readAgentFiles();
+    const mine = all[agentId] ?? [];
+    if (mine.length >= MAX_AGENT_FILES) {
+      return { ok: false, error: `у одного агента не больше ${MAX_AGENT_FILES} документов`, files: all };
+    }
+
+    const bad = rejectReason(upload.name, upload.size);
+    if (bad) return { ok: false, error: bad, files: all };
+
+    if (tooHeavy(mine, upload.size, MAX_AGENT_BYTES)) {
+      return { ok: false, error: `документы агента весят больше ${humanSize(MAX_AGENT_BYTES)} — уберите лишние`, files: all };
+    }
+
+    const bytes = Buffer.from(await upload.arrayBuffer());
+    if (bytes.length > MAX_FILE_BYTES) return { ok: false, error: "файл слишком большой", files: all };
+
+    const saved = await saveFile("agent", agentId, upload.name, upload.type, bytes);
+    const next: AgentFilesMap = { ...all, [agentId]: [...mine, saved] };
+    await d.writeJson(await agentFilesPath(), next);
+    return { ok: !saved.note, error: saved.note, files: next };
+  });
+
+export const deleteAgentFileServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; agentId: string; fileId: string }) => data)
+  .handler(async ({ data }): Promise<AgentFilesResult> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me || me.role !== "admin") return { ok: false, error: "нет доступа", files: {} };
+
+    const all = await readAgentFiles();
+    const next: AgentFilesMap = {
+      ...all,
+      [data.agentId]: (all[data.agentId] ?? []).filter((f) => f.id !== data.fileId),
+    };
+    await d.writeJson(await agentFilesPath(), next);
+    await dropFiles("agent", data.agentId, [data.fileId]);
+    return { ok: true, error: "", files: next };
+  });
+
+// ── Скачивание ────────────────────────────────────────────────────────────────
+/**
+ * Отдаём файл целиком, но только тому, кому он причитается: свой документ —
+ * его хозяину, любой — администратору. Проджект в чужие материалы не ходит,
+ * как и в чужую переписку.
+ */
+export const downloadFileServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; scope: "window" | "agent"; ownerId: string; fileId: string }) => data)
+  .handler(async ({ data }): Promise<{ ok: boolean; name: string; mime: string; base64: string }> => {
+    const deny = { ok: false, name: "", mime: "", base64: "" };
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me) return deny;
+
+    let found: StoredFile | undefined;
+    if (data.scope === "agent") {
+      if (me.role !== "admin") return deny;
+      found = (await readAgentFiles())[data.ownerId]?.find((f) => f.id === data.fileId);
+    } else {
+      if (me.role !== "admin" && me.id !== data.ownerId) return deny;
+      const windows = await d.readWindows(data.ownerId);
+      found = windows.flatMap((w) => w.files).find((f) => f.id === data.fileId);
+    }
+    if (!found) return deny;
+
+    const { readFile } = await import("node:fs/promises");
+    const dir = await folder(data.scope, data.ownerId);
+    try {
+      const bytes = await readFile(`${dir}/${found.id}.bin`);
+      return { ok: true, name: found.name, mime: found.mime, base64: bytes.toString("base64") };
+    } catch {
+      return deny;
+    }
+  });
+
+// ── Сборка для модели ─────────────────────────────────────────────────────────
+/**
+ * Что уедет к агенту вместе с вопросом: сначала его постоянные документы,
+ * потом материалы окна. Порядок не случаен — методика идёт до фактуры.
+ *
+ * Бюджет считаем честно и вслух: если материалы не помещаются в запрос,
+ * агенту так и говорим — обрезано. Молча терять половину отчёта нельзя,
+ * иначе он сделает вывод по куску и не предупредит об этом.
+ */
+export async function attachmentsFor(opts: {
+  agentId: string;
+  personId: string;
+  windowFiles: StoredFile[];
+}): Promise<Attachment[]> {
+  const agentFiles = (await readAgentFiles())[opts.agentId] ?? [];
+  const queue: { scope: "window" | "agent"; ownerId: string; file: StoredFile; origin: "agent" | "person" }[] = [
+    ...agentFiles.map((file) => ({ scope: "agent" as const, ownerId: opts.agentId, file, origin: "agent" as const })),
+    ...opts.windowFiles.map((file) => ({ scope: "window" as const, ownerId: opts.personId, file, origin: "person" as const })),
+  ];
+
+  let textLeft = MAX_TEXT_CHARS;
+  let rawLeft = MAX_RAW_BYTES;
+  const out: Attachment[] = [];
+
+  for (const item of queue) {
+    const loaded = await loadForModel(item.scope, item.ownerId, item.file);
+    const base = { title: item.file.name, kind: item.file.kind, mime: item.file.mime, origin: item.origin };
+
+    if (item.file.kind === "pdf" || item.file.kind === "image") {
+      if (!loaded.base64) continue;
+      if (item.file.size > rawLeft) {
+        out.push({ ...base, text: "(документ не поместился в запрос — уберите лишние файлы из окна)", base64: "", mime: "" });
+        continue;
+      }
+      rawLeft -= item.file.size;
+      out.push({ ...base, text: "", base64: loaded.base64 });
+      continue;
+    }
+
+    const text = loaded.text.trim();
+    if (!text) continue;
+    if (text.length > textLeft) {
+      out.push({ ...base, text: `${text.slice(0, Math.max(0, textLeft))}\n\n[документ обрезан: целиком он не помещается в запрос]`, base64: "", mime: "" });
+      textLeft = 0;
+      continue;
+    }
+    textLeft -= text.length;
+    out.push({ ...base, text, base64: "", mime: "" });
+  }
+
+  return out;
+}

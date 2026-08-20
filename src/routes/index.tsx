@@ -2,8 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
+import { Attachments } from "@/components/Attachments";
 import { Markdown } from "@/components/Markdown";
 import type { StoredWindow } from "@/lib/conversations";
+import { MAX_WINDOW_FILES } from "@/lib/documents";
 import { useSession } from "@/lib/session";
 import { agentById, agents } from "@/lib/shtab-data";
 import { useWindows } from "@/lib/windows-store";
@@ -102,6 +104,7 @@ function Start({ ready, windows }: { ready: boolean; windows: StoredWindow[] }) 
                       <span className="mt-0.5 block text-[12px] text-muted-foreground">
                         {agent?.name ?? "агент недоступен"} · {when(w.updatedAt)}
                         {w.docs.length ? ` · материалов ${w.docs.length}` : ""}
+                        {w.files.length ? ` · документов ${w.files.length}` : ""}
                       </span>
                     </span>
                     <span className="flex-none text-[12px] text-muted-foreground">
@@ -125,7 +128,7 @@ function Start({ ready, windows }: { ready: boolean; windows: StoredWindow[] }) 
 // ── Разговор ──────────────────────────────────────────────────────────────────
 
 function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () => void }) {
-  const { send, remove, thinkingId } = useWindows();
+  const { send, remove, attach, detach, download, thinkingId } = useWindows();
   const [draft, setDraft] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -202,6 +205,18 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
           <div ref={endRef} />
         </div>
 
+        {/* Документы окна — на виду у поля ввода: агент читает их при каждом вопросе */}
+        <div className="border-t border-[color:var(--color-line)] px-5 py-3">
+          <Attachments
+            files={w.files}
+            max={MAX_WINDOW_FILES}
+            compact
+            onUpload={(file) => attach(w.id, file)}
+            onRemove={(fileId) => detach(w.id, fileId)}
+            onDownload={download}
+          />
+        </div>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -234,11 +249,27 @@ function Conversation({ window: w, onBack }: { window: StoredWindow; onBack: () 
         </form>
       </div>
 
-      {/* Материалы окна: то, что агент собрал именно здесь */}
+      {/* Материалы окна: и принесённое человеком, и собранное агентом */}
       <section className="mt-8">
-        <h2 className="mb-1 text-[15px] font-semibold">Материалы окна</h2>
+        <h2 className="mb-1 text-[15px] font-semibold">Ваши документы</h2>
         <p className="measure mb-4 text-[12.5px] text-muted-foreground">
-          Документы и решения, собранные в этом окне. Они остаются здесь — искать их в почте не придётся.
+          Всё, что вы принесли в это окно: отчёты, выгрузки, договоры. Агент читает их при каждом
+          вопросе — пересказывать содержимое словами не нужно. Имя файла — ссылка на скачивание.
+        </p>
+        <Attachments
+          files={w.files}
+          max={MAX_WINDOW_FILES}
+          onUpload={(file) => attach(w.id, file)}
+          onRemove={(fileId) => detach(w.id, fileId)}
+          onDownload={download}
+          empty="Пока ничего не принесли. Документы можно перетащить прямо сюда."
+        />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="mb-1 text-[15px] font-semibold">Собрано агентом</h2>
+        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
+          Разборы и решения, которые агент сделал в этом окне. Они остаются здесь — искать их в почте не придётся.
         </p>
         {w.docs.length ? (
           <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">

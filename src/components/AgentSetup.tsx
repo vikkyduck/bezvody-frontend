@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
 
+import { Attachments } from "@/components/Attachments";
+import { MAX_AGENT_FILES, type StoredFile } from "@/lib/documents";
+import {
+  deleteAgentFileServer,
+  downloadFileServer,
+  listAgentFilesServer,
+  uploadAgentFileServer,
+  type AgentFilesMap,
+} from "@/lib/server-files";
 import { useSession } from "@/lib/session";
 import {
   DEFAULT_MODEL,
@@ -15,21 +24,29 @@ import {
 import { agents } from "@/lib/shtab-data";
 
 /**
- * Настройка агентов: инструкция для каждого и один ключ модели на платформу.
+ * Настройка агентов: инструкция для каждого, документы и один ключ модели.
  *
  * Ключ вводится один раз и обратно не показывается — только последние четыре
  * знака, чтобы убедиться, что он тот самый. Инструкция агента — обычный текст:
  * вставили из документа, сохранили, агент начал работать.
+ *
+ * Документы агента — то, что он должен знать всегда: методика, стандарт,
+ * шаблон отчёта. Их видит каждый клиент этого агента, в отличие от материалов,
+ * которые клиент приносит в своё окно.
  */
 export function AgentSetup() {
   const { code } = useSession();
   const [settings, setSettings] = useState<AgentSettings | null>(null);
+  const [files, setFiles] = useState<AgentFilesMap>({});
 
   useEffect(() => {
     if (!code) return;
     getAgentSettingsServer({ data: { code } })
       .then(setSettings)
       .catch(() => setSettings({ agents: {}, keySet: false, keyTail: "" }));
+    listAgentFilesServer({ data: { code } })
+      .then(setFiles)
+      .catch(() => setFiles({}));
   }, [code]);
 
   if (!settings) return <p className="text-[13px] text-muted-foreground">Загружаю…</p>;
@@ -46,7 +63,15 @@ export function AgentSetup() {
         </p>
         <div className="space-y-3">
           {agents.map((a) => (
-            <AgentCard key={a.id} id={a.id} name={a.name} settings={settings} onSaved={setSettings} />
+            <AgentCard
+              key={a.id}
+              id={a.id}
+              name={a.name}
+              settings={settings}
+              onSaved={setSettings}
+              files={files[a.id] ?? []}
+              onFiles={setFiles}
+            />
           ))}
         </div>
       </section>
@@ -114,11 +139,15 @@ function AgentCard({
   name,
   settings,
   onSaved,
+  files,
+  onFiles,
 }: {
   id: string;
   name: string;
   settings: AgentSettings;
   onSaved: (s: AgentSettings) => void;
+  files: StoredFile[];
+  onFiles: (m: AgentFilesMap) => void;
 }) {
   const { code } = useSession();
   const saved = normalizeConfig(settings.agents[id]);
@@ -198,6 +227,7 @@ function AgentCard({
                 ? `${where} · ${saved.endpoint}`
                 : `${where} · инструкция ${saved.prompt.length} знаков`
               : "клиент увидит, что агент не настроен"}
+            {files.length ? ` · документов ${files.length}` : ""}
           </p>
         </div>
         <button onClick={() => setOpen((v) => !v)} className="btn btn-glass text-[12.5px]">
@@ -320,6 +350,29 @@ function AgentCard({
             {done ? <span className="text-[12px] text-muted-foreground">Сохранено</span> : null}
           </div>
 
+          <div className="border-t border-[color:var(--color-line)] pt-4">
+            <div className="label-caps">Документы агента</div>
+            <p className="measure mt-1 mb-3 text-[12.5px] text-muted-foreground">
+              Методика, стандарт, шаблон — то, что агент должен знать всегда. Уходят к нему при
+              каждом вопросе любого клиента. Сохранять отдельно не нужно: файл встаёт на место сразу.
+            </p>
+            <Attachments
+              files={files}
+              max={MAX_AGENT_FILES}
+              onUpload={(file) => uploadAgentFile(code, id, file, onFiles)}
+              onRemove={async (fileId) => {
+                if (!code) return;
+                onFiles((await deleteAgentFileServer({ data: { code, agentId: id, fileId } })).files);
+              }}
+              onDownload={(f) =>
+                code
+                  ? downloadFileServer({ data: { code, scope: "agent", ownerId: id, fileId: f.id } })
+                  : Promise.resolve({ ok: false, name: "", mime: "", base64: "" })
+              }
+              empty="Документов нет — агент работает по одной инструкции."
+            />
+          </div>
+
           {test ? (
             <div className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3">
               <div className="label-caps">{test.ok ? "Связь есть" : "Связи нет"}</div>
@@ -338,6 +391,23 @@ function AgentCard({
       ) : null}
     </div>
   );
+}
+
+/** Загрузка одного документа агенту: вернуть текст ошибки или пустую строку. */
+async function uploadAgentFile(
+  code: string | null,
+  agentId: string,
+  file: File,
+  onFiles: (m: AgentFilesMap) => void,
+): Promise<string> {
+  if (!code) return "нет доступа";
+  const form = new FormData();
+  form.set("code", code);
+  form.set("agentId", agentId);
+  form.set("file", file);
+  const res = await uploadAgentFileServer({ data: form });
+  if (Object.keys(res.files).length) onFiles(res.files);
+  return res.error;
 }
 
 const inputCls =

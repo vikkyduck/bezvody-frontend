@@ -1,0 +1,190 @@
+import { useRef, useState, type DragEvent } from "react";
+
+import { MAX_FILE_BYTES, SUPPORTED_HINT, fileNote, humanSize, type StoredFile } from "@/lib/documents";
+
+/**
+ * Документы: список и приём новых.
+ *
+ * Один и тот же список у клиента в окне и у администратора в карточке агента —
+ * разница только в том, чьи это документы. Файл можно принести кнопкой или
+ * бросить мышью: люди приносят их и так, и так.
+ *
+ * Ошибку показываем словами и рядом с местом, где её сделали: «формат не тот»,
+ * «слишком большой». Молча проглотить файл нельзя — человек будет ждать, что
+ * агент его прочитал.
+ */
+
+type DownloadResult = { ok: boolean; name: string; mime: string; base64: string };
+
+export function Attachments({
+  files,
+  max,
+  onUpload,
+  onRemove,
+  onDownload,
+  empty,
+  compact = false,
+}: {
+  files: StoredFile[];
+  max: number;
+  /** Возвращает текст ошибки или пустую строку. Пусто — файл принят */
+  onUpload?: (file: File) => Promise<string>;
+  onRemove?: (fileId: string) => Promise<void>;
+  onDownload?: (file: StoredFile) => Promise<DownloadResult>;
+  empty?: string;
+  /** Сжатый вид — для строки над полем ввода */
+  compact?: boolean;
+}) {
+  const picker = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+  const [over, setOver] = useState(false);
+
+  const full = files.length >= max;
+
+  async function take(list: FileList | null) {
+    if (!list || !onUpload) return;
+    const problems: string[] = [];
+    // По одному: так видно, какой именно файл не прошёл, и сервер не давится
+    // десятком тяжёлых загрузок разом.
+    for (const file of Array.from(list)) {
+      setBusy(file.name);
+      try {
+        const err = await onUpload(file);
+        if (err) problems.push(err);
+      } catch {
+        problems.push(`${file.name}: не удалось загрузить`);
+      }
+    }
+    setBusy("");
+    setErrors(problems);
+    if (picker.current) picker.current.value = "";
+  }
+
+  function drop(e: DragEvent) {
+    e.preventDefault();
+    setOver(false);
+    void take(e.dataTransfer?.files ?? null);
+  }
+
+  async function save(f: StoredFile) {
+    if (!onDownload) return;
+    const res = await onDownload(f);
+    if (!res.ok) {
+      setErrors([`${f.name}: файл не нашёлся на сервере`]);
+      return;
+    }
+    const bytes = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: res.mime }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = res.name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div
+      onDragOver={(e) => {
+        if (!onUpload) return;
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={drop}
+      className={over ? "rounded-[12px] outline outline-2 outline-offset-4 outline-[color:var(--color-accent)]" : ""}
+    >
+      {files.length ? (
+        <ul
+          className={
+            compact
+              ? "flex flex-wrap gap-2"
+              : "divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]"
+          }
+        >
+          {files.map((f) => (
+            <li
+              key={f.id}
+              className={
+                compact
+                  ? "flex items-center gap-2 rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2.5 py-1"
+                  : "flex flex-wrap items-baseline justify-between gap-3 py-3"
+              }
+            >
+              <span className="min-w-0">
+                {onDownload ? (
+                  <button
+                    onClick={() => void save(f)}
+                    title="Скачать"
+                    className={`block max-w-[420px] truncate text-left ${compact ? "text-[12px]" : "text-[14px]"} underline decoration-[color:var(--color-line)] underline-offset-4 hover:decoration-current`}
+                  >
+                    {f.name}
+                  </button>
+                ) : (
+                  <span className={`block max-w-[420px] truncate ${compact ? "text-[12px]" : "text-[14px]"}`}>{f.name}</span>
+                )}
+                {compact ? null : (
+                  <span className={`mt-0.5 block text-[12px] ${f.note ? "text-[color:var(--color-error)]" : "text-muted-foreground"}`}>
+                    {fileNote(f)}
+                  </span>
+                )}
+              </span>
+              <span className="flex flex-none items-center gap-2">
+                {compact ? (
+                  <span className="text-[11px] text-muted-foreground">{humanSize(f.size)}</span>
+                ) : null}
+                {onRemove ? (
+                  <button
+                    onClick={() => void onRemove(f.id)}
+                    aria-label={`Убрать ${f.name}`}
+                    className="text-[12px] text-muted-foreground transition-colors hover:text-[color:var(--color-error)]"
+                  >
+                    ✕
+                  </button>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : empty ? (
+        <p className="text-[13px] text-muted-foreground">{empty}</p>
+      ) : null}
+
+      {onUpload ? (
+        <div className={files.length ? "mt-3" : ""}>
+          <input
+            ref={picker}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => void take(e.target.files)}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => picker.current?.click()}
+              disabled={Boolean(busy) || full}
+              className="btn btn-glass text-[12px] disabled:opacity-40"
+            >
+              {busy ? `Читаю ${busy}` : "Прикрепить документ"}
+            </button>
+            <span className="text-[11.5px] text-muted-foreground">
+              {full
+                ? `Больше ${max} документов сюда не поместится — уберите лишние`
+                : `${SUPPORTED_HINT} · до ${humanSize(MAX_FILE_BYTES)} · можно перетащить мышью`}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {errors.length ? (
+        <ul className="mt-3 space-y-1">
+          {errors.map((e, i) => (
+            <li key={i} className="text-[12px] text-[color:var(--color-error)]">
+              {e}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}

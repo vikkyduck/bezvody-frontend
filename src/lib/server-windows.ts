@@ -9,8 +9,6 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { shortTitle, type StoredWindow } from "./conversations";
 
-const windowsFile = (dir: string, personId: string) => `${dir}/windows/${personId}.json`;
-
 const stamp = () => new Date().toISOString();
 const rid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -21,7 +19,7 @@ export const listWindowsServer = createServerFn({ method: "POST" })
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
     if (!me) return { windows: [] as StoredWindow[] };
-    return { windows: await d.readJson<StoredWindow[]>(windowsFile(d.dataDir(), me.id), []) };
+    return { windows: await d.readWindows(me.id) };
   });
 
 /** Открыть окно с агентом. Агент выбирается здесь и навсегда. */
@@ -34,23 +32,22 @@ export const openWindowServer = createServerFn({ method: "POST" })
 
     // Агента можно открыть только из тех, что открыты этому человеку.
     if (!me.agentIds.includes(data.agentId)) {
-      const windows = await d.readJson<StoredWindow[]>(windowsFile(d.dataDir(), me.id), []);
-      return { windows, opened: null };
+      return { windows: await d.readWindows(me.id), opened: null };
     }
 
-    const file = windowsFile(d.dataDir(), me.id);
-    const windows = await d.readJson<StoredWindow[]>(file, []);
+    const windows = await d.readWindows(me.id);
     const opened: StoredWindow = {
       id: rid("w"),
       agentId: data.agentId,
       title: data.title || "Новый вопрос",
       messages: [],
       docs: [],
+      files: [],
       createdAt: stamp(),
       updatedAt: stamp(),
     };
     const next = [opened, ...windows];
-    await d.writeJson(file, next);
+    await d.writeWindows(me.id, next);
     return { windows: next, opened };
   });
 
@@ -62,8 +59,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     const text = String(data.text ?? "").trim();
     if (!me || !text) return { windows: [] as StoredWindow[] };
 
-    const file = windowsFile(d.dataDir(), me.id);
-    const windows = await d.readJson<StoredWindow[]>(file, []);
+    const windows = await d.readWindows(me.id);
 
     const target = windows.find((w) => w.id === data.windowId);
     if (!target) return { windows };
@@ -86,6 +82,15 @@ export const sendMessageServer = createServerFn({ method: "POST" })
       {},
     );
     const cfg = cfgAll[target.agentId];
+
+    // Документы: постоянные у агента плюс принесённые в это окно.
+    const { attachmentsFor } = await import("./server-files");
+    const attachments = await attachmentsFor({
+      agentId: target.agentId,
+      personId: me.id,
+      windowFiles: target.files,
+    });
+
     let answer: { ok: true; text: string } | { ok: false; reason: string; detail?: string };
 
     if (cfg?.transport === "http") {
@@ -102,6 +107,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         systemPrompt: cfg.prompt ?? "",
         history: target.messages,
         question: text,
+        attachments,
       });
       answer = res.ok ? { ok: true, text: res.text } : { ok: false, reason: "failed", detail: res.detail };
     } else {
@@ -111,6 +117,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         model: cfg?.model ?? "claude-opus-5",
         history: target.messages,
         question: text,
+        attachments,
       });
     }
 
@@ -148,7 +155,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
       };
     });
 
-    await d.writeJson(file, next);
+    await d.writeWindows(me.id, next);
     return { windows: next };
   });
 
@@ -159,10 +166,16 @@ export const deleteWindowServer = createServerFn({ method: "POST" })
     const { me } = await d.whoIs(String(data.code ?? ""));
     if (!me) return { windows: [] as StoredWindow[] };
 
-    const file = windowsFile(d.dataDir(), me.id);
-    const windows = await d.readJson<StoredWindow[]>(file, []);
+    const windows = await d.readWindows(me.id);
     const next = windows.filter((w) => w.id !== data.windowId);
-    await d.writeJson(file, next);
+    await d.writeWindows(me.id, next);
+
+    // Вместе с окном уносим и его документы: они относились к этой задаче.
+    const gone = windows.find((w) => w.id === data.windowId);
+    if (gone?.files.length) {
+      const { forgetWindowFiles } = await import("./server-files");
+      await forgetWindowFiles(me.id, gone.files);
+    }
     return { windows: next };
   });
 
@@ -176,5 +189,5 @@ export const readWindowsServer = createServerFn({ method: "POST" })
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
     if (!me || me.role !== "admin") return { windows: [] as StoredWindow[] };
-    return { windows: await d.readJson<StoredWindow[]>(windowsFile(d.dataDir(), data.personId), []) };
+    return { windows: await d.readWindows(data.personId) };
   });

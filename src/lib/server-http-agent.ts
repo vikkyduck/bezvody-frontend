@@ -11,8 +11,13 @@
  *
  * Если сервис отвечает иначе — кнопка «Проверить связь» в админке покажет
  * сырой ответ целиком, и разбор допишется по факту, а не по догадке.
+ *
+ * Документы такому агенту уходят текстом внутри вопроса: своей формы для
+ * вложений у чужого API может не быть вовсе. PDF и картинки не уезжают —
+ * про них честно пишем строкой, чтобы агент не строил выводы вслепую.
  */
 import type { StoredMessage } from "./conversations";
+import type { Attachment } from "./documents";
 
 export type HttpAgentSettings = {
   endpoint: string;
@@ -56,17 +61,33 @@ function extractText(data: unknown): string {
   return "";
 }
 
+/** Документы — текстом перед вопросом: у чужого API своих вложений может не быть. */
+function withDocuments(question: string, attachments: Attachment[]): string {
+  if (!attachments.length) return question;
+
+  const parts = attachments.map((a) => {
+    const whose = a.origin === "agent" ? "документ агента" : "документ от клиента";
+    if (!a.text) return `[${a.title} — ${whose}, файл передать не удалось]`;
+    return `<документ имя="${a.title}" чей="${whose}">\n${a.text}\n</документ>`;
+  });
+
+  return `К работе приложены документы. Опирайтесь на них как на источник.\n\n${parts.join("\n\n")}\n\n${question}`;
+}
+
 export async function callHttpAgent(opts: {
   settings: HttpAgentSettings;
   auth: string;
   systemPrompt: string;
   history: StoredMessage[];
   question: string;
+  attachments?: Attachment[];
   /** Таймаут: чужой сервис может думать долго, но не бесконечно */
   timeoutMs?: number;
 }): Promise<HttpCallResult> {
   const { settings, auth } = opts;
   if (!settings.endpoint) return { ok: false, detail: "адрес сервиса не задан", raw: "" };
+
+  const question = withDocuments(opts.question, opts.attachments ?? []);
 
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (auth) {
@@ -85,11 +106,11 @@ export async function callHttpAgent(opts: {
               role: m.from === "user" ? "user" : "assistant",
               content: m.text,
             })),
-            { role: "user", content: opts.question },
+            { role: "user", content: question },
           ],
         }
       : {
-          message: opts.question,
+          message: question,
           systemPrompt: opts.systemPrompt,
           history: opts.history.map((m) => ({ role: m.from, text: m.text })),
         };
