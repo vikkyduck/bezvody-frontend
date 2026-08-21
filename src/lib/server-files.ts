@@ -800,7 +800,7 @@ export const toGoogleServer = createServerFn({ method: "POST" })
     if (!me) return deny;
 
     const settings = await d.readGoogle();
-    if (!settings.account) {
+    if (!settings.account && !settings.oauth) {
       return { ...deny, note: "Google Диск ещё не подключён — это делает администратор" };
     }
 
