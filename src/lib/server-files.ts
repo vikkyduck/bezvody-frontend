@@ -778,13 +778,10 @@ async function forWord(agentId: string, text: string): Promise<string> {
 /**
  * Документ — на Google Диск.
  *
- * Одна кнопка на всё, что человек и так может скачать: разбор агента, модель,
- * принесённый им файл. Собираем то же самое, что ушло бы в «Загрузки», и
- * кладём на служебный Диск, превращая Word и Excel в Google-документы —
+ * Одна кнопка на всё, что человек и так может скачать: записка, модель,
+ * принесённый им файл. Собираем ровно тот же файл, что ушёл бы в «Загрузки»,
+ * и кладём на служебный Диск — Word и Excel превращаются в Google-документы,
  * иначе на Диске лежал бы файл, который надо скачать, чтобы прочитать.
- *
- * Что именно заливать, говорит вызывающий: разбор (docx), модель (xlsx) или
- * документ окна либо папки.
  */
 export const toGoogleServer = createServerFn({ method: "POST" })
   .validator(
@@ -794,7 +791,6 @@ export const toGoogleServer = createServerFn({ method: "POST" })
       windowId?: string;
       messageId?: string;
       fileId?: string;
-      projectId?: string;
     }) => data,
   )
   .handler(async ({ data }): Promise<{ ok: boolean; url: string; note: string }> => {
@@ -805,23 +801,22 @@ export const toGoogleServer = createServerFn({ method: "POST" })
 
     const settings = await d.readGoogle();
     if (!settings.account) {
-      return { ...deny, note: "Google Диск не подключён — администратор задаёт доступ" };
+      return { ...deny, note: "Google Диск ещё не подключён — это делает администратор" };
     }
 
-    // Собираем ровно тот файл, который человек скачал бы кнопкой рядом.
     let name = "";
     let mime = "";
-    let bytes: Buffer | null = null;
+    let bytes: Buffer;
 
     if (data.kind === "file") {
+      // Документ задачи или взятый в разговор: лежит в папке человека.
       const { projects, windows } = await d.readWorkspace(me.id);
-      const all = [...projects.flatMap((p) => p.files), ...windows.flatMap((w) => w.files)];
-      const file = all.find((f) => f.id === data.fileId);
+      const mine = [...projects.flatMap((p) => p.files), ...windows.flatMap((w) => w.files)];
+      const file = mine.find((f) => f.id === data.fileId);
       if (!file) return { ...deny, note: "документ не найден" };
-      const { readFile } = await import("node:fs/promises");
-      const dir = await folder("window", me.id);
       try {
-        bytes = await readFile(`${dir}/${file.id}.bin`);
+        const { readFile } = await import("node:fs/promises");
+        bytes = await readFile(`${await folder("window", me.id)}/${file.id}.bin`);
       } catch {
         return { ...deny, note: "файл не нашёлся на диске" };
       }
@@ -831,8 +826,8 @@ export const toGoogleServer = createServerFn({ method: "POST" })
       const res = await downloadModelServer({
         data: {
           code: data.code,
-          windowId: String(data.windowId),
-          messageId: String(data.messageId),
+          windowId: String(data.windowId ?? ""),
+          messageId: String(data.messageId ?? ""),
         },
       });
       if (!res.ok) return { ...deny, note: res.note || "модель собрать не удалось" };
@@ -843,8 +838,8 @@ export const toGoogleServer = createServerFn({ method: "POST" })
       const res = await downloadAnswerServer({
         data: {
           code: data.code,
-          windowId: String(data.windowId),
-          messageId: String(data.messageId),
+          windowId: String(data.windowId ?? ""),
+          messageId: String(data.messageId ?? ""),
         },
       });
       if (!res.ok) return { ...deny, note: "разбор собрать не удалось" };

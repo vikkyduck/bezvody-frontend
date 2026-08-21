@@ -25,6 +25,7 @@ import {
   deleteProjectFileServer,
   deleteWindowFileServer,
   downloadFileServer,
+  toGoogleServer,
   uploadProjectFileServer,
 } from "./server-files";
 import {
@@ -64,6 +65,8 @@ type Store = {
   download: (
     file: StoredFile,
   ) => Promise<{ ok: boolean; name: string; mime: string; base64: string }>;
+  /** Тот же документ — на Google Диск. Возвращает, что сказать человеку */
+  toDrive: (fileId: string) => Promise<string>;
   /** Окно, где агент сейчас отвечает */
   thinkingId: string | null;
   /** Сообщение платформы человеку: очередь, повтор вопроса и подобное */
@@ -245,6 +248,17 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
     [code, person],
   );
 
+  /** Тот же документ, но на Google Диск: возвращаем, что сказать человеку. */
+  const toDrive = useCallback(
+    async (fileId: string) => {
+      if (!code) return "нет доступа";
+      const res = await toGoogleServer({ data: { code, kind: "file", fileId } });
+      if (res.ok && res.url) window.open(res.url, "_blank", "noopener,noreferrer");
+      return res.ok ? res.note : res.note || "на Диск не уехало";
+    },
+    [code],
+  );
+
   const value = useMemo<Store>(
     () => ({
       projects,
@@ -265,6 +279,7 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
       takeIntoWindow,
       detach,
       download,
+      toDrive,
       thinkingId,
       note,
       clearNote: () => setNote(""),
@@ -286,6 +301,7 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
       takeIntoWindow,
       detach,
       download,
+      toDrive,
       thinkingId,
       note,
     ],

@@ -10,7 +10,7 @@ import type { StoredProject } from "@/lib/projects";
 import { DOCX_MIME, XLSX_MIME, saveFile } from "@/lib/download";
 import type { AgentRole } from "@/lib/roles";
 import { getAgentRolesServer } from "@/lib/server-agents";
-import { downloadAnswerServer, downloadModelServer } from "@/lib/server-files";
+import { downloadAnswerServer, downloadModelServer, toGoogleServer } from "@/lib/server-files";
 import { useSession } from "@/lib/session";
 import { agentById, agents } from "@/lib/shtab-data";
 import { useWindows } from "@/lib/windows-store";
@@ -214,6 +214,7 @@ function Project({
     attachToProject,
     detachFromProject,
     download,
+    toDrive,
   } = useWindows();
   const [title, setTitle] = useState(project.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -287,6 +288,7 @@ function Project({
           onUpload={(file) => attachToProject(project.id, file)}
           onRemove={(fileId) => detachFromProject(project.id, fileId)}
           onDownload={download}
+          onGoogle={toDrive}
           empty="Пока ничего не принесли. Документы можно перетащить прямо сюда."
         />
       </section>
@@ -490,6 +492,20 @@ function Conversation({
     [code, w.id],
   );
 
+  /**
+   * То же самое, но на Google Диск. Возвращает ссылку — по ней и открываем
+   * новую вкладку: человек просил «залить в Гугл», а не «получить адрес».
+   */
+  const toGoogle = useCallback(
+    async (messageId: string, kind: "answer" | "model") => {
+      if (!code) return "";
+      const res = await toGoogleServer({ data: { code, kind, windowId: w.id, messageId } });
+      if (res.ok && res.url) window.open(res.url, "_blank", "noopener,noreferrer");
+      return res.ok ? res.note : res.note || "на Диск не уехало";
+    },
+    [code, w.id],
+  );
+
   function submit() {
     const text = draft.trim();
     if (!text || thinking) return;
@@ -603,6 +619,7 @@ function Conversation({
               text={m.text}
               onSave={saveAnswer}
               onModel={saveModel}
+              onGoogle={toGoogle}
             />
           ))}
 
@@ -945,12 +962,14 @@ const Message = memo(function Message({
   text,
   onSave,
   onModel,
+  onGoogle,
 }: {
   id: string;
   from: "user" | "agent";
   text: string;
   onSave: (messageId: string) => Promise<void>;
   onModel: (messageId: string) => Promise<string>;
+  onGoogle: (messageId: string, kind: "answer" | "model") => Promise<string>;
 }) {
   const mine = from === "user";
   const [saving, setSaving] = useState(false);
@@ -964,6 +983,16 @@ const Message = memo(function Message({
    * имени агента: шаблон может появиться у любого, кто работает с цифрами.
    */
   const hasCells = /\|[^|\n]+\|\s*\$?[A-Z]{1,3}\d{1,4}\s*\|/.test(text);
+
+  async function toDrive(kind: "answer" | "model") {
+    setModel(kind === "model" ? "Отправляю модель на Диск" : "Отправляю записку на Диск");
+    try {
+      setModel(await onGoogle(id, kind));
+    } catch {
+      setModel("Не удалось отправить на Диск");
+    }
+    setTimeout(() => setModel(""), 8000);
+  }
 
   async function saveModel() {
     setModel("Собираю таблицу");
@@ -1046,10 +1075,24 @@ const Message = memo(function Message({
                 </span>
               ) : null}
               {hasCells ? (
-                <button onClick={() => void saveModel()} className="btn btn-glass text-[11.5px]">
-                  Скачать модель в Excel
-                </button>
+                <>
+                  <button onClick={() => void saveModel()} className="btn btn-glass text-[11.5px]">
+                    Скачать модель в Excel
+                  </button>
+                  <button
+                    onClick={() => void toDrive("model")}
+                    className="btn btn-glass text-[11.5px]"
+                  >
+                    Модель в Google Таблицы
+                  </button>
+                </>
               ) : null}
+              <button
+                onClick={() => void toDrive("answer")}
+                className="btn btn-glass text-[11.5px]"
+              >
+                {hasCells ? "Записку в Google Документы" : "В Google Документы"}
+              </button>
               <button onClick={() => void copy()} className="btn btn-glass text-[11.5px]">
                 Скопировать текст
               </button>

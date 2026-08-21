@@ -53,6 +53,7 @@ export function Attachments({
   onUpload,
   onRemove,
   onDownload,
+  onGoogle,
   empty,
   compact = false,
 }: {
@@ -62,6 +63,8 @@ export function Attachments({
   onUpload?: (file: File) => Promise<string>;
   onRemove?: (fileId: string) => Promise<void>;
   onDownload?: (file: StoredFile) => Promise<DownloadResult>;
+  /** Положить документ на Google Диск. Возвращает, что сказать человеку */
+  onGoogle?: (fileId: string) => Promise<string>;
   empty?: string;
   /** Сжатый вид — для строки над полем ввода */
   compact?: boolean;
@@ -70,6 +73,18 @@ export function Attachments({
   const [busy, setBusy] = useState<{ name: string; size: number } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [over, setOver] = useState(false);
+  const [drive, setDrive] = useState("");
+
+  async function toDrive(f: StoredFile) {
+    if (!onGoogle) return;
+    setDrive(`«${f.name}» — отправляю на Диск`);
+    try {
+      setDrive(`«${f.name}» — ${await onGoogle(f.id)}`);
+    } catch {
+      setDrive(`«${f.name}» — на Диск не уехало`);
+    }
+    setTimeout(() => setDrive(""), 8000);
+  }
 
   const full = files.length >= max;
 
@@ -177,6 +192,15 @@ export function Attachments({
                 {compact ? (
                   <span className="text-[11px] text-muted-foreground">{humanSize(f.size)}</span>
                 ) : null}
+                {onGoogle && !compact && f.size > 0 ? (
+                  <button
+                    onClick={() => void toDrive(f)}
+                    title="Положить на Google Диск"
+                    className="btn btn-glass text-[11px]"
+                  >
+                    В Google
+                  </button>
+                ) : null}
                 {onRemove ? (
                   <button
                     onClick={() => void onRemove(f.id)}
@@ -223,6 +247,8 @@ export function Attachments({
           </div>
         </div>
       ) : null}
+
+      {drive ? <p className="mt-3 text-[12px] text-muted-foreground">{drive}</p> : null}
 
       {errors.length ? (
         <ul className="mt-3 space-y-1">
