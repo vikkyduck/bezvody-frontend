@@ -637,9 +637,42 @@ export async function attachmentsFor(opts: {
     }
     textLeft -= text.length;
     out.push({ ...base, text, base64: "", mime: "" });
+
+    // К шаблону агента прикладываем карту его полей: какие ячейки заполняются
+    // руками, что в них стоит примером и где ключевые допущения. Без карты
+    // модель гадает адреса по тексту таблицы и промахивается на строку-другую,
+    // а с ней называет ровно то, что есть в файле.
+    if (item.origin === "agent" && item.file.name.toLowerCase().endsWith(".xlsx")) {
+      const brief = await templateBrief(item.ownerId, item.file);
+      if (brief && brief.length <= textLeft) {
+        textLeft -= brief.length;
+        out.push({
+          title: `Карта полей шаблона «${item.file.name}»`,
+          kind: "text",
+          mime: "",
+          origin: "agent",
+          text: brief,
+          base64: "",
+        });
+      }
+    }
   }
 
   return out;
+}
+
+/** Карта полей шаблона словами. Не вышло разобрать — работаем без неё. */
+async function templateBrief(agentId: string, file: StoredFile): Promise<string> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const dir = await folder("agent", agentId);
+    const raw = await readFile(`${dir}/${file.id}.bin`);
+    const { templateFields, fieldsBrief } = await import("./server-xlsx");
+    const fields = await templateFields(raw);
+    return fields.length ? fieldsBrief(file.name, fields) : "";
+  } catch {
+    return "";
+  }
 }
 
 // ── Ответ агента файлом Word ──────────────────────────────────────────────────
@@ -705,3 +738,78 @@ export const downloadAnswerServer = createServerFn({ method: "POST" })
     const file = await answerToDocx(answer.text, meta);
     return { ok: true, name: docxFileName(meta), base64: file.toString("base64") };
   });
+
+/**
+ * Заполненная модель из ответа агента.
+ *
+ * Шаблон — это документ агента: методолог кладёт его в карточке и меняет там
+ * же, без выкатки. Агент называет поля, платформа подставляет их в шаблон, а
+ * считает по формулам сам Excel — не модель. Поэтому цифры в файле сходятся
+ * с методикой компании, а не с тем, как модель сложила числа в уме.
+ */
+export const downloadModelServer = createServerFn({ method: "POST" })
+  .validator(
+    (data: { code: string; windowId: string; messageId: string; personId?: string }) => data,
+  )
+  .handler(
+    async ({
+      data,
+    }): Promise<{ ok: boolean; name: string; base64: string; filled: number; note: string }> => {
+      const deny = { ok: false, name: "", base64: "", filled: 0, note: "" };
+      const d = await import("./server-data");
+      const { me } = await d.whoIs(String(data.code ?? ""));
+      if (!me) return deny;
+
+      const wanted = data.personId?.trim();
+      if (wanted && wanted !== me.id && me.role !== "admin") return deny;
+      const ownerId = wanted || me.id;
+
+      const { projects, windows } = await d.readWorkspace(ownerId);
+      const w = windows.find((x) => x.id === data.windowId);
+      const answer = w?.messages.find((m) => m.id === data.messageId && m.from === "agent");
+      if (!w || !answer) return deny;
+
+      // Шаблон ищем среди документов агента: первый xlsx и есть модель.
+      const template = ((await readAgentFiles())[w.agentId] ?? []).find((f) =>
+        f.name.toLowerCase().endsWith(".xlsx"),
+      );
+      if (!template) {
+        return {
+          ...deny,
+          note: "у агента нет шаблона: администратор кладёт его в карточке агента",
+        };
+      }
+
+      const { cellsFromMarkdown, fillTemplate } = await import("./server-xlsx");
+      const cells = cellsFromMarkdown(answer.text);
+      if (!cells.length) {
+        return {
+          ...deny,
+          note: "в этом ответе нет полей модели — попросите агента собрать таблицу",
+        };
+      }
+
+      const { readFile } = await import("node:fs/promises");
+      const dir = await folder("agent", w.agentId);
+      let raw: Buffer;
+      try {
+        raw = await readFile(`${dir}/${template.id}.bin`);
+      } catch {
+        return { ...deny, note: "шаблон не нашёлся на диске — загрузите его агенту заново" };
+      }
+
+      const { file, filled, skipped } = await fillTemplate(raw, cells);
+      const project = projects.find((p) => p.id === w.projectId);
+      const title = (project?.title || w.title || "модель").replace(/[\\/:*?"<>|]/g, " ").trim();
+
+      return {
+        ok: true,
+        name: `Финмодель — ${title}.xlsx`.slice(0, 120),
+        base64: file.toString("base64"),
+        filled,
+        // Пропущенное показываем человеку: молча потерянные поля хуже, чем
+        // честная строка о том, что часть ответа мимо шаблона.
+        note: skipped.length ? `не легло в шаблон: ${skipped.slice(0, 5).join("; ")}` : "",
+      };
+    },
+  );

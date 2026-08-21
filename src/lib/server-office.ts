@@ -10,7 +10,7 @@
  * модель читает сама, целиком и с вёрсткой.
  */
 
-type ZipEntry = { name: string; size: number; read: () => Buffer };
+export type ZipEntry = { name: string; size: number; read: () => Buffer };
 
 /**
  * Сколько распакованного XML готовы держать в памяти.
@@ -26,7 +26,7 @@ const MAX_UNPACKED = 200 * 1024 * 1024;
  * из Google Docs и из питоновских выгрузок размеры в локальном заголовке
  * бывают нулевыми (флаг data descriptor), и последовательный обход врёт.
  */
-async function openZip(buf: Buffer): Promise<Map<string, ZipEntry>> {
+export async function openZip(buf: Buffer): Promise<Map<string, ZipEntry>> {
   const { inflateRawSync } = await import("node:zlib");
   const out = new Map<string, ZipEntry>();
 

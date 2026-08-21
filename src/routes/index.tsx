@@ -7,10 +7,10 @@ import { Markdown } from "@/components/Markdown";
 import type { StoredWindow } from "@/lib/conversations";
 import { MAX_WINDOW_FILES, type StoredFile } from "@/lib/documents";
 import type { StoredProject } from "@/lib/projects";
-import { DOCX_MIME, saveFile } from "@/lib/download";
+import { DOCX_MIME, XLSX_MIME, saveFile } from "@/lib/download";
 import type { AgentRole } from "@/lib/roles";
 import { getAgentRolesServer } from "@/lib/server-agents";
-import { downloadAnswerServer } from "@/lib/server-files";
+import { downloadAnswerServer, downloadModelServer } from "@/lib/server-files";
 import { useSession } from "@/lib/session";
 import { agentById, agents } from "@/lib/shtab-data";
 import { useWindows } from "@/lib/windows-store";
@@ -476,6 +476,20 @@ function Conversation({
     [code, w.id],
   );
 
+  /**
+   * Заполненный шаблон модели. Отдельной кнопкой, а не вместо Word: записка и
+   * таблица нужны вместе — одну несут финансам, вторую читают глазами.
+   */
+  const saveModel = useCallback(
+    async (messageId: string) => {
+      if (!code) return "";
+      const res = await downloadModelServer({ data: { code, windowId: w.id, messageId } });
+      if (res.ok) saveFile(res.name, res.base64, XLSX_MIME);
+      return res.ok ? res.note : res.note || "шаблон заполнить не удалось";
+    },
+    [code, w.id],
+  );
+
   function submit() {
     const text = draft.trim();
     if (!text || thinking) return;
@@ -582,7 +596,14 @@ function Conversation({
           ) : null}
 
           {shown.map((m) => (
-            <Message key={m.id} id={m.id} from={m.from} text={m.text} onSave={saveAnswer} />
+            <Message
+              key={m.id}
+              id={m.id}
+              from={m.from}
+              text={m.text}
+              onSave={saveAnswer}
+              onModel={saveModel}
+            />
           ))}
 
           {thinking ? <Waiting name={speaker ?? "Агент"} /> : null}
@@ -923,16 +944,37 @@ const Message = memo(function Message({
   from,
   text,
   onSave,
+  onModel,
 }: {
   id: string;
   from: "user" | "agent";
   text: string;
   onSave: (messageId: string) => Promise<void>;
+  onModel: (messageId: string) => Promise<string>;
 }) {
   const mine = from === "user";
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState("");
+  const [model, setModel] = useState("");
   const body = useRef<HTMLDivElement>(null);
+
+  /**
+   * В ответе есть поля таблицы — значит агент собрал модель, и её можно
+   * выгрузить заполненным файлом. Признак берём из самого ответа, а не из
+   * имени агента: шаблон может появиться у любого, кто работает с цифрами.
+   */
+  const hasCells = /\|[^|\n]+\|\s*\$?[A-Z]{1,3}\d{1,4}\s*\|/.test(text);
+
+  async function saveModel() {
+    setModel("Собираю таблицу");
+    try {
+      const note = await onModel(id);
+      setModel(note || "Готово");
+    } catch {
+      setModel("Не удалось собрать файл");
+    }
+    setTimeout(() => setModel(""), 6000);
+  }
 
   async function save() {
     setSaving(true);
@@ -998,8 +1040,15 @@ const Message = memo(function Message({
           {/* Разбор нужен на руках: переслать, распечатать, принести на защиту */}
           {mine ? null : (
             <div className="mt-3 flex flex-wrap items-center justify-end gap-2.5 border-t border-[color:var(--color-line)] pt-2.5">
-              {copied ? (
-                <span className="mr-auto text-[11.5px] text-muted-foreground">{copied}</span>
+              {copied || model ? (
+                <span className="mr-auto text-[11.5px] text-muted-foreground">
+                  {copied || model}
+                </span>
+              ) : null}
+              {hasCells ? (
+                <button onClick={() => void saveModel()} className="btn btn-glass text-[11.5px]">
+                  Скачать модель в Excel
+                </button>
               ) : null}
               <button onClick={() => void copy()} className="btn btn-glass text-[11.5px]">
                 Скопировать текст
