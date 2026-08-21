@@ -1,95 +1,119 @@
 #!/usr/bin/env bash
-set -eu
+#
+# Ключ провайдера — в хранилище платформы, минуя браузер.
+#
+# Ключ вводится вслепую и уходит на сервер через ssh потоком ввода: он не
+# попадает ни в историю команд, ни в список процессов на сервере, ни в журналы.
+# Файл secrets.json остаётся с правами 600 и владельцем bezvody.
+#
+# Перезапускать сервис не нужно: ключ читается с диска на каждый запрос.
+#
+#   ./set-api-key.sh anthropic              — общий ключ Claude для всех агентов
+#   ./set-api-key.sh anthropic architect    — отдельный ключ Архитектору
+#   ./set-api-key.sh openai neurocouncil    — отдельный ключ Совету
+#   ./set-api-key.sh anthropic architect --убрать   — убрать свой ключ агента
+#
+# Свой ключ агента старше общего: есть он — работают по нему, нет — по общему.
 
-BASE_URL="${BASE_URL:-https://id.withoutwater.ru}"
+set -euo pipefail
 
-# Краски
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+SERVER="${BV_SERVER:-root@5.129.198.180}"
+SECRETS="/opt/bezvody-front-data/secrets.json"
 
-echo -e "${YELLOW}┌─ Сохранить ключ API провайдера ─────────────────────┐${NC}"
-echo
+PROVIDER="${1:-}"
+AGENT="${2:-}"
+MODE="${3:-}"
 
-# 1. Код администратора
-read -s -p "Код администратора платформы: " ADMIN_CODE
-echo
-if [ -z "$ADMIN_CODE" ]; then
-  echo -e "${RED}Ошибка: нужен код администратора${NC}"
-  exit 1
-fi
-
-echo
-echo "Провайдеры:"
-echo "  1. claude     (Anthropic Claude)"
-echo "  2. openai     (OpenAI GPT)"
-echo "  3. gemini     (Google Gemini)"
-echo
-read -p "Выбор (1/2/3): " PROVIDER_NUM
-
-case "$PROVIDER_NUM" in
-  1) PROVIDER="anthropic" ;;
-  2) PROVIDER="openai" ;;
-  3) PROVIDER="gemini" ;;
+case "$PROVIDER" in
+  anthropic | openai | gemini) ;;
   *)
-    echo -e "${RED}Ошибка: выбор 1, 2 или 3${NC}"
+    echo "Кому ключ: anthropic, openai или gemini."
+    echo
+    echo "  ./set-api-key.sh anthropic              общий ключ Claude"
+    echo "  ./set-api-key.sh anthropic architect    ключ только Архитектору"
+    echo "  ./set-api-key.sh openai neurocouncil    ключ только Совету"
     exit 1
     ;;
 esac
 
-echo
-echo "Передавать ключ:"
-echo "  1. Глобально (для всех агентов)"
-echo "  2. Конкретному агенту (architect, neurocouncil, stakeholders, accountant)"
-echo
-read -p "Выбор (1/2): " SCOPE
+if [ "$MODE" = "--убрать" ]; then
+  if [ -n "$AGENT" ]; then
+    echo "Убираю свой ключ $PROVIDER у агента «$AGENT» — дальше он будет работать по общему."
+  else
+    echo "Убираю общий ключ $PROVIDER."
+  fi
+elif [ -n "$AGENT" ]; then
+  echo "Ключ $PROVIDER для агента «$AGENT» — только он им и пользуется."
+else
+  echo "Общий ключ $PROVIDER — для всех агентов, у кого нет своего."
+fi
 
-AGENT_ID=""
-if [ "$SCOPE" = "2" ]; then
-  read -p "ID агента: " AGENT_ID
-  if [ -z "$AGENT_ID" ]; then
-    echo -e "${RED}Ошибка: нужен ID агента${NC}"
+KEY=""
+if [ "$MODE" != "--убрать" ]; then
+  printf 'Вставьте ключ (не отображается): '
+  read -rs KEY
+  echo
+  if [ -z "$KEY" ]; then
+    echo "Пусто — ничего не меняю."
     exit 1
   fi
+  echo "Принял ключ, оканчивается на ${KEY: -4}."
 fi
 
-echo
-read -s -p "API-ключ: " API_KEY
-echo
-if [ -z "$API_KEY" ]; then
-  echo -e "${RED}Ошибка: ключ не может быть пустым${NC}"
-  exit 1
-fi
+# Сама программа уезжает на сервер закодированной в аргументе команды, а
+# поток ввода остаётся свободным — по нему идёт ключ. Наоборот не выходит:
+# если программу подать потоком, python съест его целиком и ключу места не
+# останется (на этом скрипт один раз уже молча записал пустоту).
+PROG=$(base64 <<'PY' | tr -d '\n'
+import json, os, sys
 
-# Отправляем запрос
-PAYLOAD=$(cat <<PAYLOAD_EOF
-{
-  "code": "$ADMIN_CODE",
-  "provider": "$PROVIDER",
-  $([ -n "$AGENT_ID" ] && echo "\"agentId\": \"$AGENT_ID\"," || echo "")
-  "key": "$API_KEY"
-}
-PAYLOAD_EOF
+key = sys.stdin.readline().strip()
+provider = os.environ["PROVIDER"]
+agent = os.environ["AGENT"]
+path = os.environ["SECRETS"]
+
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = {}
+
+field = {"anthropic": "anthropicKey", "openai": "openaiKey", "gemini": "geminiKey"}[provider]
+
+if agent:
+    keys = data.setdefault("agentProviderKeys", {})
+    slot = keys.setdefault(agent, {})
+    if key:
+        slot[provider] = key
+    else:
+        slot.pop(provider, None)
+    if not slot:
+        keys.pop(agent, None)
+    if not keys:
+        data.pop("agentProviderKeys", None)
+else:
+    if key:
+        data[field] = key
+    else:
+        data.pop(field, None)
+
+with open(path, "w") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+os.chmod(path, 0o600)
+
+import shutil
+shutil.chown(path, "bezvody", "bezvody")
+
+# Показываем, что теперь лежит, — хвостами, сами ключи наружу не выносим.
+общие = {p: v[-4:] for p, v in ((p, data.get(f, "")) for p, f in
+        (("anthropic", "anthropicKey"), ("openai", "openaiKey"), ("gemini", "geminiKey"))) if v}
+print("общие ключи:", ", ".join(f"{p} ••••{t}" for p, t in общие.items()) or "нет")
+for a, slots in data.get("agentProviderKeys", {}).items():
+    print(f"свой ключ у «{a}»:", ", ".join(f"{p} ••••{v[-4:]}" for p, v in slots.items()))
+PY
 )
 
-echo
-echo -e "${YELLOW}Сохраняю...${NC}"
+printf '%s\n' "$KEY" | ssh "$SERVER" \
+  "PROVIDER='$PROVIDER' AGENT='$AGENT' SECRETS='$SECRETS' python3 -c 'import base64;exec(base64.b64decode(\"$PROG\"))'"
 
-RESPONSE=$(curl -s -X POST "$BASE_URL/api/save-api-key" \
-  -H "Content-Type: application/json" \
-  -d "$PAYLOAD")
-
-# Проверяем ошибку
-if echo "$RESPONSE" | grep -q '"ok":false' 2>/dev/null || echo "$RESPONSE" | grep -q 'error' 2>/dev/null; then
-  echo -e "${RED}Ошибка:${NC} $RESPONSE"
-  exit 1
-fi
-
-if [ -n "$AGENT_ID" ]; then
-  echo -e "${GREEN}✓ Ключ сохранён для агента $AGENT_ID${NC}"
-else
-  echo -e "${GREEN}✓ Ключ сохранён глобально для всех агентов${NC}"
-fi
-echo "   Провайдер: $PROVIDER"
-echo "   Последние знаки: $(echo "$API_KEY" | tail -c 5)"
+echo "Готово. Перезапускать ничего не надо — ключ подхватится со следующего вопроса агенту."
