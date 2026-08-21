@@ -10,14 +10,19 @@
 #
 #   ./set-api-key.sh anthropic              — общий ключ Claude для всех агентов
 #   ./set-api-key.sh anthropic architect    — отдельный ключ Архитектору
-#   ./set-api-key.sh openai neurocouncil    — отдельный ключ Совету
+#   ./set-api-key.sh anthropic accountant   — отдельный ключ Счетоводу
 #   ./set-api-key.sh anthropic architect --убрать   — убрать свой ключ агента
 #
 # Свой ключ агента старше общего: есть он — работают по нему, нет — по общему.
+#
+# Если сервер не отвечает напрямую (так бывает: маршрут до Timeweb иногда
+# ложится, при этом сам сервер жив), идём через дроплет:
+#   BV_JUMP=root@206.189.181.64 ./set-api-key.sh anthropic accountant
 
 set -euo pipefail
 
 SERVER="${BV_SERVER:-root@5.129.198.180}"
+JUMP="${BV_JUMP:-}"
 SECRETS="/opt/bezvody-front-data/secrets.json"
 
 PROVIDER="${1:-}"
@@ -113,7 +118,7 @@ for a, slots in data.get("agentProviderKeys", {}).items():
 PY
 )
 
-printf '%s\n' "$KEY" | ssh "$SERVER" \
+printf '%s\n' "$KEY" | ssh ${JUMP:+-J "$JUMP"} "$SERVER" \
   "PROVIDER='$PROVIDER' AGENT='$AGENT' SECRETS='$SECRETS' python3 -c 'import base64;exec(base64.b64decode(\"$PROG\"))'"
 
 echo "Готово. Перезапускать ничего не надо — ключ подхватится со следующего вопроса агенту."
