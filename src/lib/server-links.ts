@@ -18,8 +18,7 @@
  */
 
 export type LinkResult =
-  | { ok: true; name: string; mime: string; bytes: Buffer }
-  | { ok: false; reason: string };
+  { ok: true; name: string; mime: string; bytes: Buffer } | { ok: false; reason: string };
 
 /** Сколько ссылок разбираем из одного сообщения: остальное — уже не вопрос, а список. */
 export const MAX_LINKS_PER_MESSAGE = 5;
@@ -47,14 +46,18 @@ function isPrivateAddress(ip: string): boolean {
   if (ip.includes(":")) {
     const v = ip.toLowerCase();
     if (v.startsWith("::ffff:")) return isPrivateAddress(v.slice(7));
-    return v === "::1" || v === "::" || v.startsWith("fc") || v.startsWith("fd") || v.startsWith("fe80");
+    return (
+      v === "::1" || v === "::" || v.startsWith("fc") || v.startsWith("fd") || v.startsWith("fe80")
+    );
   }
   const p = ip.split(".").map(Number);
   if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
   const [a = 0, b = 0] = p;
   return (
-    a === 0 || a === 10 || a === 127 ||
-    (a === 169 && b === 254) ||           // метаданные облака
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) || // метаданные облака
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
     (a === 100 && b >= 64 && b <= 127) || // операторский NAT
@@ -78,7 +81,9 @@ async function addressIsSafe(host: string): Promise<boolean> {
  * просмотра — скачав её, получишь разметку редактора, а не документ.
  * У обоих есть честный адрес выгрузки, им и пользуемся.
  */
-async function resolveKnownHosts(url: string): Promise<{ url: string; name?: string } | { error: string }> {
+async function resolveKnownHosts(
+  url: string,
+): Promise<{ url: string; name?: string } | { error: string }> {
   const u = new URL(url);
   const host = u.hostname.toLowerCase();
 
@@ -86,11 +91,20 @@ async function resolveKnownHosts(url: string): Promise<{ url: string; name?: str
     const id = /\/d\/([a-zA-Z0-9_-]+)/.exec(u.pathname)?.[1];
     if (!id) return { url };
     if (u.pathname.includes("/spreadsheets/"))
-      return { url: `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`, name: "Таблица Google.xlsx" };
+      return {
+        url: `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`,
+        name: "Таблица Google.xlsx",
+      };
     if (u.pathname.includes("/presentation/"))
-      return { url: `https://docs.google.com/presentation/d/${id}/export/pptx`, name: "Презентация Google.pptx" };
+      return {
+        url: `https://docs.google.com/presentation/d/${id}/export/pptx`,
+        name: "Презентация Google.pptx",
+      };
     if (u.pathname.includes("/document/"))
-      return { url: `https://docs.google.com/document/d/${id}/export?format=docx`, name: "Документ Google.docx" };
+      return {
+        url: `https://docs.google.com/document/d/${id}/export?format=docx`,
+        name: "Документ Google.docx",
+      };
     return { url };
   }
 
@@ -104,8 +118,17 @@ async function resolveKnownHosts(url: string): Promise<{ url: string; name?: str
     // У публичной ссылки Яндекс.Диска адрес файла выдаёт открытый API.
     const api = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(url)}`;
     try {
-      const res = await fetch(api, { headers: { "user-agent": AGENT }, signal: AbortSignal.timeout(20_000) });
-      if (!res.ok) return { error: res.status === 404 ? "ссылка Яндекс.Диска недоступна или закрыта" : `Яндекс.Диск ответил ${res.status}` };
+      const res = await fetch(api, {
+        headers: { "user-agent": AGENT },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok)
+        return {
+          error:
+            res.status === 404
+              ? "ссылка Яндекс.Диска недоступна или закрыта"
+              : `Яндекс.Диск ответил ${res.status}`,
+        };
       const data = (await res.json()) as { href?: string };
       if (!data.href) return { error: "Яндекс.Диск не отдал файл" };
       return { url: data.href };
@@ -193,7 +216,8 @@ export async function fetchLink(url: string, maxBytes: number): Promise<LinkResu
   // как первый — иначе внешняя ссылка уводит нас на внутренний адрес.
   for (let hop = 0; hop < 4; hop++) {
     const u = new URL(current);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, reason: "переадресация не туда" };
+    if (u.protocol !== "http:" && u.protocol !== "https:")
+      return { ok: false, reason: "переадресация не туда" };
     if (!(await addressIsSafe(u.hostname))) return { ok: false, reason: "адрес недоступен" };
 
     try {
@@ -203,7 +227,10 @@ export async function fetchLink(url: string, maxBytes: number): Promise<LinkResu
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (err) {
-      const detail = err instanceof Error && err.name === "TimeoutError" ? "сайт не ответил вовремя" : "сайт не отвечает";
+      const detail =
+        err instanceof Error && err.name === "TimeoutError"
+          ? "сайт не ответил вовремя"
+          : "сайт не отвечает";
       return { ok: false, reason: detail };
     }
 
@@ -240,7 +267,9 @@ export async function fetchLink(url: string, maxBytes: number): Promise<LinkResu
   if (!bytes.length) return { ok: false, reason: "по ссылке пусто" };
 
   // Google на закрытый документ отдаёт не файл, а страницу входа.
-  const looksHtml = mime.includes("text/html") || bytes.subarray(0, 200).toString("utf8").trimStart().toLowerCase().startsWith("<!doctype html");
+  const looksHtml =
+    mime.includes("text/html") ||
+    bytes.subarray(0, 200).toString("utf8").trimStart().toLowerCase().startsWith("<!doctype html");
   if (looksHtml && suggestedName) {
     return { ok: false, reason: "документ закрыт: откройте доступ «всем, у кого есть ссылка»" };
   }
@@ -248,7 +277,12 @@ export async function fetchLink(url: string, maxBytes: number): Promise<LinkResu
   if (looksHtml) {
     const text = await htmlToText(bytes.toString("utf8"));
     if (!text) return { ok: false, reason: "на странице не нашлось текста" };
-    return { ok: true, name: nameFor(current, "", "text/plain"), mime: "text/plain", bytes: Buffer.from(text, "utf8") };
+    return {
+      ok: true,
+      name: nameFor(current, "", "text/plain"),
+      mime: "text/plain",
+      bytes: Buffer.from(text, "utf8"),
+    };
   }
 
   return {

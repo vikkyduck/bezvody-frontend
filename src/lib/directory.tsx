@@ -4,7 +4,15 @@
  * Здесь нет ни списка людей, ни их кодов до тех пор, пока сервер их не отдал,
  * и отдаёт он ровно то, что позволено роли звонящего.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { Participant, ParticipantDraft } from "./participants";
 import { listServer, mutateServer } from "./server-directory";
@@ -38,7 +46,9 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
     }
     listServer({ data: { code } })
       .then((res) => setParticipants(res.participants))
-      .catch(() => { /* молча: экраны покажут пустоту словами */ })
+      .catch(() => {
+        /* молча: экраны покажут пустоту словами */
+      })
       .finally(() => setReady(true));
   }, [code]);
 

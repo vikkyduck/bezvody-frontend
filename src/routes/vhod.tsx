@@ -46,14 +46,17 @@ function SignIn() {
       <div className="flex flex-1 items-center justify-center px-5 py-12">
         <div className="w-full max-w-[420px]">
           <div className="mb-8 flex items-center gap-3">
-            <CatMark className="h-9 w-11 text-[color:var(--color-text-primary)]/70" strokeWidth={2} />
+            <CatMark
+              className="h-9 w-11 text-[color:var(--color-text-primary)]/70"
+              strokeWidth={2}
+            />
             <StencilLogo className="logo-sm" />
           </div>
 
           <h1 className="t-h1 text-[30px] leading-[1.1]">Вход в кабинет</h1>
           <p className="measure mt-3 text-[13.5px] text-muted-foreground">
-            Код доступа выдаёт администратор платформы. Один код — один человек: по нему видно, кто и что
-            смотрел, и его можно отозвать в любой момент.
+            Код доступа выдаёт администратор платформы. Один код — один человек: по нему видно, кто
+            и что смотрел, и его можно отозвать в любой момент.
           </p>
 
           <form onSubmit={submit} className="card-flat mt-7 px-6 py-6">
@@ -76,7 +79,11 @@ function SignIn() {
               className="mt-2.5 w-full rounded-[var(--radius-md,10px)] border border-[color:var(--color-line)] bg-transparent px-3.5 py-2.5 text-[14px] tracking-[0.06em] uppercase outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
             />
             {error ? (
-              <p id="code-error" role="alert" className="mt-2.5 text-[12.5px] text-[color:var(--color-accent)]">
+              <p
+                id="code-error"
+                role="alert"
+                className="mt-2.5 text-[12.5px] text-[color:var(--color-accent)]"
+              >
                 {error}
               </p>
             ) : null}
@@ -90,11 +97,10 @@ function SignIn() {
             </button>
 
             <p className="mt-4 text-[11.5px] leading-relaxed text-muted-foreground">
-              Потеряли код — напишите вашему проджект-менеджеру, он выпустит новый. Старый после этого
-              перестанет работать.
+              Потеряли код — напишите вашему проджект-менеджеру, он выпустит новый. Старый после
+              этого перестанет работать.
             </p>
           </form>
-
         </div>
       </div>
     </div>

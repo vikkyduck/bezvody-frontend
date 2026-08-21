@@ -8,6 +8,7 @@
  */
 import type { StoredWindow } from "./conversations";
 import { normalize, seedParticipants, type Participant } from "./participants";
+import { DEFAULT_PROJECT_TITLE, type StoredProject } from "./projects";
 
 export const dataDir = () => process.env["BV_DATA_DIR"]?.trim() || ".data";
 
@@ -40,9 +41,13 @@ export async function readParticipants(): Promise<Participant[]> {
 export const writeParticipants = (list: Participant[]) => writeJson(participantsFile(), list);
 
 /** Кто звонит. Отозванный код не пускает никуда. */
-export async function whoIs(code: string): Promise<{ list: Participant[]; me: Participant | null }> {
+export async function whoIs(
+  code: string,
+): Promise<{ list: Participant[]; me: Participant | null }> {
   const list = await readParticipants();
-  const wanted = String(code ?? "").trim().toUpperCase();
+  const wanted = String(code ?? "")
+    .trim()
+    .toUpperCase();
   const me = list.find((p) => p.code && p.code === wanted && p.active) ?? null;
   return { list, me };
 }
@@ -61,6 +66,60 @@ export async function readWindows(personId: string): Promise<StoredWindow[]> {
 
 export const writeWindows = (personId: string, list: StoredWindow[]) =>
   writeJson(windowsFile(personId), list);
+
+// ── Папки проектов ────────────────────────────────────────────────────────────
+// Тоже по человеку: папка принадлежит тому, кто в ней работает.
+
+const projectsFile = (personId: string) => `${dataDir()}/projects/${personId}.json`;
+
+export async function readProjects(personId: string): Promise<StoredProject[]> {
+  const raw = await readJson<StoredProject[]>(projectsFile(personId), []);
+  return raw.map((p) => ({ ...p, files: p.files ?? [] }));
+}
+
+export const writeProjects = (personId: string, list: StoredProject[]) =>
+  writeJson(projectsFile(personId), list);
+
+/**
+ * Папки и окна вместе — с переносом старых окон в папки.
+ *
+ * Окна, открытые до появления папок, папки не знают. Заводим каждому свою —
+ * по заголовку окна — и переносим туда его документы. Сами файлы на диске
+ * лежат в папке человека и никуда не переезжают: у окна и так был только
+ * список, его и передаём папке.
+ *
+ * Слить несколько старых окон в одну задачу мы не можем: по названиям это
+ * догадка, а догадка тут — чужие документы не в той папке. Пусть человек
+ * соберёт их сам, если захочет.
+ */
+export async function readWorkspace(
+  personId: string,
+): Promise<{ projects: StoredProject[]; windows: StoredWindow[] }> {
+  const windows = await readWindows(personId);
+  const projects = await readProjects(personId);
+  const known = new Set(projects.map((p) => p.id));
+  const orphans = windows.filter((w) => !w.projectId || !known.has(w.projectId));
+  if (!orphans.length) return { projects, windows };
+
+  const nextProjects = [...projects];
+  const nextWindows = windows.map((w) => {
+    if (w.projectId && known.has(w.projectId)) return w;
+    const born = w.createdAt || new Date().toISOString();
+    const project: StoredProject = {
+      id: `p-${Math.random().toString(36).slice(2, 9)}`,
+      title: w.title?.trim() || DEFAULT_PROJECT_TITLE,
+      files: w.files ?? [],
+      createdAt: born,
+      updatedAt: w.updatedAt || born,
+    };
+    nextProjects.unshift(project);
+    return { ...w, projectId: project.id, files: [] };
+  });
+
+  await writeProjects(personId, nextProjects);
+  await writeWindows(personId, nextWindows);
+  return { projects: nextProjects, windows: nextWindows };
+}
 
 export const today = () => new Date().toLocaleDateString("ru-RU");
 
@@ -98,7 +157,10 @@ async function writeSecrets(next: Secrets): Promise<void> {
   await chmod(secretsFile(), 0o600);
 }
 
-export async function readApiKey(provider: KeyProvider = "anthropic", agentId?: string): Promise<string> {
+export async function readApiKey(
+  provider: KeyProvider = "anthropic",
+  agentId?: string,
+): Promise<string> {
   // Сначала проверяем ключ агента (per-agent override).
   if (agentId) {
     const raw = await readSecrets();
@@ -111,7 +173,11 @@ export async function readApiKey(provider: KeyProvider = "anthropic", agentId?: 
   return raw[field]?.trim() || process.env[env]?.trim() || "";
 }
 
-export async function writeApiKey(provider: KeyProvider, key: string, agentId?: string): Promise<void> {
+export async function writeApiKey(
+  provider: KeyProvider,
+  key: string,
+  agentId?: string,
+): Promise<void> {
   const cur = await readSecrets();
   if (agentId) {
     // Per-agent ключ.

@@ -29,8 +29,7 @@ export type HttpAgentSettings = {
 };
 
 export type HttpCallResult =
-  | { ok: true; text: string; raw: string }
-  | { ok: false; detail: string; raw: string };
+  { ok: true; text: string; raw: string } | { ok: false; detail: string; raw: string };
 
 /** Достаём текст из ответа, не ломаясь на незнакомой форме. */
 function extractText(data: unknown): string {
@@ -49,7 +48,16 @@ function extractText(data: unknown): string {
   }
 
   // Ходовые имена полей у самодельных сервисов
-  for (const key of ["reply", "text", "answer", "result", "output", "content", "message", "response"]) {
+  for (const key of [
+    "reply",
+    "text",
+    "answer",
+    "result",
+    "output",
+    "content",
+    "message",
+    "response",
+  ]) {
     const v = obj[key];
     if (typeof v === "string" && v.trim()) return v;
     // Иногда результат лежит на уровень глубже
@@ -93,7 +101,8 @@ export async function callHttpAgent(opts: {
   if (auth) {
     const name = settings.authHeader.trim() || "Authorization";
     // Bearer подставляем сами, если человек вписал только сам токен.
-    headers[name] = name.toLowerCase() === "authorization" && !/^\w+\s/.test(auth) ? `Bearer ${auth}` : auth;
+    headers[name] =
+      name.toLowerCase() === "authorization" && !/^\w+\s/.test(auth) ? `Bearer ${auth}` : auth;
   }
 
   const body =

@@ -69,7 +69,11 @@ export const seedParticipants: Participant[] = [
 
 /** Ник приводим к одному виду: без собаки и без ссылки — её добавит интерфейс. */
 export function cleanTelegram(raw: string): string {
-  return raw.trim().replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "").trim();
+  return raw
+    .trim()
+    .replace(/^https?:\/\/t\.me\//i, "")
+    .replace(/^@/, "")
+    .trim();
 }
 
 /** Старая запись могла быть без новых полей — добиваем значениями по умолчанию. */
@@ -91,9 +95,39 @@ export function normalize(p: Partial<Participant>): Participant {
 }
 
 const translitMap: Record<string, string> = {
-  а: "A", б: "B", в: "V", г: "G", д: "D", е: "E", ё: "E", ж: "ZH", з: "Z", и: "I", й: "Y",
-  к: "K", л: "L", м: "M", н: "N", о: "O", п: "P", р: "R", с: "S", т: "T", у: "U", ф: "F",
-  х: "H", ц: "C", ч: "CH", ш: "SH", щ: "SCH", ъ: "", ы: "Y", ь: "", э: "E", ю: "YU", я: "YA",
+  а: "A",
+  б: "B",
+  в: "V",
+  г: "G",
+  д: "D",
+  е: "E",
+  ё: "E",
+  ж: "ZH",
+  з: "Z",
+  и: "I",
+  й: "Y",
+  к: "K",
+  л: "L",
+  м: "M",
+  н: "N",
+  о: "O",
+  п: "P",
+  р: "R",
+  с: "S",
+  т: "T",
+  у: "U",
+  ф: "F",
+  х: "H",
+  ц: "C",
+  ч: "CH",
+  ш: "SH",
+  щ: "SCH",
+  ъ: "",
+  ы: "Y",
+  ь: "",
+  э: "E",
+  ю: "YU",
+  я: "YA",
 };
 
 const translit = (s: string) =>

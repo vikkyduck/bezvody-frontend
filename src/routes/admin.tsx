@@ -62,7 +62,9 @@ function Body() {
               aria-selected={tab === t.key}
               onClick={() => setTab(t.key)}
               className={`rounded-[var(--radius-pill)] px-3.5 py-1.5 text-[12.5px] transition-colors ${
-                tab === t.key ? "lg lg-strong font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"
+                tab === t.key
+                  ? "lg lg-strong font-semibold text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {t.label}
@@ -154,7 +156,12 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
 
       <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-2">
         <Field label="Имя и фамилия">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя Фамилия" className={inputCls} />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Имя Фамилия"
+            className={inputCls}
+          />
         </Field>
         <Field label="Должность">
           <input
@@ -173,7 +180,11 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
           />
         </Field>
         <Field label="Роль">
-          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputCls}>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as Role)}
+            className={inputCls}
+          >
             <option value="client">Клиент — работает в окнах</option>
             <option value="project">Проджект — ведёт клиентов</option>
             <option value="admin">Администратор — всё</option>
@@ -197,7 +208,11 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
           />
         </Field>
         <div className="sm:col-span-2">
-          <button type="submit" disabled={busy} className="btn btn-primary text-[13px] disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={busy}
+            className="btn btn-primary text-[13px] disabled:opacity-50"
+          >
             {busy ? "Заводим" : "Завести кабинет"}
           </button>
         </div>
@@ -229,7 +244,15 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
   );
 }
 
-function PersonCard({ person: p, open, onToggle }: { person: Participant; open: boolean; onToggle: () => void }) {
+function PersonCard({
+  person: p,
+  open,
+  onToggle,
+}: {
+  person: Participant;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const { setActive, remove, update } = useDirectory();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [edit, setEdit] = useState(false);
@@ -239,13 +262,17 @@ function PersonCard({ person: p, open, onToggle }: { person: Participant; open: 
       <div className="flex flex-wrap items-start gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className={`text-[15px] font-semibold leading-snug ${p.active ? "" : "text-muted-foreground line-through"}`}>
+            <span
+              className={`text-[15px] font-semibold leading-snug ${p.active ? "" : "text-muted-foreground line-through"}`}
+            >
               {p.name}
             </span>
             <span className="rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               {roleLabel[p.role]}
             </span>
-            {!p.active ? <span className="text-[11px] text-[color:var(--color-accent)]">код отозван</span> : null}
+            {!p.active ? (
+              <span className="text-[11px] text-[color:var(--color-accent)]">код отозван</span>
+            ) : null}
           </div>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
             {[p.position, p.company].filter(Boolean).join(" · ") || "должность не указана"}
@@ -287,7 +314,10 @@ function PersonCard({ person: p, open, onToggle }: { person: Participant; open: 
             <button onClick={() => setEdit((v) => !v)} className="btn btn-ghost text-[12px]">
               {edit ? "Закрыть правку" : "Изменить данные"}
             </button>
-            <button onClick={() => setActive(p.id, !p.active)} className="btn btn-ghost text-[12px]">
+            <button
+              onClick={() => setActive(p.id, !p.active)}
+              className="btn btn-ghost text-[12px]"
+            >
               {p.active ? "Отозвать код" : "Вернуть доступ"}
             </button>
             {confirmDelete ? (
@@ -298,7 +328,10 @@ function PersonCard({ person: p, open, onToggle }: { person: Participant; open: 
                 >
                   Точно удалить
                 </button>
-                <button onClick={() => setConfirmDelete(false)} className="btn btn-ghost text-[12px]">
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="btn btn-ghost text-[12px]"
+                >
                   Отмена
                 </button>
               </>
@@ -308,7 +341,8 @@ function PersonCard({ person: p, open, onToggle }: { person: Participant; open: 
               </button>
             )}
             <span className="ml-auto text-[11px] text-muted-foreground">
-              Отозванный код перестаёт пускать, но кабинет остаётся в списке. Удаление стирает его совсем.
+              Отозванный код перестаёт пускать, но кабинет остаётся в списке. Удаление стирает его
+              совсем.
             </span>
           </div>
         </div>
@@ -346,7 +380,11 @@ function EditFields({
       className="grid gap-3 sm:grid-cols-2"
     >
       <Field label="Имя и фамилия">
-        <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className={inputCls} />
+        <input
+          value={draft.name}
+          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          className={inputCls}
+        />
       </Field>
       <Field label="Должность">
         <input
@@ -374,7 +412,11 @@ function EditFields({
         </select>
       </Field>
       <Field label="Почта">
-        <input value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} className={inputCls} />
+        <input
+          value={draft.email}
+          onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+          className={inputCls}
+        />
       </Field>
       <Field label="Телеграм">
         <input
@@ -449,7 +491,9 @@ function ListSection({
           {items.map((i) => (
             <li key={i.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3">
               <span className="text-[14px]">{i.main}</span>
-              <span className="t-number text-[12px] tracking-[0.06em] text-muted-foreground">{i.side}</span>
+              <span className="t-number text-[12px] tracking-[0.06em] text-muted-foreground">
+                {i.side}
+              </span>
             </li>
           ))}
         </ul>

@@ -129,7 +129,10 @@ export const emptyConfig = (agentId?: string): AgentConfig => ({
 });
 
 /** Старая запись могла быть без новых полей — добиваем значениями по умолчанию. */
-export function normalizeConfig(c: Partial<AgentConfig> | undefined, agentId?: string): AgentConfig {
+export function normalizeConfig(
+  c: Partial<AgentConfig> | undefined,
+  agentId?: string,
+): AgentConfig {
   const base = { ...emptyConfig(agentId), ...(c ?? {}) };
   // Запись, сделанная до появления правила, получает его по умолчанию:
   // включать руками каждому агенту — лишний повод забыть.
@@ -142,7 +145,10 @@ export function normalizeConfig(c: Partial<AgentConfig> | undefined, agentId?: s
 }
 
 /** Что уедет модели: инструкция агента плюс правило завершения. */
-export function systemPromptOf(cfg: Partial<AgentConfig> | undefined, role?: AgentRole | null): string {
+export function systemPromptOf(
+  cfg: Partial<AgentConfig> | undefined,
+  role?: AgentRole | null,
+): string {
   const c = normalizeConfig(cfg);
   const prompt = c.prompt.trim();
 
@@ -182,7 +188,10 @@ export const getAgentSettingsServer = createServerFn({ method: "POST" })
     const { me } = await d.whoIs(String(data.code ?? ""));
     if (!me || me.role !== "admin") return emptySettings();
 
-    const agents = await withAuthFlags(d, await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {}));
+    const agents = await withAuthFlags(
+      d,
+      await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {}),
+    );
     return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES };
   });
 
@@ -244,7 +253,9 @@ export const saveAgentServer = createServerFn({ method: "POST" })
     else if (data.auth) await d.writeAgentAuth(data.agentId, data.auth.trim());
 
     // Роли приходят списком целиком: правка одной роли — это новый список.
-    const roles = Array.isArray(data.roles) ? data.roles.map(cleanRole).filter((r) => r.name && r.prompt) : prev.roles;
+    const roles = Array.isArray(data.roles)
+      ? data.roles.map(cleanRole).filter((r) => r.name && r.prompt)
+      : prev.roles;
 
     agents[data.agentId] = {
       ...prev,
@@ -259,7 +270,9 @@ export const saveAgentServer = createServerFn({ method: "POST" })
           ? MODELS.some((m) => m.id === data.model)
             ? data.model
             : DEFAULT_MODEL
-          : String(data.model ?? "").trim().slice(0, 100) || DEFAULT_MODEL_OF[provider],
+          : String(data.model ?? "")
+              .trim()
+              .slice(0, 100) || DEFAULT_MODEL_OF[provider],
       transport,
       endpoint,
       authHeader: (data.authHeader ?? prev.authHeader).trim() || "Authorization",
@@ -275,7 +288,11 @@ export const saveAgentServer = createServerFn({ method: "POST" })
     };
     await d.writeJson(file, agents);
 
-    return { agents: await withAuthFlags(d, agents), keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES };
+    return {
+      agents: await withAuthFlags(d, agents),
+      keys: await keysSummary(d),
+      defaultRoles: DEFAULT_ROLES,
+    };
   });
 
 export const saveApiKeyServer = createServerFn({ method: "POST" })
@@ -298,64 +315,83 @@ export const saveApiKeyServer = createServerFn({ method: "POST" })
  */
 export const testAgentServer = createServerFn({ method: "POST" })
   .validator((data: { code: string; agentId: string }) => data)
-  .handler(async ({ data }): Promise<{ ok: boolean; detail: string; raw: string; text: string }> => {
-    const d = await import("./server-data");
-    const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me || me.role !== "admin") return { ok: false, detail: "нет доступа", raw: "", text: "" };
+  .handler(
+    async ({ data }): Promise<{ ok: boolean; detail: string; raw: string; text: string }> => {
+      const d = await import("./server-data");
+      const { me } = await d.whoIs(String(data.code ?? ""));
+      if (!me || me.role !== "admin")
+        return { ok: false, detail: "нет доступа", raw: "", text: "" };
 
-    const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
-    const cfg = normalizeConfig(agents[data.agentId], data.agentId);
+      const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
+      const cfg = normalizeConfig(agents[data.agentId], data.agentId);
 
-    // Агент на модели: проверяем, что ключ и имя модели рабочие. Это главный
-    // способ узнать правду про чужого провайдера — их линейки меняются, и
-    // ответ на живой запрос честнее любого списка в коде.
-    if (cfg.transport === "model") {
-      const { askAgent } = await import("./server-llm");
-      const res = await askAgent({
-        systemPrompt: "Отвечай кратко и по-русски.",
-        model: cfg.model,
-        provider: cfg.provider,
+      // Агент на модели: проверяем, что ключ и имя модели рабочие. Это главный
+      // способ узнать правду про чужого провайдера — их линейки меняются, и
+      // ответ на живой запрос честнее любого списка в коде.
+      if (cfg.transport === "model") {
+        const { askAgent } = await import("./server-llm");
+        const res = await askAgent({
+          systemPrompt: "Отвечай кратко и по-русски.",
+          model: cfg.model,
+          provider: cfg.provider,
+          history: [],
+          question: "Проверка связи. Ответь одним предложением: какая ты модель.",
+          label: `${data.agentId} · проверка связи`,
+        });
+        return res.ok
+          ? {
+              ok: true,
+              detail: `связь есть · ${cfg.provider} · ${cfg.model}`,
+              raw: "",
+              text: res.text,
+            }
+          : {
+              ok: false,
+              detail:
+                res.reason === "no-key"
+                  ? `ключ ${res.detail ?? cfg.provider} не задан`
+                  : res.reason === "busy"
+                    ? "провайдер отвечает «занято» — попробуйте через минуту"
+                    : (res.detail ?? "связи нет"),
+              raw: "",
+              text: "",
+            };
+      }
+
+      const { callHttpAgent } = await import("./server-http-agent");
+      const res = await callHttpAgent({
+        settings: {
+          endpoint: cfg.endpoint,
+          authHeader: cfg.authHeader,
+          format: cfg.format,
+          model: cfg.model,
+        },
+        auth: await d.readAgentAuth(data.agentId),
+        systemPrompt: systemPromptOf(cfg),
         history: [],
-        question: "Проверка связи. Ответь одним предложением: какая ты модель.",
-        label: `${data.agentId} · проверка связи`,
+        question: "Проверка связи. Ответь одним предложением, что ты за агент.",
+        timeoutMs: 60_000,
       });
+
       return res.ok
-        ? { ok: true, detail: `связь есть · ${cfg.provider} · ${cfg.model}`, raw: "", text: res.text }
-        : {
-            ok: false,
-            detail:
-              res.reason === "no-key"
-                ? `ключ ${res.detail ?? cfg.provider} не задан`
-                : res.reason === "busy"
-                  ? "провайдер отвечает «занято» — попробуйте через минуту"
-                  : (res.detail ?? "связи нет"),
-            raw: "",
-            text: "",
-          };
-    }
-
-    const { callHttpAgent } = await import("./server-http-agent");
-    const res = await callHttpAgent({
-      settings: { endpoint: cfg.endpoint, authHeader: cfg.authHeader, format: cfg.format, model: cfg.model },
-      auth: await d.readAgentAuth(data.agentId),
-      systemPrompt: systemPromptOf(cfg),
-      history: [],
-      question: "Проверка связи. Ответь одним предложением, что ты за агент.",
-      timeoutMs: 60_000,
-    });
-
-    return res.ok
-      ? { ok: true, detail: "связь есть", raw: res.raw, text: res.text }
-      : { ok: false, detail: res.detail, raw: res.raw, text: "" };
-  });
+        ? { ok: true, detail: "связь есть", raw: res.raw, text: res.text }
+        : { ok: false, detail: res.detail, raw: res.raw, text: "" };
+    },
+  );
 
 /** Роль из админки: обрезаем и не даём завести роль без имени или без инструкции. */
 function cleanRole(r: AgentRole): AgentRole {
   return {
     id: String(r.id ?? "").trim() || `role-${Math.random().toString(36).slice(2, 8)}`,
-    name: String(r.name ?? "").trim().slice(0, 120),
-    hint: String(r.hint ?? "").trim().slice(0, 200),
-    group: String(r.group ?? "").trim().slice(0, 120),
+    name: String(r.name ?? "")
+      .trim()
+      .slice(0, 120),
+    hint: String(r.hint ?? "")
+      .trim()
+      .slice(0, 200),
+    group: String(r.group ?? "")
+      .trim()
+      .slice(0, 120),
     prompt: String(r.prompt ?? "").trim(),
   };
 }

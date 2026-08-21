@@ -62,10 +62,16 @@ function contentFor(question: string, attachments: Attachment[]) {
     const imageType = a.base64 ? asImageType(a.mime) : null;
     if (imageType) {
       blocks.push({ type: "text", text: `Изображение «${a.title}» (${whose}):` });
-      blocks.push({ type: "image", source: { type: "base64", media_type: imageType, data: a.base64 } });
+      blocks.push({
+        type: "image",
+        source: { type: "base64", media_type: imageType, data: a.base64 },
+      });
       continue;
     }
-    blocks.push({ type: "text", text: `<документ имя="${a.title}" чей="${whose}">\n${a.text}\n</документ>` });
+    blocks.push({
+      type: "text",
+      text: `<документ имя="${a.title}" чей="${whose}">\n${a.text}\n</документ>`,
+    });
   }
 
   // Кеш на последнем документе: в разговоре из пяти вопросов материалы иначе
@@ -105,7 +111,8 @@ export async function askAgent(opts: {
   // другая работа с документами, и мешать это с кодом Claude незачем.
   if (provider !== "anthropic") {
     const { askAlt } = await import("./server-llm-alt");
-    return askAlt(provider, opts as any, apiKey);
+    const { agentId: _agentId, provider: _provider, ...rest } = opts;
+    return askAlt(provider, rest, apiKey);
   }
 
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
@@ -159,7 +166,9 @@ export async function askAgent(opts: {
       .join("\n")
       .trim();
 
-    return text ? { ok: true, text } : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
+    return text
+      ? { ok: true, text }
+      : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
   } catch (err) {
     // Наружу отдаём короткую причину: подробности с ключами и адресами
     // остаются в журнале сервера, а не на экране клиента.
@@ -170,7 +179,9 @@ export async function askAgent(opts: {
     // 429 — «слишком часто», 529 — «модель перегружена». Это не поломка,
     // а очередь: человеку надо сказать именно это, иначе он решит, что сломалось.
     if (status === 429 || status === 529) {
-      console.warn(`[агент] ${opts.label ?? opts.model} · ${secs}с · модель отвечает «занято» (${status})`);
+      console.warn(
+        `[агент] ${opts.label ?? opts.model} · ${secs}с · модель отвечает «занято» (${status})`,
+      );
       return { ok: false, reason: "busy" };
     }
 

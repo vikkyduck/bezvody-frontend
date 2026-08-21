@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 
-import { MAX_FILE_BYTES, SUPPORTED_HINT, fileNote, humanSize, type StoredFile } from "@/lib/documents";
+import {
+  MAX_FILE_BYTES,
+  SUPPORTED_HINT,
+  fileNote,
+  humanSize,
+  type StoredFile,
+} from "@/lib/documents";
 
 /**
  * Документы: список и приём новых.
@@ -117,7 +123,11 @@ export function Attachments({
       }}
       onDragLeave={() => setOver(false)}
       onDrop={drop}
-      className={over ? "rounded-[12px] outline outline-2 outline-offset-4 outline-[color:var(--color-accent)]" : ""}
+      className={
+        over
+          ? "rounded-[12px] outline outline-2 outline-offset-4 outline-[color:var(--color-accent)]"
+          : ""
+      }
     >
       {files.length ? (
         <ul
@@ -156,7 +166,9 @@ export function Attachments({
                   </span>
                 )}
                 {compact ? null : (
-                  <span className={`mt-0.5 block text-[12px] ${f.note ? "text-[color:var(--color-error)]" : "text-muted-foreground"}`}>
+                  <span
+                    className={`mt-0.5 block text-[12px] ${f.note ? "text-[color:var(--color-error)]" : "text-muted-foreground"}`}
+                  >
                     {fileNote(f)}
                   </span>
                 )}

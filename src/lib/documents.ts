@@ -67,13 +67,29 @@ export const MAX_RAW_BYTES = 24 * 1024 * 1024;
 
 const byExt: Record<string, DocKind> = {
   pdf: "pdf",
-  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image",
-  docx: "office", xlsx: "office", pptx: "office",
-  txt: "text", md: "text", csv: "text", tsv: "text", json: "text", xml: "text", log: "text",
+  png: "image",
+  jpg: "image",
+  jpeg: "image",
+  gif: "image",
+  webp: "image",
+  docx: "office",
+  xlsx: "office",
+  pptx: "office",
+  txt: "text",
+  md: "text",
+  csv: "text",
+  tsv: "text",
+  json: "text",
+  xml: "text",
+  log: "text",
 };
 
 const imageMime: Record<string, string> = {
-  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
 };
 
 export const extOf = (name: string) => (name.split(".").pop() ?? "").toLowerCase();
@@ -99,7 +115,8 @@ export function rejectReason(name: string, size: number): string {
     }
     return `${name}: такой формат не читается. Принимаем ${SUPPORTED_HINT}`;
   }
-  if (size > MAX_FILE_BYTES) return `${name}: ${humanSize(size)} — больше ${humanSize(MAX_FILE_BYTES)}`;
+  if (size > MAX_FILE_BYTES)
+    return `${name}: ${humanSize(size)} — больше ${humanSize(MAX_FILE_BYTES)}`;
   if (kindOf(name) === "image" && size > MAX_IMAGE_BYTES) {
     return `${name}: картинка тяжелее ${humanSize(MAX_IMAGE_BYTES)} — модель такую не примет, пересохраните поменьше`;
   }
@@ -134,7 +151,11 @@ export function fileNote(f: StoredFile): string {
   if (f.note) bits.push(f.note);
   else if (f.kind === "pdf") {
     // Большой PDF модель файлом не принимает — мы распознали его сами.
-    bits.push(f.chars ? `PDF, распознано ${f.chars.toLocaleString("ru-RU")} знаков` : "PDF, агент читает целиком");
+    bits.push(
+      f.chars
+        ? `PDF, распознано ${f.chars.toLocaleString("ru-RU")} знаков`
+        : "PDF, агент читает целиком",
+    );
   } else if (f.kind === "image") bits.push("изображение");
   else if (!f.chars) bits.push("текста не нашлось");
   else bits.push(`${f.chars.toLocaleString("ru-RU")} знаков текста`);

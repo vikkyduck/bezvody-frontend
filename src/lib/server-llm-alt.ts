@@ -20,7 +20,10 @@ import type { AskResult } from "./server-llm";
 /** Корень транзита. По умолчанию — тот же, через который ходит Claude. */
 const TRANSIT =
   process.env["AI_TRANSIT_URL"]?.trim() ||
-  (process.env["ANTHROPIC_BASE_URL"]?.trim() || "http://127.0.0.1:8444/anthropic").replace(/\/anthropic\/?$/, "") ||
+  (process.env["ANTHROPIC_BASE_URL"]?.trim() || "http://127.0.0.1:8444/anthropic").replace(
+    /\/anthropic\/?$/,
+    "",
+  ) ||
   "http://127.0.0.1:8444";
 
 const OPENAI_URL = process.env["OPENAI_BASE_URL"]?.trim() || `${TRANSIT}/v1`;
@@ -45,9 +48,11 @@ const DOCS_INTRO =
   "К работе приложены документы. Опирайтесь на них как на источник: " +
   "что взято оттуда — помечайте, чего в них нет — не выдумывайте.";
 
-const framed = (a: Attachment, whose: string) => `<документ имя="${a.title}" чей="${whose}">\n${a.text}\n</документ>`;
+const framed = (a: Attachment, whose: string) =>
+  `<документ имя="${a.title}" чей="${whose}">\n${a.text}\n</документ>`;
 
-const whoseOf = (a: Attachment) => (a.origin === "agent" ? "документ агента" : "документ от клиента");
+const whoseOf = (a: Attachment) =>
+  a.origin === "agent" ? "документ агента" : "документ от клиента";
 
 /** PDF у себя: у GPT в этой форме запроса вложением его не передать. */
 async function pdfToText(a: Attachment): Promise<string> {
@@ -63,9 +68,13 @@ async function pdfToText(a: Attachment): Promise<string> {
 
 // ── GPT ───────────────────────────────────────────────────────────────────────
 
-type OpenAIPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type OpenAIPart =
+  { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
-async function openaiContent(question: string, attachments: Attachment[]): Promise<string | OpenAIPart[]> {
+async function openaiContent(
+  question: string,
+  attachments: Attachment[],
+): Promise<string | OpenAIPart[]> {
   if (!attachments.length) return question;
 
   const parts: OpenAIPart[] = [{ type: "text", text: DOCS_INTRO }];
@@ -95,7 +104,10 @@ async function openaiContent(question: string, attachments: Attachment[]): Promi
 async function askOpenAI(opts: AskOpts, apiKey: string, started: number): Promise<AskResult> {
   const messages: Array<{ role: string; content: unknown }> = [
     { role: "system", content: opts.systemPrompt },
-    ...opts.history.map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text })),
+    ...opts.history.map((m) => ({
+      role: m.from === "user" ? "user" : "assistant",
+      content: m.text,
+    })),
     { role: "user", content: await openaiContent(opts.question, opts.attachments ?? []) },
   ];
 
@@ -117,7 +129,9 @@ async function askOpenAI(opts: AskOpts, apiKey: string, started: number): Promis
   };
   const text = (data.choices?.[0]?.message?.content ?? "").trim();
   log(opts, started, data.usage?.prompt_tokens ?? 0, data.usage?.completion_tokens ?? 0);
-  return text ? { ok: true, text } : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
+  return text
+    ? { ok: true, text }
+    : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
 }
 
 // ── Gemini ────────────────────────────────────────────────────────────────────
@@ -133,7 +147,9 @@ function geminiParts(question: string, attachments: Attachment[]): GeminiPart[] 
     // PDF и картинки Gemini принимает вложением и читает сам — как Claude.
     if (a.base64 && (a.kind === "pdf" || imageTypes.includes(a.mime))) {
       parts.push({ text: `«${a.title}» (${whose}):` });
-      parts.push({ inline_data: { mime_type: a.kind === "pdf" ? "application/pdf" : a.mime, data: a.base64 } });
+      parts.push({
+        inline_data: { mime_type: a.kind === "pdf" ? "application/pdf" : a.mime, data: a.base64 },
+      });
       continue;
     }
     parts.push({ text: framed(a, whose) });
@@ -144,20 +160,26 @@ function geminiParts(question: string, attachments: Attachment[]): GeminiPart[] 
 
 async function askGemini(opts: AskOpts, apiKey: string, started: number): Promise<AskResult> {
   const contents = [
-    ...opts.history.map((m) => ({ role: m.from === "user" ? "user" : "model", parts: [{ text: m.text }] })),
+    ...opts.history.map((m) => ({
+      role: m.from === "user" ? "user" : "model",
+      parts: [{ text: m.text }],
+    })),
     { role: "user", parts: geminiParts(opts.question, opts.attachments ?? []) },
   ];
 
-  const res = await fetch(`${GEMINI_URL}/models/${encodeURIComponent(opts.model)}:generateContent`, {
-    method: "POST",
-    // Ключ заголовком, а не в адресе: адреса попадают в журналы прокси.
-    headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: opts.systemPrompt }] },
-      contents,
-    }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  const res = await fetch(
+    `${GEMINI_URL}/models/${encodeURIComponent(opts.model)}:generateContent`,
+    {
+      method: "POST",
+      // Ключ заголовком, а не в адресе: адреса попадают в журналы прокси.
+      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: opts.systemPrompt }] },
+        contents,
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    },
+  );
 
   const raw = await res.text();
   if (!res.ok) return httpFail(res.status, raw, opts, started);
@@ -170,12 +192,19 @@ async function askGemini(opts: AskOpts, apiKey: string, started: number): Promis
     .map((p) => p.text ?? "")
     .join("\n")
     .trim();
-  log(opts, started, data.usageMetadata?.promptTokenCount ?? 0, data.usageMetadata?.candidatesTokenCount ?? 0);
+  log(
+    opts,
+    started,
+    data.usageMetadata?.promptTokenCount ?? 0,
+    data.usageMetadata?.candidatesTokenCount ?? 0,
+  );
 
   if (!text && data.candidates?.[0]?.finishReason === "SAFETY") {
     return { ok: false, reason: "failed", detail: "модель отказалась отвечать на этот запрос" };
   }
-  return text ? { ok: true, text } : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
+  return text
+    ? { ok: true, text }
+    : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
 }
 
 // ── Общее ─────────────────────────────────────────────────────────────────────
@@ -183,7 +212,9 @@ async function askGemini(opts: AskOpts, apiKey: string, started: number): Promis
 const secs = (started: number) => Math.round((Date.now() - started) / 1000);
 
 function log(opts: AskOpts, started: number, input: number, output: number) {
-  console.log(`[агент] ${opts.label ?? opts.model} · ${secs(started)}с · вход ${input} · выход ${output}`);
+  console.log(
+    `[агент] ${opts.label ?? opts.model} · ${secs(started)}с · вход ${input} · выход ${output}`,
+  );
 }
 
 /**
@@ -194,11 +225,15 @@ function httpFail(status: number, raw: string, opts: AskOpts, started: number): 
   // 429 — «слишком часто», 5xx у провайдера — перегрузка. Это очередь, а не
   // поломка, и человеку надо сказать именно это.
   if (status === 429 || status === 529 || status === 503) {
-    console.warn(`[агент] ${opts.label ?? opts.model} · ${secs(started)}с · модель отвечает «занято» (${status})`);
+    console.warn(
+      `[агент] ${opts.label ?? opts.model} · ${secs(started)}с · модель отвечает «занято» (${status})`,
+    );
     return { ok: false, reason: "busy" };
   }
   const detail = shortError(raw, status);
-  console.error(`[агент] ${opts.label ?? opts.model} · ${secs(started)}с · сорвалось: ${status} ${raw.slice(0, 300)}`);
+  console.error(
+    `[агент] ${opts.label ?? opts.model} · ${secs(started)}с · сорвалось: ${status} ${raw.slice(0, 300)}`,
+  );
   return { ok: false, reason: "failed", detail };
 }
 

@@ -8,6 +8,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { shortTitle, type StoredWindow } from "./conversations";
+import type { StoredProject } from "./projects";
 import { ROLE_OPENING, ROLE_VERDICT } from "./roles";
 import { roleById, rolesOf, systemPromptOf, type AgentConfig } from "./server-agents";
 
@@ -26,9 +27,9 @@ export const listWindowsServer = createServerFn({ method: "POST" })
     return { windows: await d.readWindows(me.id) };
   });
 
-/** Открыть окно с агентом. Агент выбирается здесь и навсегда. */
+/** Открыть окно с агентом внутри папки. Агент выбирается здесь и навсегда. */
 export const openWindowServer = createServerFn({ method: "POST" })
-  .validator((data: { code: string; agentId: string; title: string }) => data)
+  .validator((data: { code: string; agentId: string; projectId: string; title: string }) => data)
   .handler(async ({ data }) => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
@@ -39,10 +40,14 @@ export const openWindowServer = createServerFn({ method: "POST" })
       return { windows: await d.readWindows(me.id), opened: null };
     }
 
-    const windows = await d.readWindows(me.id);
+    const { projects, windows } = await d.readWorkspace(me.id);
+    // Окно живёт в папке: без папки его документы негде взять.
+    if (!projects.some((p) => p.id === data.projectId)) return { windows, opened: null };
+
     const opened: StoredWindow = {
       id: rid("w"),
       agentId: data.agentId,
+      projectId: data.projectId,
       title: data.title || "Новый вопрос",
       messages: [],
       docs: [],
@@ -73,7 +78,11 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     // Первую и последнюю реплику пишет платформа, а не человек: роль должна
     // сама открыть разговор по документу и сама закончить вердиктом.
     const text =
-      data.kind === "open" ? ROLE_OPENING : data.kind === "verdict" ? ROLE_VERDICT : String(data.text ?? "").trim();
+      data.kind === "open"
+        ? ROLE_OPENING
+        : data.kind === "verdict"
+          ? ROLE_VERDICT
+          : String(data.text ?? "").trim();
     if (!me || !text) return { windows: [] as StoredWindow[], note: "" };
 
     const q = await import("./server-queue");
@@ -97,26 +106,40 @@ export const sendMessageServer = createServerFn({ method: "POST" })
       };
     }
 
-    let windows = await d.readWindows(me.id);
+    const workspace = await d.readWorkspace(me.id);
+    const windows = workspace.windows;
 
     const target = windows.find((w) => w.id === data.windowId);
     if (!target) return { windows, note: "" };
+    const project = workspace.projects.find((p) => p.id === target.projectId) ?? null;
 
     // Ссылки из вопроса читаем ДО того, как спросить агента: он должен
     // получить документ, а не отвечать «доступа к внешним файлам у меня нет».
     // Сохраняем сразу — тогда прочитанное останется в окне, даже если модель
     // потом не ответит.
     const { attachmentsFor, readLinks } = await import("./server-files");
-    const fromLinks = await readLinks({ text, personId: me.id, already: target.files });
-    let files = target.files;
-    if (fromLinks.length) {
-      files = [...files, ...fromLinks];
-      windows = windows.map((w) => (w.id === target.id ? { ...w, files, updatedAt: stamp() } : w));
-      await d.writeWindows(me.id, windows);
+    // Уже принесённое — и общее по задаче, и своё оконное: одну ссылку дважды
+    // не качаем.
+    const already = [...(project?.files ?? []), ...target.files];
+    const fromLinks = await readLinks({ text, personId: me.id, already });
+    // Присланное ссылкой — материал задачи, а не одного разговора: кладём в
+    // папку, чтобы следующий агент не спрашивал того же самого.
+    let projectFiles = project?.files ?? [];
+    if (fromLinks.length && project) {
+      projectFiles = [...projectFiles, ...fromLinks];
+      await d.writeProjects(
+        me.id,
+        workspace.projects.map((p) =>
+          p.id === project.id ? { ...p, files: projectFiles, updatedAt: stamp() } : p,
+        ),
+      );
     }
 
     // Спрашиваем модель. Историю передаём ту, что была ДО этого вопроса.
-    const cfgAll = await d.readJson<Record<string, Partial<AgentConfig>>>(`${d.dataDir()}/agents.json`, {});
+    const cfgAll = await d.readJson<Record<string, Partial<AgentConfig>>>(
+      `${d.dataDir()}/agents.json`,
+      {},
+    );
     const cfg = cfgAll[target.agentId];
     // Роль берём на сервере по её ключу: из браузера приходит только ключ,
     // инструкции ролей туда не уезжают.
@@ -127,14 +150,16 @@ export const sendMessageServer = createServerFn({ method: "POST" })
 
     // История — только та, что шла с этой же ролью. Разговоры с разными
     // ролями в одном окне не смешиваются: каждая читает документ своими глазами.
-    const history = role ? target.messages.filter((m) => m.roleId === role.id) : target.messages.filter((m) => !m.roleId);
+    const history = role
+      ? target.messages.filter((m) => m.roleId === role.id)
+      : target.messages.filter((m) => !m.roleId);
     q.startAsking(key);
 
     // Документы: постоянные у агента, принесённые в окно и прочитанные по ссылкам.
     const attachments = await attachmentsFor({
       agentId: target.agentId,
       personId: me.id,
-      windowFiles: files,
+      windowFiles: [...projectFiles, ...target.files],
     });
 
     let answer: { ok: true; text: string } | { ok: false; reason: string; detail?: string };
@@ -223,7 +248,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         // «посмотри материалы» в списке окон не говорит ни о чём.
         title: role
           ? isDefaultTitle(w.title)
-            ? shortTitle(files[0]?.name ?? w.title)
+            ? shortTitle(projectFiles[0]?.name ?? target.files[0]?.name ?? w.title)
             : w.title
           : w.messages.length === 0
             ? shortTitle(text)
@@ -232,8 +257,20 @@ export const sendMessageServer = createServerFn({ method: "POST" })
         docs,
         messages: [
           ...w.messages,
-          { id: rid("m"), from: "user" as const, text, at: stamp(), ...(role ? { roleId: role.id } : {}) },
-          { id: answerId, from: "agent" as const, text: reply, at: stamp(), ...(role ? { roleId: role.id } : {}) },
+          {
+            id: rid("m"),
+            from: "user" as const,
+            text,
+            at: stamp(),
+            ...(role ? { roleId: role.id } : {}),
+          },
+          {
+            id: answerId,
+            from: "agent" as const,
+            text: reply,
+            at: stamp(),
+            ...(role ? { roleId: role.id } : {}),
+          },
         ],
       };
     });
@@ -271,6 +308,9 @@ export const readWindowsServer = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me || me.role !== "admin") return { windows: [] as StoredWindow[] };
-    return { windows: await d.readWindows(data.personId) };
+    // Папки отдаём вместе с окнами: документы задачи лежат в папке, и без неё
+    // администратор видел бы переписку без половины материалов.
+    if (!me || me.role !== "admin")
+      return { windows: [] as StoredWindow[], projects: [] as StoredProject[] };
+    return d.readWorkspace(data.personId);
   });

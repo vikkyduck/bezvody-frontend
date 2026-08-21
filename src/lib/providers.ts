@@ -13,9 +13,21 @@
 export type Provider = "anthropic" | "openai" | "gemini";
 
 export const PROVIDERS: Array<{ id: Provider; label: string; hint: string }> = [
-  { id: "anthropic", label: "Claude", hint: "Anthropic. Держит длинную инструкцию и роль, читает PDF как есть" },
-  { id: "openai", label: "GPT", hint: "OpenAI. Короче и суше в формулировках; PDF платформа читает сама" },
-  { id: "gemini", label: "Gemini", hint: "Google. Большой контекст и дешевле на объёмных материалах" },
+  {
+    id: "anthropic",
+    label: "Claude",
+    hint: "Anthropic. Держит длинную инструкцию и роль, читает PDF как есть",
+  },
+  {
+    id: "openai",
+    label: "GPT",
+    hint: "OpenAI. Короче и суше в формулировках; PDF платформа читает сама",
+  },
+  {
+    id: "gemini",
+    label: "Gemini",
+    hint: "Google. Большой контекст и дешевле на объёмных материалах",
+  },
 ];
 
 export const providerLabel = (p: Provider) => PROVIDERS.find((x) => x.id === p)?.label ?? p;

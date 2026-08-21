@@ -76,7 +76,9 @@ export const listReportsServer = createServerFn({ method: "POST" })
 
 /** Полный текст одного разбора — по запросу, чтобы список оставался лёгким. */
 export const readReportServer = createServerFn({ method: "POST" })
-  .validator((data: { code: string; personId: string; windowId: string; messageId: string }) => data)
+  .validator(
+    (data: { code: string; personId: string; windowId: string; messageId: string }) => data,
+  )
   .handler(async ({ data }): Promise<{ text: string }> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));

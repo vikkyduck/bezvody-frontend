@@ -12,12 +12,16 @@ import {
   type ReactNode,
   type CSSProperties,
 } from "react";
+import { motion, AnimatePresence, MotionConfig } from "motion/react";
 import {
-  motion,
-  AnimatePresence,
-  MotionConfig,
-} from "motion/react";
-import { ArrowUpRight, ArrowRight, ArrowDown, Plus, Check, ExternalLink, Calendar } from "lucide-react";
+  ArrowUpRight,
+  ArrowRight,
+  ArrowDown,
+  Plus,
+  Check,
+  ExternalLink,
+  Calendar,
+} from "lucide-react";
 
 export { motion, AnimatePresence };
 export { ArrowUpRight, ArrowRight, ArrowDown, Plus, Check, ExternalLink, Calendar };
@@ -89,8 +93,6 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-
-
 /* --------- Активный сценарий: карточки Hero ↔ табы секции Scenarios --------- */
 /* Секция Scenarios регистрирует свой setActive здесь при монтировании.        */
 /* Состояние остаётся локальным useState — это важно: с useSyncExternalStore    */
@@ -102,8 +104,6 @@ export function ymGoal(goal: string, params?: Record<string, unknown>) {
   const w = window as unknown as { ym?: (...a: unknown[]) => void; YM_ID?: number };
   if (w.ym && w.YM_ID) w.ym(w.YM_ID, "reachGoal", goal, params);
 }
-
-
 
 /* ----------------------------- Логотип и метки --------------------------- */
 /* Срез — фирменный приём: горизонтальный пропил, «лишнее отсечено».
@@ -138,7 +138,6 @@ export function SectionLabel({ n, children }: { n?: string; children: ReactNode 
     </div>
   );
 }
-
 
 /* ------------------------- Линза преломления ----------------------------- */
 /* Один SVG-фильтр обслуживает элементы любого размера: карта смещения
@@ -197,14 +196,26 @@ export function LensFilter() {
   if (lowPower || calm) return null;
   return (
     <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
-      <filter id="bv-lens" x="-25%" y="-25%" width="150%" height="150%" colorInterpolationFilters="sRGB">
+      <filter
+        id="bv-lens"
+        x="-25%"
+        y="-25%"
+        width="150%"
+        height="150%"
+        colorInterpolationFilters="sRGB"
+      >
         <feImage preserveAspectRatio="none" result="map" href={LENS_MAP} />
-        <feDisplacementMap in="SourceGraphic" in2="map" scale="38" xChannelSelector="R" yChannelSelector="G" />
+        <feDisplacementMap
+          in="SourceGraphic"
+          in2="map"
+          scale="38"
+          xChannelSelector="R"
+          yChannelSelector="G"
+        />
       </filter>
     </svg>
   );
 }
-
 
 /* --------------------------- Движок курсора ------------------------------ */
 /* Один обработчик на страницу: считает положение курсора внутри каждого
@@ -222,8 +233,6 @@ export function GlassPointer() {
 
     const SEL = ".lg, .btn-primary, .btn-secondary, .btn-glass, .btn-invert";
     const bound = new WeakSet<HTMLElement>();
-
-
 
     const bind = (el: HTMLElement) => {
       if (bound.has(el)) return;
@@ -276,7 +285,6 @@ export function GlassPointer() {
   return null;
 }
 
-
 /* --------------------- Графическая сцена: узлы и блобы -------------------- */
 /* Стекло допустимо только там, где под ним есть что преломлять. Сцена —
    это подложка: сетка узлов (язык системных аналитиков) плюс мягкие пятна
@@ -298,7 +306,16 @@ const NODES: [number, number, number, boolean][] = [
   [70, 108, 2.2, false],
 ];
 const EDGES: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 4], [2, 5], [5, 6], [6, 7], [4, 7], [0, 3], [1, 5],
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 4],
+  [2, 5],
+  [5, 6],
+  [6, 7],
+  [4, 7],
+  [0, 3],
+  [1, 5],
 ];
 
 export function NodeScene({
@@ -348,7 +365,6 @@ export function NodeScene({
   );
 }
 
-
 /* Мягкое пятно материала под стеклом: розовое стекло или хром. */
 export function Blob({
   className = "",
@@ -368,7 +384,6 @@ export function Blob({
   );
 }
 
-
 /* Сцена под стекло: сетка узлов плюс мягкие пятна материала. Стекло
    допустимо только там, где под ним есть что преломлять (брендбук, разд. 7). */
 export function Scene({
@@ -386,12 +401,16 @@ export function Scene({
       {nodes && <NodeScene className={nodeClass} />}
       {!calm &&
         blobs.map((b, i) => (
-          <Blob key={i} className={b.className} {...(b.tone ? { tone: b.tone } : {})} {...(b.size ? { size: b.size } : {})} />
+          <Blob
+            key={i}
+            className={b.className}
+            {...(b.tone ? { tone: b.tone } : {})}
+            {...(b.size ? { size: b.size } : {})}
+          />
         ))}
     </div>
   );
 }
-
 
 /* ------------------------------ GlassCard -------------------------------- */
 /* Обёртка над материалом .lg. Стекло кладётся только на графическую сцену;
@@ -506,13 +525,7 @@ export function CatMark({
 }
 
 /* Росчерк-подчерк: живая кривая под словом, никогда не прямая линия. */
-export function Swash({
-  children,
-  className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+export function Swash({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <span className={`relative inline-block ${className}`}>
       <span className="relative z-[1]">{children}</span>
@@ -566,10 +579,7 @@ export function NodeBullet({
   className?: string;
 }) {
   return (
-    <span
-      aria-hidden
-      className={`node-dot ${active ? "node-dot-active" : ""} ${className}`}
-    />
+    <span aria-hidden className={`node-dot ${active ? "node-dot-active" : ""} ${className}`} />
   );
 }
 
@@ -771,7 +781,6 @@ export function RevealHeading({
   );
 }
 
-
 export function Field({
   label,
   name,
@@ -841,7 +850,9 @@ export function Field({
             dark ? "text-[color:var(--color-accent-glass)]" : "text-[color:var(--color-accent)]"
           }`}
         >
-          <span aria-hidden className="mt-[0.15em] leading-none">•</span>
+          <span aria-hidden className="mt-[0.15em] leading-none">
+            •
+          </span>
           <span>{error}</span>
         </p>
       )}
@@ -854,7 +865,6 @@ export function Field({
 /* Переключатель «Меньше анимаций» удалён из интерфейса (решение Виктории
    03.08 — «исторически остался»). Автоматика жива: useCalm стартует от
    prefers-reduced-motion, calm-режим по-прежнему гасит framer и линзу. */
-
 
 export function CookieBar() {
   const [show, setShow] = useState(false);
@@ -876,7 +886,9 @@ export function CookieBar() {
     return () => el.removeAttribute("data-cookie-open");
   }, [show]);
   const accept = () => {
-    try { window.localStorage.setItem("bv-cookie-ok", "1"); } catch {}
+    try {
+      window.localStorage.setItem("bv-cookie-ok", "1");
+    } catch {}
     setShow(false);
   };
   if (!mounted || !show) return null;
@@ -927,8 +939,6 @@ export const NAV_SECONDARY: [string, string][] = [
   ["Контакты", "/contacts"],
 ];
 
-
-
 export const CTA_LABEL = "Разбор задачи за 30 минут";
 export const CTA_NOTE = "30 минут онлайн: сверим задачу и определим следующий шаг";
 
@@ -963,7 +973,6 @@ export function Nav({ path = "/" }: { path?: string }) {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [path]);
-
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const burgerRef = useRef<HTMLButtonElement | null>(null);
@@ -1003,7 +1012,6 @@ export function Nav({ path = "/" }: { path?: string }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-
   useEffect(() => {
     const measure = () => setNavH(headRef.current?.getBoundingClientRect().height ?? 64);
     measure();
@@ -1012,9 +1020,16 @@ export function Nav({ path = "/" }: { path?: string }) {
   }, []);
 
   return (
-    <header ref={headRef} className="sticky top-0 z-50 border-b border-[color:var(--color-line)] bg-[color:var(--color-bg-primary)]">
+    <header
+      ref={headRef}
+      className="sticky top-0 z-50 border-b border-[color:var(--color-line)] bg-[color:var(--color-bg-primary)]"
+    >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3 md:px-8 md:py-4">
-        <a href="/" className="flex items-center gap-2 text-[color:var(--color-text-primary)] shrink-0" aria-label="БЕЗ ВОДЫ — на главную">
+        <a
+          href="/"
+          className="flex items-center gap-2 text-[color:var(--color-text-primary)] shrink-0"
+          aria-label="БЕЗ ВОДЫ — на главную"
+        >
           <CatMark className="h-6 w-auto md:h-7" />
           <StencilLogo className="logo-sm" />
         </a>
@@ -1022,7 +1037,10 @@ export function Nav({ path = "/" }: { path?: string }) {
             и рвёт названия («Задачи и / решения»). Полное меню — от 1280 px,
             ниже его заменяет бургер: четыре русских пункта, вход в кабинет
             и действие в одну строку уже, чем в 1280 px, не помещаются. */}
-        <nav aria-label="Основная навигация" className="hidden items-center gap-0.5 t-nav tracking-[0.005em] xl:flex">
+        <nav
+          aria-label="Основная навигация"
+          className="hidden items-center gap-0.5 t-nav tracking-[0.005em] xl:flex"
+        >
           {NAV_LINKS.map(([label, href]) => {
             const active = path === href;
             return (
@@ -1056,9 +1074,11 @@ export function Nav({ path = "/" }: { path?: string }) {
             href={ctaHref(path)}
             className={`btn group hidden shrink-0 sm:inline-flex ${pastHero ? "btn-primary" : "btn-secondary"}`}
           >
-
             <span>{CTA_LABEL}</span>
-            <ArrowUpRight data-arrow className="h-3.5 w-3.5 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            <ArrowUpRight
+              data-arrow
+              className="h-3.5 w-3.5 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+            />
           </a>
           <button
             ref={burgerRef}
@@ -1070,7 +1090,6 @@ export function Nav({ path = "/" }: { path?: string }) {
             onClick={() => setOpen((v) => !v)}
             className="inline-flex h-11 w-11 items-center justify-center rounded-sm border border-[color:var(--color-line)] bg-[color:var(--color-bg-primary)] text-[color:var(--color-text-primary)] transition-colors hover:bg-[color:var(--color-bg-secondary)]"
           >
-
             <span className="relative block h-3 w-4">
               <span
                 className={`absolute left-0 block h-px w-4 bg-current transition-transform duration-300 ${open ? "top-1.5 rotate-45" : "top-0.5"}`}
@@ -1099,7 +1118,10 @@ export function Nav({ path = "/" }: { path?: string }) {
           className="fixed inset-x-0 bottom-0 z-[2] flex flex-col border-t border-[color:var(--color-line)] bg-[color:var(--color-bg-primary)]"
           style={{ top: navH }}
         >
-          <nav aria-label="Меню сайта" className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto overscroll-contain px-5 pb-4 pt-2 md:px-8">
+          <nav
+            aria-label="Меню сайта"
+            className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto overscroll-contain px-5 pb-4 pt-2 md:px-8"
+          >
             {/* От 1280 px первые четыре пункта уже стоят строкой в шапке —
                 в меню остаётся только второй уровень. */}
             {NAV_LINKS.slice(0, 3).map(([label, href]) => (
@@ -1111,7 +1133,11 @@ export function Nav({ path = "/" }: { path?: string }) {
                 className="flex min-h-[60px] items-center justify-between border-b border-[color:var(--color-line)] py-4 t-body text-[color:var(--color-text-primary)] xl:hidden"
               >
                 {label}
-                <ArrowUpRight aria-hidden data-arrow className="h-5 w-5 shrink-0 text-[color:var(--color-text-secondary)]" />
+                <ArrowUpRight
+                  aria-hidden
+                  data-arrow
+                  className="h-5 w-5 shrink-0 text-[color:var(--color-text-secondary)]"
+                />
               </a>
             ))}
             {/* О нас — отдельный блок, чтобы не сливался с коммерческими страницами. */}
@@ -1126,7 +1152,11 @@ export function Nav({ path = "/" }: { path?: string }) {
                   className="flex min-h-[52px] items-center justify-between border-b border-[color:var(--color-line)] py-3 t-body text-[color:var(--color-text-primary)]"
                 >
                   {label}
-                  <ArrowUpRight aria-hidden data-arrow className="h-5 w-5 shrink-0 text-[color:var(--color-text-secondary)]" />
+                  <ArrowUpRight
+                    aria-hidden
+                    data-arrow
+                    className="h-5 w-5 shrink-0 text-[color:var(--color-text-secondary)]"
+                  />
                 </a>
               ))}
             </div>
@@ -1139,11 +1169,13 @@ export function Nav({ path = "/" }: { path?: string }) {
                 className="flex min-h-[60px] items-center justify-between border-b border-[color:var(--color-line)] py-4 t-body text-[color:var(--color-text-primary)]"
               >
                 {label}
-                <ArrowUpRight aria-hidden data-arrow className="h-5 w-5 shrink-0 text-[color:var(--color-text-secondary)]" />
+                <ArrowUpRight
+                  aria-hidden
+                  data-arrow
+                  className="h-5 w-5 shrink-0 text-[color:var(--color-text-secondary)]"
+                />
               </a>
             ))}
-
-
 
             {/* Вход для действующих клиентов */}
             <a
@@ -1154,7 +1186,10 @@ export function Nav({ path = "/" }: { path?: string }) {
               className="flex min-h-[60px] items-center justify-between border-b border-[color:var(--color-line)] py-4 t-body text-[color:var(--color-text-primary)]"
             >
               {LK_LABEL}
-              <ArrowUpRight data-arrow className="h-5 w-5 shrink-0 text-[color:var(--color-text-secondary)]" />
+              <ArrowUpRight
+                data-arrow
+                className="h-5 w-5 shrink-0 text-[color:var(--color-text-secondary)]"
+              />
             </a>
           </nav>
           <div className="shrink-0 border-t border-[color:var(--color-line)] bg-[color:var(--color-bg-primary)] px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 md:px-8 [&>*]:mx-auto [&>*]:max-w-3xl">
@@ -1166,11 +1201,12 @@ export function Nav({ path = "/" }: { path?: string }) {
               {CTA_LABEL}
               <ArrowRight data-arrow className="h-4 w-4" />
             </a>
-            <p className="mt-2 text-center t-body text-[color:var(--color-text-secondary)]">{CTA_NOTE}</p>
+            <p className="mt-2 text-center t-body text-[color:var(--color-text-secondary)]">
+              {CTA_NOTE}
+            </p>
           </div>
         </div>
       )}
-
     </header>
   );
 }
@@ -1184,30 +1220,68 @@ export function Footer() {
         {/* Навигация переехала в меню шапки: в футере — только контакты
             и юридический блок. */}
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <a href="/" className="flex items-center gap-3 text-[color:var(--color-text-primary)]" aria-label="БЕЗ ВОДЫ — на главную">
-            <CatMark className="h-8 w-auto text-[color:var(--color-text-primary)]/70" strokeWidth={2} />
+          <a
+            href="/"
+            className="flex items-center gap-3 text-[color:var(--color-text-primary)]"
+            aria-label="БЕЗ ВОДЫ — на главную"
+          >
+            <CatMark
+              className="h-8 w-auto text-[color:var(--color-text-primary)]/70"
+              strokeWidth={2}
+            />
             <StencilLogo className="logo-sm" />
           </a>
           <ul className="flex flex-wrap gap-x-6 gap-y-2 t-body">
-            <li><a href="tel:+79645842225" className="text-[color:var(--color-text-secondary)] transition hover:text-[color:var(--color-accent)]">+7 964 584 22 25</a></li>
-            <li><a href="https://t.me/vikky_duck" target="_blank" rel="noreferrer" className="text-[color:var(--color-text-secondary)] transition hover:text-[color:var(--color-accent)]">Telegram: @vikky_duck</a></li>
-            <li><a href="mailto:vu@withoutwater.ru" className="text-[color:var(--color-text-secondary)] transition hover:text-[color:var(--color-accent)]">vu@withoutwater.ru</a></li>
+            <li>
+              <a
+                href="tel:+79645842225"
+                className="text-[color:var(--color-text-secondary)] transition hover:text-[color:var(--color-accent)]"
+              >
+                +7 964 584 22 25
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://t.me/vikky_duck"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[color:var(--color-text-secondary)] transition hover:text-[color:var(--color-accent)]"
+              >
+                Telegram: @vikky_duck
+              </a>
+            </li>
+            <li>
+              <a
+                href="mailto:vu@withoutwater.ru"
+                className="text-[color:var(--color-text-secondary)] transition hover:text-[color:var(--color-accent)]"
+              >
+                vu@withoutwater.ru
+              </a>
+            </li>
             {/* «Личный кабинет» живёт только в меню шапки */}
           </ul>
         </div>
         <div className="mt-6 flex flex-col gap-3 border-t border-[color:var(--color-line)] pt-5 t-caption text-[color:var(--color-text-secondary)]">
           <div className="flex flex-wrap gap-x-5 gap-y-2">
-            <a href="/politics_pd" className="transition hover:text-[color:var(--color-accent)]">Политика конфиденциальности</a>
-            <a href="/consent_pd" className="transition hover:text-[color:var(--color-accent)]">Согласие на обработку персональных данных</a>
-            <a href="/pub_oferta" className="transition hover:text-[color:var(--color-accent)]">Публичная оферта</a>
+            <a href="/politics_pd" className="transition hover:text-[color:var(--color-accent)]">
+              Политика конфиденциальности
+            </a>
+            <a href="/consent_pd" className="transition hover:text-[color:var(--color-accent)]">
+              Согласие на обработку персональных данных
+            </a>
+            <a href="/pub_oferta" className="transition hover:text-[color:var(--color-accent)]">
+              Публичная оферта
+            </a>
           </div>
-          <div>© {new Date().getFullYear()} БЕЗ ВОДЫ · withoutwater · ИП Уткина Виктория Викторовна · ИНН 771586055972</div>
+          <div>
+            © {new Date().getFullYear()} БЕЗ ВОДЫ · withoutwater · ИП Уткина Виктория Викторовна ·
+            ИНН 771586055972
+          </div>
         </div>
       </div>
     </footer>
   );
 }
-
 
 /* ------------------------------ PageShell -------------------------------- */
 /* Общая обёртка каждой страницы: шапка, футер, калм-переключатель, cookie-бар,
@@ -1233,7 +1307,6 @@ export function PageShell({ path, children }: { path: string; children: ReactNod
       document.querySelectorAll("main [data-seclabel] .stencil").forEach((el, i) => {
         el.textContent = String(i + 1).padStart(2, "0");
       });
-
     };
     renumber();
     const id = window.setTimeout(renumber, 300);
@@ -1253,8 +1326,13 @@ export function PageShell({ path, children }: { path: string; children: ReactNod
             подпись бюро (брендбук: кот появляется на финальных страницах PDF) */}
         <div className="hidden items-center justify-between gap-6 border-t border-[color:var(--color-line)] px-8 py-6 print:flex">
           <StencilLogo className="logo-md" />
-          <CatMark className="h-14 w-16 text-[color:var(--color-text-primary)]/70" strokeWidth={2} />
-          <span className="t-caption text-[color:var(--color-text-secondary)]">withoutwater.ru</span>
+          <CatMark
+            className="h-14 w-16 text-[color:var(--color-text-primary)]/70"
+            strokeWidth={2}
+          />
+          <span className="t-caption text-[color:var(--color-text-secondary)]">
+            withoutwater.ru
+          </span>
         </div>
 
         <Footer />
@@ -1264,9 +1342,7 @@ export function PageShell({ path, children }: { path: string; children: ReactNod
         {/* Mobile sticky CTA — плоская FAB, без подписи, в левом нижнем углу.
             Поднята выше cookie-плашки. */}
         <div
-          className={`fixed bottom-12 left-4 z-40 md:hidden ${
-            path === "/cases" ? "hidden" : ""
-          } ${
+          className={`fixed bottom-12 left-4 z-40 md:hidden ${path === "/cases" ? "hidden" : ""} ${
             showBar ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-20 opacity-0"
           }`}
           aria-hidden={!showBar}
@@ -1283,7 +1359,6 @@ export function PageShell({ path, children }: { path: string; children: ReactNod
             Разбор за 30 минут
           </a>
         </div>
-
       </div>
     </MotionConfig>
   );
@@ -1343,8 +1418,7 @@ export function ScrollRing({ className = "" }: { className?: string }) {
         className="absolute -inset-[12%] rounded-pill opacity-60"
         aria-hidden
         style={{
-          background:
-            "radial-gradient(closest-side, rgba(228,169,206,0.12), rgba(228,169,206,0))",
+          background: "radial-gradient(closest-side, rgba(228,169,206,0.12), rgba(228,169,206,0))",
           filter: "blur(8px)",
         }}
       />
@@ -1414,7 +1488,8 @@ export function PageHead({
           style={{
             backgroundImage:
               "repeating-linear-gradient(to right, rgba(232,238,247,0.055) 0 1px, transparent 1px 8.3333%)",
-            WebkitMaskImage: "linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent)",
+            WebkitMaskImage:
+              "linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent)",
             maskImage: "linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent)",
           }}
         />
@@ -1446,12 +1521,17 @@ export function PageHead({
           <span>{kicker}</span>
         </div>
         {title && (
-          <RevealHeading as="h1" className="t-h1 mt-5 max-w-4xl text-[color:var(--color-text-inverse)]">
+          <RevealHeading
+            as="h1"
+            className="t-h1 mt-5 max-w-4xl text-[color:var(--color-text-inverse)]"
+          >
             {title}
           </RevealHeading>
         )}
         {lead && (
-          <p className={`t-body measure text-[color:var(--color-text-inverse-2)] ${title ? "mt-6" : "mt-5"}`}>
+          <p
+            className={`t-body measure text-[color:var(--color-text-inverse-2)] ${title ? "mt-6" : "mt-5"}`}
+          >
             {lead}
           </p>
         )}
@@ -1481,7 +1561,6 @@ export function PageHead({
   );
 }
 
-
 /* ------------------------------- CtaBand --------------------------------- */
 /* Одинаковый финал каждой внутренней страницы: одно действие, одна подпись.
    Страницы раздела «Бизнес-эффект» подставляют свои заголовок и подпись из
@@ -1505,7 +1584,10 @@ export function CtaBand({
       className="link-arrow group t-body text-[color:var(--color-text-inverse-2)] hover:text-[color:var(--color-text-inverse)]"
     >
       Бизнес-эффект от сотрудничества
-      <ArrowUpRight data-arrow className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+      <ArrowUpRight
+        data-arrow
+        className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+      />
     </a>
   );
   return (
@@ -1522,30 +1604,41 @@ export function CtaBand({
         <p className="t-body measure mt-5 text-[color:var(--color-text-inverse-2)]">
           {note ?? (
             <>
-              30 минут онлайн: сверим задачу, доступные источники опыта и
-              возможный результат первого этапа. Презентацию и ТЗ готовить не нужно.
+              30 минут онлайн: сверим задачу, доступные источники опыта и возможный результат
+              первого этапа. Презентацию и ТЗ готовить не нужно.
             </>
           )}
         </p>
         <div className="mt-8 flex flex-col items-start gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6 print:hidden">
           <a href={ctaHref(path)} className="btn btn-invert group w-full sm:w-auto">
             <span>{CTA_LABEL}</span>
-            <ArrowRight data-arrow className="h-4 w-4 transition-transform duration-500 group-hover:translate-x-1" />
+            <ArrowRight
+              data-arrow
+              className="h-4 w-4 transition-transform duration-500 group-hover:translate-x-1"
+            />
           </a>
           <span className="t-body text-[color:var(--color-text-inverse-2)]">
             Ответим в течение двух рабочих часов
           </span>
-          {secondary === null ? null : secondary ?? defaultSecondary}
+          {secondary === null ? null : (secondary ?? defaultSecondary)}
         </div>
         {/* Прямые каналы в каждом финале (решение Виктории 03.08: «нужно,
             чтобы везде была возможность написать или позвонить») */}
         <p className="mt-5 t-body text-[color:var(--color-text-inverse-2)]">
           Или напрямую:{" "}
-          <a href="https://t.me/vikky_duck" target="_blank" rel="noreferrer" className="font-semibold text-[color:var(--color-text-inverse)] underline underline-offset-4 transition hover:text-[color:var(--color-accent-glass)]">
+          <a
+            href="https://t.me/vikky_duck"
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-[color:var(--color-text-inverse)] underline underline-offset-4 transition hover:text-[color:var(--color-accent-glass)]"
+          >
             Telegram @vikky_duck
           </a>
           {" · "}
-          <a href="tel:+79645842225" className="font-semibold text-[color:var(--color-text-inverse)] underline underline-offset-4 transition hover:text-[color:var(--color-accent-glass)]">
+          <a
+            href="tel:+79645842225"
+            className="font-semibold text-[color:var(--color-text-inverse)] underline underline-offset-4 transition hover:text-[color:var(--color-accent-glass)]"
+          >
             +7 964 584 22 25
           </a>
         </p>

@@ -50,7 +50,12 @@ export function Reports() {
     setOpenId(key);
     if (text[key]) return;
     const res = await readReportServer({
-      data: { code: code ?? "", personId: r.personId, windowId: r.windowId, messageId: r.messageId },
+      data: {
+        code: code ?? "",
+        personId: r.personId,
+        windowId: r.windowId,
+        messageId: r.messageId,
+      },
     });
     setText((t) => ({ ...t, [key]: res.text }));
   }
@@ -77,8 +82,8 @@ export function Reports() {
           Что получили клиенты <span className="text-muted-foreground">· {rows.length}</span>
         </h2>
         <p className="measure mb-4 text-[12.5px] text-muted-foreground">
-          Каждый разбор, который агент собрал и отдал человеку. Открыть — прочитать целиком,
-          скачать — получить тот же файл Word, что и у клиента.
+          Каждый разбор, который агент собрал и отдал человеку. Открыть — прочитать целиком, скачать
+          — получить тот же файл Word, что и у клиента.
         </p>
         <input
           value={query}
@@ -97,8 +102,12 @@ export function Reports() {
                 <div className="flex flex-wrap items-start gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="text-[14.5px] font-semibold leading-snug">{r.personName}</span>
-                      {r.company ? <span className="text-[12px] text-muted-foreground">{r.company}</span> : null}
+                      <span className="text-[14.5px] font-semibold leading-snug">
+                        {r.personName}
+                      </span>
+                      {r.company ? (
+                        <span className="text-[12px] text-muted-foreground">{r.company}</span>
+                      ) : null}
                       <span className="rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                         {agentById(r.agentId)?.name ?? r.agentId}
                       </span>

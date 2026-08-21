@@ -10,6 +10,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import type { StoredWindow } from "./conversations";
+import type { StoredProject } from "./projects";
 import type { AgentConfig } from "./server-agents";
 import {
   MAX_AGENT_FILES,
@@ -76,42 +77,43 @@ async function saveFile(
   // тридцать одновременных загрузок не сложили сервис.
   const { fileGate } = await import("./server-queue");
   const parsed = await fileGate.run(async () => {
-  let text = "";
-  let note = "";
-  if (kind === "office") {
-    try {
-      const { officeText } = await import("./server-office");
-      text = await officeText(name, bytes);
-    } catch (err) {
-      note = `не удалось прочитать: ${err instanceof Error ? err.message : "неизвестная ошибка"}`;
+    let text = "";
+    let note = "";
+    if (kind === "office") {
+      try {
+        const { officeText } = await import("./server-office");
+        text = await officeText(name, bytes);
+      } catch (err) {
+        note = `не удалось прочитать: ${err instanceof Error ? err.message : "неизвестная ошибка"}`;
+      }
+    } else if (kind === "text") {
+      text = plainText(bytes);
+    } else if (kind === "pdf" && bytes.length > MAX_PDF_NATIVE_BYTES) {
+      // Такой PDF в запрос к модели целиком не влезет — читаем текст сами.
+      try {
+        const { extractText, getDocumentProxy } = await import("unpdf");
+        const pdf = await getDocumentProxy(new Uint8Array(bytes));
+        const out = await extractText(pdf, { mergePages: true });
+        text = String(out.text ?? "").trim();
+      } catch {
+        text = "";
+      }
+      if (!text) {
+        note =
+          "PDF слишком большой, чтобы отдать его модели целиком, а текста внутри не нашлось " +
+          "(обычно так со сканами). Пришлите документ в Word или разбейте PDF на части";
+      }
     }
-  } else if (kind === "text") {
-    text = plainText(bytes);
-  } else if (kind === "pdf" && bytes.length > MAX_PDF_NATIVE_BYTES) {
-    // Такой PDF в запрос к модели целиком не влезет — читаем текст сами.
-    try {
-      const { extractText, getDocumentProxy } = await import("unpdf");
-      const pdf = await getDocumentProxy(new Uint8Array(bytes));
-      const out = await extractText(pdf, { mergePages: true });
-      text = String(out.text ?? "").trim();
-    } catch {
-      text = "";
-    }
-    if (!text) {
-      note = "PDF слишком большой, чтобы отдать его модели целиком, а текста внутри не нашлось " +
-        "(обычно так со сканами). Пришлите документ в Word или разбейте PDF на части";
-    }
-  }
 
-  // Очень длинный текст режем при сохранении: в запрос к модели он всё равно
-  // не уедет целиком, а вот файл на диске и память сервера съест.
-  const LIMIT = 5_000_000;
-  if (text.length > LIMIT) {
-    text = `${text.slice(0, LIMIT)}\n\n[документ очень большой: сохранены первые ${(LIMIT / 1_000_000).toFixed(0)} млн знаков]`;
-    if (!note) note = "документ очень большой — сохранена первая часть текста";
-  }
+    // Очень длинный текст режем при сохранении: в запрос к модели он всё равно
+    // не уедет целиком, а вот файл на диске и память сервера съест.
+    const LIMIT = 5_000_000;
+    if (text.length > LIMIT) {
+      text = `${text.slice(0, LIMIT)}\n\n[документ очень большой: сохранены первые ${(LIMIT / 1_000_000).toFixed(0)} млн знаков]`;
+      if (!note) note = "документ очень большой — сохранена первая часть текста";
+    }
 
-  return { text, note };
+    return { text, note };
   });
 
   const { text, note } = parsed;
@@ -158,7 +160,8 @@ export async function loadForModel(
   try {
     // Есть распознанный текст — значит файлом его отдавать не надо: так
     // сделано для тяжёлых PDF, которые в запрос целиком не помещаются.
-    if (file.chars > 0) return { text: await readFile(`${dir}/${file.id}.txt`, "utf8"), base64: "" };
+    if (file.chars > 0)
+      return { text: await readFile(`${dir}/${file.id}.txt`, "utf8"), base64: "" };
     if (file.kind === "pdf" || file.kind === "image") {
       return { text: "", base64: (await readFile(`${dir}/${file.id}.bin`)).toString("base64") };
     }
@@ -168,6 +171,46 @@ export async function loadForModel(
     // одного документа, чем упавшее окно.
     return { text: "", base64: "" };
   }
+}
+
+/**
+ * Готовый разбор — файлом в окно.
+ *
+ * Тем же путём, что и принесённый человеком документ: тогда агент читает его
+ * обычным образом, а человек видит в списке и может скачать. Текст у нас уже
+ * на руках, разбирать нечего — пишем сразу и .bin, и .txt.
+ */
+export async function saveTextAsFile(
+  personId: string,
+  name: string,
+  text: string,
+): Promise<StoredFile> {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const dir = await folder("window", personId);
+  await mkdir(dir, { recursive: true });
+
+  const id = rid();
+  // Имя должно оканчиваться на .md — иначе платформа не поймёт, что это текст.
+  const safe = name
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  const file = safe.toLowerCase().endsWith(".md") ? safe : `${safe}.md`;
+  const bytes = Buffer.from(text, "utf8");
+  await writeFile(`${dir}/${id}.bin`, bytes);
+  await writeFile(`${dir}/${id}.txt`, text, "utf8");
+
+  return {
+    id,
+    name: file,
+    mime: "text/markdown",
+    size: bytes.length,
+    kind: "text",
+    at: new Date().toISOString(),
+    chars: text.trim().length,
+    note: "",
+  };
 }
 
 // ── Документы окна (клиент) ───────────────────────────────────────────────────
@@ -197,7 +240,11 @@ export const uploadWindowFileServer = createServerFn({ method: "POST" })
     if (bad) return { ok: false, error: bad, windows };
 
     if (tooHeavy(target.files, upload.size, MAX_WINDOW_BYTES)) {
-      return { ok: false, error: `документы окна весят больше ${humanSize(MAX_WINDOW_BYTES)} — уберите лишние`, windows };
+      return {
+        ok: false,
+        error: `документы окна весят больше ${humanSize(MAX_WINDOW_BYTES)} — уберите лишние`,
+        windows,
+      };
     }
 
     const bytes = Buffer.from(await upload.arrayBuffer());
@@ -205,7 +252,9 @@ export const uploadWindowFileServer = createServerFn({ method: "POST" })
 
     const saved = await saveFile("window", me.id, upload.name, upload.type, bytes);
     const next = windows.map((w) =>
-      w.id === windowId ? { ...w, files: [...w.files, saved], updatedAt: new Date().toISOString() } : w,
+      w.id === windowId
+        ? { ...w, files: [...w.files, saved], updatedAt: new Date().toISOString() }
+        : w,
     );
     await d.writeWindows(me.id, next);
     return { ok: !saved.note, error: saved.note, windows: next };
@@ -225,6 +274,76 @@ export const deleteWindowFileServer = createServerFn({ method: "POST" })
     await d.writeWindows(me.id, next);
     await dropFiles("window", me.id, [data.fileId]);
     return { ok: true, error: "", windows: next };
+  });
+
+// ── Документы папки проекта ───────────────────────────────────────────────────
+// Лежат там же, где документы окон, — в папке человека: разница только в том,
+// кто на них ссылается. Общие для всех окон проекта: принесли один раз.
+
+export type ProjectFilesResult = { ok: boolean; error: string; projects: StoredProject[] };
+
+export const uploadProjectFileServer = createServerFn({ method: "POST" })
+  .validator((data: FormData) => data)
+  .handler(async ({ data }): Promise<ProjectFilesResult> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.get("code") ?? ""));
+    if (!me) return { ok: false, error: "нет доступа", projects: [] };
+
+    const projectId = String(data.get("projectId") ?? "");
+    const upload = data.get("file");
+    if (!(upload instanceof File)) return { ok: false, error: "файл не приехал", projects: [] };
+
+    const projects = await d.readProjects(me.id);
+    const target = projects.find((p) => p.id === projectId);
+    if (!target) return { ok: false, error: "папка не найдена", projects };
+
+    if (target.files.length >= MAX_WINDOW_FILES) {
+      return {
+        ok: false,
+        error: `в одну папку не больше ${MAX_WINDOW_FILES} документов`,
+        projects,
+      };
+    }
+
+    const bad = rejectReason(upload.name, upload.size);
+    if (bad) return { ok: false, error: bad, projects };
+
+    if (tooHeavy(target.files, upload.size, MAX_WINDOW_BYTES)) {
+      return {
+        ok: false,
+        error: `документы папки весят больше ${humanSize(MAX_WINDOW_BYTES)} — уберите лишние`,
+        projects,
+      };
+    }
+
+    const bytes = Buffer.from(await upload.arrayBuffer());
+    if (bytes.length > MAX_FILE_BYTES)
+      return { ok: false, error: "файл слишком большой", projects };
+
+    const saved = await saveFile("window", me.id, upload.name, upload.type, bytes);
+    const next = projects.map((p) =>
+      p.id === projectId
+        ? { ...p, files: [...p.files, saved], updatedAt: new Date().toISOString() }
+        : p,
+    );
+    await d.writeProjects(me.id, next);
+    return { ok: !saved.note, error: saved.note, projects: next };
+  });
+
+export const deleteProjectFileServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; projectId: string; fileId: string }) => data)
+  .handler(async ({ data }): Promise<ProjectFilesResult> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me) return { ok: false, error: "нет доступа", projects: [] };
+
+    const projects = await d.readProjects(me.id);
+    const next = projects.map((p) =>
+      p.id === data.projectId ? { ...p, files: p.files.filter((f) => f.id !== data.fileId) } : p,
+    );
+    await d.writeProjects(me.id, next);
+    await dropFiles("window", me.id, [data.fileId]);
+    return { ok: true, error: "", projects: next };
   });
 
 /**
@@ -269,8 +388,14 @@ export async function readLinks(opts: {
     }
     if (!kindOf(got.name)) {
       out.push({
-        id: rid(), name: shortUrl(url), source: url, mime: "", size: 0, kind: "text",
-        at: new Date().toISOString(), chars: 0,
+        id: rid(),
+        name: shortUrl(url),
+        source: url,
+        mime: "",
+        size: 0,
+        kind: "text",
+        at: new Date().toISOString(),
+        chars: 0,
         note: `по ссылке лежит файл, который мы не читаем (${got.name})`,
       });
       continue;
@@ -294,7 +419,11 @@ function shortUrl(url: string): string {
 
 /** Окно удалили — уносим и его файлы, чтобы диск не копил мусор. */
 export const forgetWindowFiles = (personId: string, files: StoredFile[]) =>
-  dropFiles("window", personId, files.map((f) => f.id));
+  dropFiles(
+    "window",
+    personId,
+    files.map((f) => f.id),
+  );
 
 // ── Документы агента (администратор) ──────────────────────────────────────────
 
@@ -325,23 +454,33 @@ export const uploadAgentFileServer = createServerFn({ method: "POST" })
 
     const agentId = String(data.get("agentId") ?? "");
     const upload = data.get("file");
-    if (!agentId || !(upload instanceof File)) return { ok: false, error: "файл не приехал", files: await readAgentFiles() };
+    if (!agentId || !(upload instanceof File))
+      return { ok: false, error: "файл не приехал", files: await readAgentFiles() };
 
     const all = await readAgentFiles();
     const mine = all[agentId] ?? [];
     if (mine.length >= MAX_AGENT_FILES) {
-      return { ok: false, error: `у одного агента не больше ${MAX_AGENT_FILES} документов`, files: all };
+      return {
+        ok: false,
+        error: `у одного агента не больше ${MAX_AGENT_FILES} документов`,
+        files: all,
+      };
     }
 
     const bad = rejectReason(upload.name, upload.size);
     if (bad) return { ok: false, error: bad, files: all };
 
     if (tooHeavy(mine, upload.size, MAX_AGENT_BYTES)) {
-      return { ok: false, error: `документы агента весят больше ${humanSize(MAX_AGENT_BYTES)} — уберите лишние`, files: all };
+      return {
+        ok: false,
+        error: `документы агента весят больше ${humanSize(MAX_AGENT_BYTES)} — уберите лишние`,
+        files: all,
+      };
     }
 
     const bytes = Buffer.from(await upload.arrayBuffer());
-    if (bytes.length > MAX_FILE_BYTES) return { ok: false, error: "файл слишком большой", files: all };
+    if (bytes.length > MAX_FILE_BYTES)
+      return { ok: false, error: "файл слишком большой", files: all };
 
     const saved = await saveFile("agent", agentId, upload.name, upload.type, bytes);
     const next: AgentFilesMap = { ...all, [agentId]: [...mine, saved] };
@@ -373,33 +512,37 @@ export const deleteAgentFileServer = createServerFn({ method: "POST" })
  * как и в чужую переписку.
  */
 export const downloadFileServer = createServerFn({ method: "POST" })
-  .validator((data: { code: string; scope: "window" | "agent"; ownerId: string; fileId: string }) => data)
-  .handler(async ({ data }): Promise<{ ok: boolean; name: string; mime: string; base64: string }> => {
-    const deny = { ok: false, name: "", mime: "", base64: "" };
-    const d = await import("./server-data");
-    const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me) return deny;
+  .validator(
+    (data: { code: string; scope: "window" | "agent"; ownerId: string; fileId: string }) => data,
+  )
+  .handler(
+    async ({ data }): Promise<{ ok: boolean; name: string; mime: string; base64: string }> => {
+      const deny = { ok: false, name: "", mime: "", base64: "" };
+      const d = await import("./server-data");
+      const { me } = await d.whoIs(String(data.code ?? ""));
+      if (!me) return deny;
 
-    let found: StoredFile | undefined;
-    if (data.scope === "agent") {
-      if (me.role !== "admin") return deny;
-      found = (await readAgentFiles())[data.ownerId]?.find((f) => f.id === data.fileId);
-    } else {
-      if (me.role !== "admin" && me.id !== data.ownerId) return deny;
-      const windows = await d.readWindows(data.ownerId);
-      found = windows.flatMap((w) => w.files).find((f) => f.id === data.fileId);
-    }
-    if (!found) return deny;
+      let found: StoredFile | undefined;
+      if (data.scope === "agent") {
+        if (me.role !== "admin") return deny;
+        found = (await readAgentFiles())[data.ownerId]?.find((f) => f.id === data.fileId);
+      } else {
+        if (me.role !== "admin" && me.id !== data.ownerId) return deny;
+        const windows = await d.readWindows(data.ownerId);
+        found = windows.flatMap((w) => w.files).find((f) => f.id === data.fileId);
+      }
+      if (!found) return deny;
 
-    const { readFile } = await import("node:fs/promises");
-    const dir = await folder(data.scope, data.ownerId);
-    try {
-      const bytes = await readFile(`${dir}/${found.id}.bin`);
-      return { ok: true, name: found.name, mime: found.mime, base64: bytes.toString("base64") };
-    } catch {
-      return deny;
-    }
-  });
+      const { readFile } = await import("node:fs/promises");
+      const dir = await folder(data.scope, data.ownerId);
+      try {
+        const bytes = await readFile(`${dir}/${found.id}.bin`);
+        return { ok: true, name: found.name, mime: found.mime, base64: bytes.toString("base64") };
+      } catch {
+        return deny;
+      }
+    },
+  );
 
 // ── Сборка для модели ─────────────────────────────────────────────────────────
 /**
@@ -416,9 +559,24 @@ export async function attachmentsFor(opts: {
   windowFiles: StoredFile[];
 }): Promise<Attachment[]> {
   const agentFiles = (await readAgentFiles())[opts.agentId] ?? [];
-  const queue: { scope: "window" | "agent"; ownerId: string; file: StoredFile; origin: "agent" | "person" }[] = [
-    ...agentFiles.map((file) => ({ scope: "agent" as const, ownerId: opts.agentId, file, origin: "agent" as const })),
-    ...opts.windowFiles.map((file) => ({ scope: "window" as const, ownerId: opts.personId, file, origin: "person" as const })),
+  const queue: {
+    scope: "window" | "agent";
+    ownerId: string;
+    file: StoredFile;
+    origin: "agent" | "person";
+  }[] = [
+    ...agentFiles.map((file) => ({
+      scope: "agent" as const,
+      ownerId: opts.agentId,
+      file,
+      origin: "agent" as const,
+    })),
+    ...opts.windowFiles.map((file) => ({
+      scope: "window" as const,
+      ownerId: opts.personId,
+      file,
+      origin: "person" as const,
+    })),
   ];
 
   let textLeft = MAX_TEXT_CHARS;
@@ -429,7 +587,9 @@ export async function attachmentsFor(opts: {
     const base = {
       // Откуда документ — часть смысла: агент должен знать, что это прочитано
       // по ссылке клиента, а не прислано файлом.
-      title: item.file.source ? `${item.file.name} (по ссылке ${item.file.source})` : item.file.name,
+      title: item.file.source
+        ? `${item.file.name} (по ссылке ${item.file.source})`
+        : item.file.name,
       kind: item.file.kind,
       mime: item.file.mime,
       origin: item.origin,
@@ -450,7 +610,12 @@ export async function attachmentsFor(opts: {
     if (item.file.kind === "pdf" || item.file.kind === "image") {
       if (!loaded.base64) continue;
       if (item.file.size > rawLeft) {
-        out.push({ ...base, text: "(документ не поместился в запрос — уберите лишние файлы из окна)", base64: "", mime: "" });
+        out.push({
+          ...base,
+          text: "(документ не поместился в запрос — уберите лишние файлы из окна)",
+          base64: "",
+          mime: "",
+        });
         continue;
       }
       rawLeft -= item.file.size;
@@ -461,7 +626,12 @@ export async function attachmentsFor(opts: {
     const text = loaded.text.trim();
     if (!text) continue;
     if (text.length > textLeft) {
-      out.push({ ...base, text: `${text.slice(0, Math.max(0, textLeft))}\n\n[документ обрезан: целиком он не помещается в запрос]`, base64: "", mime: "" });
+      out.push({
+        ...base,
+        text: `${text.slice(0, Math.max(0, textLeft))}\n\n[документ обрезан: целиком он не помещается в запрос]`,
+        base64: "",
+        mime: "",
+      });
       textLeft = 0;
       continue;
     }
@@ -480,7 +650,9 @@ export async function attachmentsFor(opts: {
  * запросу, значит всегда соответствует тому, что видно на экране.
  */
 export const downloadAnswerServer = createServerFn({ method: "POST" })
-  .validator((data: { code: string; windowId: string; messageId: string; personId?: string }) => data)
+  .validator(
+    (data: { code: string; windowId: string; messageId: string; personId?: string }) => data,
+  )
   .handler(async ({ data }): Promise<{ ok: boolean; name: string; base64: string }> => {
     const deny = { ok: false, name: "", base64: "" };
     const d = await import("./server-data");
@@ -504,7 +676,8 @@ export const downloadAnswerServer = createServerFn({ method: "POST" })
     // разговора с ролью пишет платформа, и в шапке файла она бесполезна:
     // вместо неё ставим то, что роль разбирала.
     const { ROLE_OPENING, ROLE_VERDICT } = await import("./roles");
-    const asked = [...w.messages.slice(0, at)].reverse().find((m) => m.from === "user")?.text || w.title;
+    const asked =
+      [...w.messages.slice(0, at)].reverse().find((m) => m.from === "user")?.text || w.title;
     const question = asked === ROLE_OPENING || asked === ROLE_VERDICT ? w.title : asked;
 
     const owner = list.find((p) => p.id === ownerId);
@@ -512,8 +685,13 @@ export const downloadAnswerServer = createServerFn({ method: "POST" })
     // Ответ роли подписан ролью: через месяц «Стейкхолдеры» ни о чём не скажет,
     // а «Стейкхолдеры · Логистика» — скажет.
     const { rolesOf, roleById } = await import("./server-agents");
-    const cfgAll = await d.readJson<Record<string, Partial<AgentConfig>>>(`${d.dataDir()}/agents.json`, {});
-    const role = answer.roleId ? roleById(rolesOf(w.agentId, cfgAll[w.agentId]), answer.roleId) : null;
+    const cfgAll = await d.readJson<Record<string, Partial<AgentConfig>>>(
+      `${d.dataDir()}/agents.json`,
+      {},
+    );
+    const role = answer.roleId
+      ? roleById(rolesOf(w.agentId, cfgAll[w.agentId]), answer.roleId)
+      : null;
     const agentName = agentById(w.agentId)?.name ?? "Агент";
     const meta = {
       agent: role ? `${agentName} · ${role.name}` : agentName,

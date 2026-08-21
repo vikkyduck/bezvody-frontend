@@ -69,8 +69,8 @@ export function AgentSetup() {
       <section>
         <h2 className="mb-1 text-[15px] font-semibold">Инструкции агентов</h2>
         <p className="measure mb-5 text-[12.5px] text-muted-foreground">
-          Инструкция — это то, кем агент себя считает и как работает. Вставьте её текстом:
-          пока поле пустое, агент честно скажет клиенту, что не настроен.
+          Инструкция — это то, кем агент себя считает и как работает. Вставьте её текстом: пока поле
+          пустое, агент честно скажет клиенту, что не настроен.
         </p>
         <div className="space-y-3">
           {agents.map((a) => (
@@ -90,20 +90,33 @@ export function AgentSetup() {
   );
 }
 
-function ApiKey({ settings, onSaved }: { settings: AgentSettings; onSaved: (s: AgentSettings) => void }) {
+function ApiKey({
+  settings,
+  onSaved,
+}: {
+  settings: AgentSettings;
+  onSaved: (s: AgentSettings) => void;
+}) {
   return (
     <section className="card-flat px-5 py-5">
       <h2 className="text-[15px] font-semibold">Ключи моделей</h2>
       <p className="measure mt-1 text-[12.5px] text-muted-foreground">
-        Свой ключ на каждого провайдера: так видно расход по каждому отдельно, и отзыв одного
-        не роняет остальных. Ключи хранятся на сервере в РФ и в браузер не возвращаются —
-        поэтому ниже видно только последние знаки. Ключ создаётся в консоли самого провайдера
-        и вставляется сюда; в переписку его не пересылайте.
+        Свой ключ на каждого провайдера: так видно расход по каждому отдельно, и отзыв одного не
+        роняет остальных. Ключи хранятся на сервере в РФ и в браузер не возвращаются — поэтому ниже
+        видно только последние знаки. Ключ создаётся в консоли самого провайдера и вставляется сюда;
+        в переписку его не пересылайте.
       </p>
 
       <div className="mt-4 space-y-3">
         {PROVIDERS.map((p) => (
-          <ProviderKey key={p.id} provider={p.id} label={p.label} hint={p.hint} settings={settings} onSaved={onSaved} />
+          <ProviderKey
+            key={p.id}
+            provider={p.id}
+            label={p.label}
+            hint={p.hint}
+            settings={settings}
+            onSaved={onSaved}
+          />
         ))}
       </div>
     </section>
@@ -164,7 +177,11 @@ function ProviderKey({
           spellCheck={false}
           className="min-w-[240px] flex-1 rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
         />
-        <button onClick={save} disabled={busy || !value.trim()} className="btn btn-glass text-[12.5px] disabled:opacity-40">
+        <button
+          onClick={save}
+          disabled={busy || !value.trim()}
+          className="btn btn-glass text-[12.5px] disabled:opacity-40"
+        >
           {busy ? "Сохраняю" : "Сохранить"}
         </button>
       </div>
@@ -202,11 +219,18 @@ function AgentCard({
   // Та же логика, что на сервере: не задано — роли по умолчанию, пустой
   // список — «ролей нет» осознанно.
   const configuredRoles = settings.agents[id]?.roles;
-  const savedRoles = Array.isArray(configuredRoles) ? configuredRoles : (settings.defaultRoles[id] ?? []);
+  const savedRoles = Array.isArray(configuredRoles)
+    ? configuredRoles
+    : (settings.defaultRoles[id] ?? []);
   const [roles, setRoles] = useState<AgentRole[]>(savedRoles);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
-  const [test, setTest] = useState<{ ok: boolean; detail: string; raw: string; text: string } | null>(null);
+  const [test, setTest] = useState<{
+    ok: boolean;
+    detail: string;
+    raw: string;
+    text: string;
+  } | null>(null);
 
   // Сохранили из другого места — подхватываем, пока карточка свёрнута.
   useEffect(() => {
@@ -244,7 +268,20 @@ function AgentCard({
     try {
       onSaved(
         await saveAgentServer({
-          data: { code, agentId: id, prompt, finishRule, provider, model, transport, endpoint, authHeader, format, auth, roles },
+          data: {
+            code,
+            agentId: id,
+            prompt,
+            finishRule,
+            provider,
+            model,
+            transport,
+            endpoint,
+            authHeader,
+            format,
+            auth,
+            roles,
+          },
         }),
       );
       setAuth("");
@@ -269,7 +306,7 @@ function AgentCard({
     saved.transport === "http"
       ? "ваш сервис"
       : saved.provider === "anthropic"
-        ? MODELS.find((m) => m.id === saved.model)?.label ?? saved.model
+        ? (MODELS.find((m) => m.id === saved.model)?.label ?? saved.model)
         : `${providerLabel(saved.provider)} · ${saved.model}`;
 
   return (
@@ -374,7 +411,11 @@ function AgentCard({
                     type="password"
                     value={auth}
                     onChange={(e) => setAuth(e.target.value)}
-                    placeholder={saved.authSet ? "задан — впишите новый, чтобы заменить" : "если сервис требует"}
+                    placeholder={
+                      saved.authSet
+                        ? "задан — впишите новый, чтобы заменить"
+                        : "если сервис требует"
+                    }
                     autoComplete="off"
                     spellCheck={false}
                     className={inputCls}
@@ -394,22 +435,32 @@ function AgentCard({
 
               <label className="block">
                 <span className="label-caps">Формат запроса</span>
-                <select value={format} onChange={(e) => setFormat(e.target.value as "openai" | "simple")} className={inputCls}>
-                  <option value="openai">Как у OpenAI — messages[], ответ в choices[0].message.content</option>
-                  <option value="simple">Простой — шлём message + history, ответ ищем в reply / text / answer</option>
+                <select
+                  value={format}
+                  onChange={(e) => setFormat(e.target.value as "openai" | "simple")}
+                  className={inputCls}
+                >
+                  <option value="openai">
+                    Как у OpenAI — messages[], ответ в choices[0].message.content
+                  </option>
+                  <option value="simple">
+                    Простой — шлём message + history, ответ ищем в reply / text / answer
+                  </option>
                 </select>
               </label>
 
               <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-                Не знаете формат — сохраните и нажмите «Проверить связь»: платформа покажет, что ответил
-                сервис, и по этому ответу разбор допишется точно.
+                Не знаете формат — сохраните и нажмите «Проверить связь»: платформа покажет, что
+                ответил сервис, и по этому ответу разбор допишется точно.
               </p>
             </div>
           ) : null}
 
           <label className="block">
             <span className="label-caps">
-              {transport === "http" ? "Инструкция (уйдёт в сервис как системная, если он её принимает)" : "Инструкция агента"}
+              {transport === "http"
+                ? "Инструкция (уйдёт в сервис как системная, если он её принимает)"
+                : "Инструкция агента"}
             </span>
             <textarea
               value={prompt}
@@ -437,9 +488,9 @@ function AgentCard({
             </div>
             <p className="measure mt-1 text-[12px] text-muted-foreground">
               Дописывается к инструкции последним абзацем. Нужно ради одного: агент доходил до
-              рекомендаций и останавливался — уточнял, предлагал собрать документ «если нужно», —
-              и человек оставался с перепиской. Неполный документ можно дополнить, отсутствующий — нет.
-              Очистите поле, если этому агенту правило мешает.
+              рекомендаций и останавливался — уточнял, предлагал собрать документ «если нужно», — и
+              человек оставался с перепиской. Неполный документ можно дополнить, отсутствующий —
+              нет. Очистите поле, если этому агенту правило мешает.
             </p>
             <textarea
               value={finishRule}
@@ -500,11 +551,19 @@ function AgentCard({
                 </>
               )}
             </label>
-            <button onClick={save} disabled={busy} className="btn btn-primary text-[13px] disabled:opacity-50">
+            <button
+              onClick={save}
+              disabled={busy}
+              className="btn btn-primary text-[13px] disabled:opacity-50"
+            >
               {busy ? "Сохраняю" : "Сохранить"}
             </button>
             {transport === "model" || saved.endpoint ? (
-              <button onClick={checkLink} disabled={busy} className="btn btn-glass text-[13px] disabled:opacity-50">
+              <button
+                onClick={checkLink}
+                disabled={busy}
+                className="btn btn-glass text-[13px] disabled:opacity-50"
+              >
                 Проверить связь
               </button>
             ) : null}
@@ -520,7 +579,8 @@ function AgentCard({
             <div className="label-caps">Документы агента</div>
             <p className="measure mt-1 mb-3 text-[12.5px] text-muted-foreground">
               Методика, стандарт, шаблон — то, что агент должен знать всегда. Уходят к нему при
-              каждом вопросе любого клиента. Сохранять отдельно не нужно: файл встаёт на место сразу.
+              каждом вопросе любого клиента. Сохранять отдельно не нужно: файл встаёт на место
+              сразу.
             </p>
             <Attachments
               files={files}
@@ -528,11 +588,15 @@ function AgentCard({
               onUpload={(file) => uploadAgentFile(code, id, file, onFiles)}
               onRemove={async (fileId) => {
                 if (!code) return;
-                onFiles((await deleteAgentFileServer({ data: { code, agentId: id, fileId } })).files);
+                onFiles(
+                  (await deleteAgentFileServer({ data: { code, agentId: id, fileId } })).files,
+                );
               }}
               onDownload={(f) =>
                 code
-                  ? downloadFileServer({ data: { code, scope: "agent", ownerId: id, fileId: f.id } })
+                  ? downloadFileServer({
+                      data: { code, scope: "agent", ownerId: id, fileId: f.id },
+                    })
                   : Promise.resolve({ ok: false, name: "", mime: "", base64: "" })
               }
               empty="Документов нет — агент работает по одной инструкции."
@@ -542,10 +606,14 @@ function AgentCard({
           {test ? (
             <div className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3">
               <div className="label-caps">{test.ok ? "Связь есть" : "Связи нет"}</div>
-              <p className="mt-1.5 text-[12.5px]">{test.ok ? test.text.slice(0, 400) : test.detail}</p>
+              <p className="mt-1.5 text-[12.5px]">
+                {test.ok ? test.text.slice(0, 400) : test.detail}
+              </p>
               {test.raw ? (
                 <details className="mt-2.5">
-                  <summary className="cursor-pointer text-[11.5px] text-muted-foreground">Сырой ответ сервиса</summary>
+                  <summary className="cursor-pointer text-[11.5px] text-muted-foreground">
+                    Сырой ответ сервиса
+                  </summary>
                   <pre className="mt-2 max-h-[240px] overflow-auto rounded-[8px] bg-[color:var(--color-bg-secondary)] p-3 text-[11px] leading-relaxed">
                     {test.raw}
                   </pre>
@@ -605,7 +673,10 @@ function Roles({
 
       <div className="space-y-2.5">
         {roles.map((r, i) => (
-          <details key={r.id} className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3">
+          <details
+            key={r.id}
+            className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3"
+          >
             <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 text-[13px]">
               <span className="font-medium">{r.name || "Роль без имени"}</span>
               <span className="text-[11.5px] text-muted-foreground">
@@ -617,7 +688,11 @@ function Roles({
               <div className="grid gap-2.5 sm:grid-cols-2">
                 <label className="block">
                   <span className="label-caps">Имя на кнопке</span>
-                  <input value={r.name} onChange={(e) => patch(i, "name", e.target.value)} className={inputCls} />
+                  <input
+                    value={r.name}
+                    onChange={(e) => patch(i, "name", e.target.value)}
+                    className={inputCls}
+                  />
                 </label>
                 <label className="block">
                   <span className="label-caps">Группа — для порядка, клиенту не видна</span>

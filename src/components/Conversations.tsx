@@ -5,6 +5,7 @@ import { Markdown } from "@/components/Markdown";
 import { agentById } from "@/lib/shtab-data";
 import type { StoredWindow } from "@/lib/conversations";
 import { MAX_WINDOW_FILES } from "@/lib/documents";
+import type { StoredProject } from "@/lib/projects";
 import { DOCX_MIME, saveFile } from "@/lib/download";
 import { downloadAnswerServer, downloadFileServer } from "@/lib/server-files";
 import { readWindowsServer } from "@/lib/server-windows";
@@ -23,7 +24,14 @@ export function Conversations({ personId, personName }: { personId: string; pers
   const { code } = useSession();
   const [state, setState] = useState<"closed" | "loading" | "open">("closed");
   const [windows, setWindows] = useState<StoredWindow[]>([]);
+  const [projects, setProjects] = useState<StoredProject[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
+
+  /** Что видел агент в этом окне: документы задачи плюс принесённое сюда. */
+  const docsOf = (w: StoredWindow) => [
+    ...(projects.find((p) => p.id === w.projectId)?.files ?? []),
+    ...w.files,
+  ];
 
   async function toggle() {
     if (state === "open") {
@@ -35,6 +43,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
     try {
       const res = await readWindowsServer({ data: { code, personId } });
       setWindows(res.windows);
+      setProjects(res.projects);
       setState("open");
     } catch {
       setState("closed");
@@ -44,7 +53,11 @@ export function Conversations({ personId, personName }: { personId: string; pers
   return (
     <div>
       <button onClick={toggle} className="btn btn-ghost text-[12px]">
-        {state === "open" ? "Скрыть переписку" : state === "loading" ? "Открываю" : "Посмотреть переписку"}
+        {state === "open"
+          ? "Скрыть переписку"
+          : state === "loading"
+            ? "Открываю"
+            : "Посмотреть переписку"}
       </button>
 
       {state === "open" ? (
@@ -54,16 +67,23 @@ export function Conversations({ personId, personName }: { personId: string; pers
               const agent = agentById(w.agentId);
               const shown = openId === w.id;
               return (
-                <div key={w.id} className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3">
+                <div
+                  key={w.id}
+                  className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3"
+                >
                   <button
                     onClick={() => setOpenId(shown ? null : w.id)}
                     className="flex w-full flex-wrap items-baseline justify-between gap-3 text-left"
                   >
                     <span className="min-w-0">
-                      <span className="block text-[13.5px] font-medium leading-snug">{w.title}</span>
+                      <span className="block text-[13.5px] font-medium leading-snug">
+                        {w.title}
+                      </span>
                       <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
                         {agent?.name ?? "агент недоступен"} · сообщений {w.messages.length}
-                        {w.files.length ? ` · документов ${w.files.length}` : ""}
+                        {projects.find((p) => p.id === w.projectId)?.title
+                          ? ` · задача «${projects.find((p) => p.id === w.projectId)?.title}»`
+                          : ""}
                       </span>
                     </span>
                     <span className="flex-none text-[11.5px] text-muted-foreground">
@@ -76,15 +96,22 @@ export function Conversations({ personId, personName }: { personId: string; pers
                       на десятки тысяч пикселей. */}
                   {shown ? (
                     <div className="mt-3 max-h-[520px] space-y-2.5 overflow-y-auto border-t border-[color:var(--color-line)] pt-3">
-                      {w.files.length ? (
+                      {docsOf(w).length ? (
                         <div className="pb-1">
-                          <div className="label-caps mb-1.5">Документы в окне</div>
+                          <div className="label-caps mb-1.5">Документы задачи и разговора</div>
                           <Attachments
-                            files={w.files}
+                            files={docsOf(w)}
                             max={MAX_WINDOW_FILES}
                             onDownload={(f) =>
                               code
-                                ? downloadFileServer({ data: { code, scope: "window", ownerId: personId, fileId: f.id } })
+                                ? downloadFileServer({
+                                    data: {
+                                      code,
+                                      scope: "window",
+                                      ownerId: personId,
+                                      fileId: f.id,
+                                    },
+                                  })
                                 : Promise.resolve({ ok: false, name: "", mime: "", base64: "" })
                             }
                           />
@@ -121,7 +148,9 @@ export function Conversations({ personId, personName }: { personId: string; pers
                           </div>
                         ))
                       ) : (
-                        <p className="text-[12.5px] text-muted-foreground">Окно открыли, но не написали ни слова.</p>
+                        <p className="text-[12.5px] text-muted-foreground">
+                          Окно открыли, но не написали ни слова.
+                        </p>
                       )}
                     </div>
                   ) : null}

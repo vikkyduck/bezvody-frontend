@@ -12,7 +12,8 @@ export function AgentAccess({ person }: { person: Participant }) {
   if (agents.length === 0) {
     return (
       <p className="text-[12.5px] text-muted-foreground">
-        Каталог пуст: агентов ещё не завели. Как только они появятся, вы сможете открывать их отсюда.
+        Каталог пуст: агентов ещё не завели. Как только они появятся, вы сможете открывать их
+        отсюда.
       </p>
     );
   }

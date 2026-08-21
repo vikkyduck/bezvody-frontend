@@ -49,14 +49,18 @@ function Body() {
           <section className="grid gap-4 border-y border-[color:var(--color-line)] py-5 sm:grid-cols-2">
             <div>
               <div className="label-caps">Клиентов на вас</div>
-              <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">{clients.length}</div>
+              <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">
+                {clients.length}
+              </div>
               <p className="mt-1.5 text-[11.5px] text-muted-foreground">
                 агентов открыто {clients.reduce((s, c) => s + c.agentIds.length, 0)}
               </p>
             </div>
             <div>
               <div className="label-caps">Без единого агента</div>
-              <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">{withoutAgents.length}</div>
+              <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">
+                {withoutAgents.length}
+              </div>
               <p className="mt-1.5 text-[11.5px] text-muted-foreground">
                 {withoutAgents.length
                   ? withoutAgents.map((c) => c.name).join(", ")
@@ -87,7 +91,15 @@ function Body() {
   );
 }
 
-function ClientCard({ person: p, open, onToggle }: { person: Participant; open: boolean; onToggle: () => void }) {
+function ClientCard({
+  person: p,
+  open,
+  onToggle,
+}: {
+  person: Participant;
+  open: boolean;
+  onToggle: () => void;
+}) {
   return (
     <div className="card-flat px-5 py-5">
       <div className="flex flex-wrap items-start gap-4">

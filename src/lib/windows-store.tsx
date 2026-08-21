@@ -1,39 +1,69 @@
 /**
- * Окна разговоров на стороне браузера — тонкая обёртка над сервером.
+ * Папки и окна на стороне браузера — тонкая обёртка над сервером.
  *
- * Переписка не живёт в памяти вкладки: закрыл ноутбук, открыл с телефона —
- * всё на месте. Хранится она у участника, и это то, что видит администратор.
+ * Ничего не живёт в памяти вкладки: закрыл ноутбук, открыл с телефона — всё
+ * на месте. Хранится у участника, и это то, что видит администратор.
+ *
+ * Папки и окна держим вместе одним состоянием: почти каждое действие меняет
+ * и то, и другое (открыли окно — папка обновилась, удалили папку — окна
+ * исчезли), и разъезжаться им нельзя.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { StoredWindow } from "./conversations";
 import type { StoredFile } from "./documents";
+import type { StoredProject } from "./projects";
 import {
+  deleteProjectFileServer,
   deleteWindowFileServer,
   downloadFileServer,
-  uploadWindowFileServer,
+  uploadProjectFileServer,
 } from "./server-files";
 import {
-  deleteWindowServer,
-  listWindowsServer,
-  openWindowServer,
-  sendMessageServer,
-} from "./server-windows";
+  createProjectServer,
+  deleteProjectServer,
+  listWorkspaceServer,
+  renameProjectServer,
+  takeIntoWindowServer,
+} from "./server-projects";
+import { deleteWindowServer, openWindowServer, sendMessageServer } from "./server-windows";
 import { useSession } from "./session";
 
 type Store = {
+  projects: StoredProject[];
   windows: StoredWindow[];
   ready: boolean;
-  /** Какое окно открыто; null — экран выбора агента */
+  /** Какая папка открыта; null — список папок */
+  activeProjectId: string | null;
+  setActiveProject: (id: string | null) => void;
+  /** Какое окно открыто; null — экран папки */
   activeId: string | null;
   setActive: (id: string | null) => void;
-  open: (agentId: string, title?: string) => Promise<void>;
+
+  createProject: (title: string) => Promise<void>;
+  renameProject: (projectId: string, title: string) => Promise<void>;
+  removeProject: (projectId: string) => Promise<void>;
+  /** Принести документ в папку — его увидят все агенты этой задачи */
+  attachToProject: (projectId: string, file: File) => Promise<string>;
+  detachFromProject: (projectId: string, fileId: string) => Promise<void>;
+
+  open: (agentId: string, projectId: string, title?: string) => Promise<void>;
   send: (windowId: string, text: string, opts?: SendOpts) => Promise<void>;
   remove: (windowId: string) => Promise<void>;
-  /** Принести документ в окно. Вернёт текст ошибки или пустую строку */
-  attach: (windowId: string, file: File) => Promise<string>;
+  /** Взять разбор другого агента этой же папки в своё окно */
+  takeIntoWindow: (windowId: string, messageId: string) => Promise<string>;
   detach: (windowId: string, fileId: string) => Promise<void>;
-  download: (file: StoredFile) => Promise<{ ok: boolean; name: string; mime: string; base64: string }>;
+  download: (
+    file: StoredFile,
+  ) => Promise<{ ok: boolean; name: string; mime: string; base64: string }>;
   /** Окно, где агент сейчас отвечает */
   thinkingId: string | null;
   /** Сообщение платформы человеку: очередь, повтор вопроса и подобное */
@@ -48,29 +78,70 @@ const Ctx = createContext<Store | null>(null);
 
 export function WindowsProvider({ children }: { children: ReactNode }) {
   const { code, role, person } = useSession();
+  const [projects, setProjects] = useState<StoredProject[]>([]);
   const [windows, setWindows] = useState<StoredWindow[]>([]);
   const [ready, setReady] = useState(false);
+  const [activeProjectId, setActiveProject] = useState<string | null>(null);
   const [activeId, setActive] = useState<string | null>(null);
   const [thinkingId, setThinking] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
   useEffect(() => {
-    // Окна есть только у того, кто работает в них сам.
+    // Папки есть только у того, кто работает в них сам.
     if (!code || role !== "client") {
+      setProjects([]);
       setWindows([]);
       setReady(true);
       return;
     }
-    listWindowsServer({ data: { code } })
-      .then((res) => setWindows(res.windows))
-      .catch(() => { /* молча: экран покажет пустоту словами */ })
+    listWorkspaceServer({ data: { code } })
+      .then((res) => {
+        setProjects(res.projects);
+        setWindows(res.windows);
+      })
+      .catch(() => {
+        /* молча: экран покажет пустоту словами */
+      })
       .finally(() => setReady(true));
   }, [code, role]);
 
-  const open = useCallback(
-    async (agentId: string, title = "") => {
+  const createProject = useCallback(
+    async (title: string) => {
       if (!code) return;
-      const res = await openWindowServer({ data: { code, agentId, title } });
+      const res = await createProjectServer({ data: { code, title } });
+      setProjects(res.projects);
+      setWindows(res.windows);
+      if (res.opened) setActiveProject(res.opened);
+    },
+    [code],
+  );
+
+  const renameProject = useCallback(
+    async (projectId: string, title: string) => {
+      if (!code) return;
+      const res = await renameProjectServer({ data: { code, projectId, title } });
+      setProjects(res.projects);
+      setWindows(res.windows);
+    },
+    [code],
+  );
+
+  const removeProject = useCallback(
+    async (projectId: string) => {
+      if (!code) return;
+      const res = await deleteProjectServer({ data: { code, projectId } });
+      setProjects(res.projects);
+      setWindows(res.windows);
+      setActiveProject((cur) => (cur === projectId ? null : cur));
+      setActive(null);
+    },
+    [code],
+  );
+
+  const open = useCallback(
+    async (agentId: string, projectId: string, title = "") => {
+      if (!code) return;
+      const res = await openWindowServer({ data: { code, agentId, projectId, title } });
       setWindows(res.windows);
       if (res.opened) setActive(res.opened.id);
     },
@@ -87,14 +158,22 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
       setNote("");
       try {
         const res = await sendMessageServer({
-          data: { code, windowId, text, kind: opts.kind ?? "chat", ...(opts.roleId ? { roleId: opts.roleId } : {}) },
+          data: {
+            code,
+            windowId,
+            text,
+            kind: opts.kind ?? "chat",
+            ...(opts.roleId ? { roleId: opts.roleId } : {}),
+          },
         });
         setWindows(res.windows);
         setNote(res.note ?? "");
       } catch {
         // Связь оборвалась, а ответ на сервере пишется дальше и сохранится:
         // человеку честнее сказать «вернитесь», чем показать пустоту.
-        setNote("Связь прервалась. Ответ дописывается на сервере — обновите страницу через минуту.");
+        setNote(
+          "Связь прервалась. Ответ дописывается на сервере — обновите страницу через минуту.",
+        );
       } finally {
         setThinking(null);
       }
@@ -112,16 +191,36 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
     [code],
   );
 
-  const attach = useCallback(
-    async (windowId: string, file: File) => {
+  const attachToProject = useCallback(
+    async (projectId: string, file: File) => {
       if (!code) return "нет доступа";
       const form = new FormData();
       form.set("code", code);
-      form.set("windowId", windowId);
+      form.set("projectId", projectId);
       form.set("file", file);
-      const res = await uploadWindowFileServer({ data: form });
-      // Файл мог загрузиться, но не прочитаться — окна тогда всё равно новые.
+      const res = await uploadProjectFileServer({ data: form });
+      // Файл мог загрузиться, но не прочитаться — папки тогда всё равно новые.
+      if (res.projects.length) setProjects(res.projects);
+      return res.error;
+    },
+    [code],
+  );
+
+  const detachFromProject = useCallback(
+    async (projectId: string, fileId: string) => {
+      if (!code) return;
+      const res = await deleteProjectFileServer({ data: { code, projectId, fileId } });
+      if (res.projects.length) setProjects(res.projects);
+    },
+    [code],
+  );
+
+  const takeIntoWindow = useCallback(
+    async (windowId: string, messageId: string) => {
+      if (!code) return "нет доступа";
+      const res = await takeIntoWindowServer({ data: { code, windowId, messageId } });
       if (res.windows.length) setWindows(res.windows);
+      if (res.projects.length) setProjects(res.projects);
       return res.error;
     },
     [code],
@@ -139,17 +238,57 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
   const download = useCallback(
     async (file: StoredFile) => {
       if (!code || !person) return { ok: false, name: "", mime: "", base64: "" };
-      return downloadFileServer({ data: { code, scope: "window", ownerId: person.id, fileId: file.id } });
+      return downloadFileServer({
+        data: { code, scope: "window", ownerId: person.id, fileId: file.id },
+      });
     },
     [code, person],
   );
 
   const value = useMemo<Store>(
     () => ({
-      windows, ready, activeId, setActive, open, send, remove, attach, detach, download, thinkingId,
-      note, clearNote: () => setNote(""),
+      projects,
+      windows,
+      ready,
+      activeProjectId,
+      setActiveProject,
+      activeId,
+      setActive,
+      createProject,
+      renameProject,
+      removeProject,
+      attachToProject,
+      detachFromProject,
+      open,
+      send,
+      remove,
+      takeIntoWindow,
+      detach,
+      download,
+      thinkingId,
+      note,
+      clearNote: () => setNote(""),
     }),
-    [windows, ready, activeId, open, send, remove, attach, detach, download, thinkingId, note],
+    [
+      projects,
+      windows,
+      ready,
+      activeProjectId,
+      activeId,
+      createProject,
+      renameProject,
+      removeProject,
+      attachToProject,
+      detachFromProject,
+      open,
+      send,
+      remove,
+      takeIntoWindow,
+      detach,
+      download,
+      thinkingId,
+      note,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

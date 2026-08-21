@@ -15,7 +15,6 @@ import { WindowsProvider } from "../lib/windows-store";
 import { SessionProvider } from "../lib/session";
 import { DirectoryProvider } from "../lib/directory";
 
-
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -84,7 +83,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Платформа «Без Воды»" },
       {
         name: "description",
-        content: "Рабочее место команды: агенты готовят управленческие решения, решает руководитель.",
+        content:
+          "Рабочее место команды: агенты готовят управленческие решения, решает руководитель.",
       },
       // Кабинет — не витрина: в поиске ему делать нечего.
       { name: "robots", content: "noindex" },
@@ -130,12 +130,11 @@ function RootComponent() {
       <SessionProvider>
         <DirectoryProvider>
           <WindowsProvider>
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-          <Outlet />
+            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+            <Outlet />
           </WindowsProvider>
         </DirectoryProvider>
       </SessionProvider>
     </QueryClientProvider>
   );
-
 }

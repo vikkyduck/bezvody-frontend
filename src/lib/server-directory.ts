@@ -38,7 +38,9 @@ function visibleTo(me: Participant, list: Participant[]): Participant[] {
 export const signInServer = createServerFn({ method: "POST" })
   .validator((data: { code: string }) => data)
   .handler(async ({ data }) => {
-    const code = String(data.code ?? "").trim().toUpperCase();
+    const code = String(data.code ?? "")
+      .trim()
+      .toUpperCase();
     if (!code) return { ok: false as const };
 
     const d = await import("./server-data");
@@ -46,7 +48,9 @@ export const signInServer = createServerFn({ method: "POST" })
     if (!me) return { ok: false as const };
 
     // Отмечаем вход: в админке видно, кому код выдали, а он им ни разу не воспользовался.
-    await d.writeParticipants(list.map((p) => (p.id === me.id ? { ...p, lastUsedAt: d.today() } : p)));
+    await d.writeParticipants(
+      list.map((p) => (p.id === me.id ? { ...p, lastUsedAt: d.today() } : p)),
+    );
     return { ok: true as const, me: { ...me, lastUsedAt: d.today() } };
   });
 
@@ -125,7 +129,9 @@ export const mutateServer = createServerFn({ method: "POST" })
             ? normalize({
                 ...p,
                 ...m.patch,
-                ...(m.patch.telegram !== undefined ? { telegram: cleanTelegram(m.patch.telegram) } : {}),
+                ...(m.patch.telegram !== undefined
+                  ? { telegram: cleanTelegram(m.patch.telegram) }
+                  : {}),
               })
             : p,
         );

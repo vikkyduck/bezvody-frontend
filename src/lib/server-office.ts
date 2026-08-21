@@ -58,9 +58,11 @@ async function openZip(buf: Buffer): Promise<Map<string, ZipEntry>> {
       name,
       size: rawSize,
       read: () => {
-        if (rawSize > MAX_UNPACKED) throw new Error("файл слишком тяжёлый, чтобы разобрать его целиком");
+        if (rawSize > MAX_UNPACKED)
+          throw new Error("файл слишком тяжёлый, чтобы разобрать его целиком");
         if (buf.readUInt32LE(localAt) !== 0x04034b50) throw new Error("битый документ");
-        const dataAt = localAt + 30 + buf.readUInt16LE(localAt + 26) + buf.readUInt16LE(localAt + 28);
+        const dataAt =
+          localAt + 30 + buf.readUInt16LE(localAt + 26) + buf.readUInt16LE(localAt + 28);
         const raw = buf.subarray(dataAt, dataAt + compSize);
         return method === 0 ? Buffer.from(raw) : inflateRawSync(raw);
       },
@@ -156,7 +158,8 @@ function sheetNames(zip: Map<string, ZipEntry>): { name: string; path: string }[
   // Книга без внятной описи — берём листы по порядку файлов.
   if (!out.length) {
     for (const key of zip.keys()) {
-      if (/^xl\/worksheets\/sheet\d+\.xml$/.test(key)) out.push({ name: `Лист ${out.length + 1}`, path: key });
+      if (/^xl\/worksheets\/sheet\d+\.xml$/.test(key))
+        out.push({ name: `Лист ${out.length + 1}`, path: key });
     }
   }
   return out;
@@ -203,7 +206,9 @@ function fromXlsx(zip: Map<string, ZipEntry>): string {
     }
 
     if (lines.length) {
-      parts.push(`### ${sheet.name}\n${lines.join("\n")}${cut ? `\n… дальше ${MAX_ROWS}+ строк — обрезано` : ""}`);
+      parts.push(
+        `### ${sheet.name}\n${lines.join("\n")}${cut ? `\n… дальше ${MAX_ROWS}+ строк — обрезано` : ""}`,
+      );
     }
   }
 

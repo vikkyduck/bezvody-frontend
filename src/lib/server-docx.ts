@@ -174,7 +174,9 @@ function blocks(nodes: readonly RootContent[], depth = 0): (Paragraph | Table)[]
             out.push(
               new Paragraph({
                 children: inline(
-                  node.children[0] && node.children[0].type === "paragraph" ? node.children[0].children : [],
+                  node.children[0] && node.children[0].type === "paragraph"
+                    ? node.children[0].children
+                    : [],
                   { italics: true },
                 ),
                 indent: { left: 360 },
@@ -190,7 +192,13 @@ function blocks(nodes: readonly RootContent[], depth = 0): (Paragraph | Table)[]
       case "code":
         out.push(
           new Paragraph({
-            children: node.value.split("\n").flatMap((line, i) => (i ? [new TextRun({ break: 1 }), run(line, { code: true })] : [run(line, { code: true })])),
+            children: node.value
+              .split("\n")
+              .flatMap((line, i) =>
+                i
+                  ? [new TextRun({ break: 1 }), run(line, { code: true })]
+                  : [run(line, { code: true })],
+              ),
             shading: { type: ShadingType.CLEAR, fill: TINT },
             spacing: { before: 120, after: 120 },
           }),
@@ -279,7 +287,11 @@ function blocks(nodes: readonly RootContent[], depth = 0): (Paragraph | Table)[]
  * текст идёт документом. Потерять кусок хуже, чем не разделить.
  */
 const headingText = (h: Heading): string =>
-  h.children.map((c) => ("value" in c ? c.value : "")).join(" ").trim().toLowerCase();
+  h.children
+    .map((c) => ("value" in c ? c.value : ""))
+    .join(" ")
+    .trim()
+    .toLowerCase();
 
 const isReviewHeading = (n: RootContent): boolean =>
   n.type === "heading" && /разбор|вопрос/.test(headingText(n));
@@ -346,7 +358,12 @@ export async function answerToDocx(markdown: string, meta: DocxMeta): Promise<Bu
   const head: (Paragraph | Table)[] = [
     new Paragraph({
       children: [
-        new TextRun({ text: `Платформа «Без Воды» · ${meta.agent}`, color: MUTED, size: 18, characterSpacing: 20 }),
+        new TextRun({
+          text: `Платформа «Без Воды» · ${meta.agent}`,
+          color: MUTED,
+          size: 18,
+          characterSpacing: 20,
+        }),
       ],
       spacing: { after: 80 },
     }),
@@ -366,7 +383,9 @@ export async function answerToDocx(markdown: string, meta: DocxMeta): Promise<Bu
       spacing: { after: 260 },
     }),
     new Paragraph({
-      children: [new TextRun({ text: "Вопрос", bold: true, size: 18, color: MUTED, characterSpacing: 20 })],
+      children: [
+        new TextRun({ text: "Вопрос", bold: true, size: 18, color: MUTED, characterSpacing: 20 }),
+      ],
       spacing: { after: 60 },
     }),
     new Paragraph({
@@ -434,6 +453,12 @@ const shorten = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n -
 
 /** Имя файла: по нему документ ищут в папке «Загрузки» через неделю. */
 export function docxFileName(meta: DocxMeta): string {
-  const base = shorten(meta.question.replace(/[\\/:*?"<>|\n\r\t]/g, " ").replace(/\s+/g, " ").trim(), 60);
+  const base = shorten(
+    meta.question
+      .replace(/[\\/:*?"<>|\n\r\t]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+    60,
+  );
   return `${meta.agent} — ${base || "разбор"} — ${meta.date}.docx`;
 }

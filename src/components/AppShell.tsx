@@ -46,7 +46,10 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
   if (!ready || !role || !allow.includes(role)) {
     return (
       <div className="stage grain theme-paper flex min-h-screen items-center justify-center">
-        <CatMark className="h-10 w-12 animate-pulse text-[color:var(--color-text-primary)]/40" strokeWidth={2} />
+        <CatMark
+          className="h-10 w-12 animate-pulse text-[color:var(--color-text-primary)]/40"
+          strokeWidth={2}
+        />
       </div>
     );
   }
@@ -74,7 +77,10 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
       <header className="sticky top-0 z-40 border-b border-[color:var(--color-line)] bg-[color:var(--color-bg-primary)]/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1240px] items-center gap-6 px-5 py-3 sm:px-6">
           <Link to={homeByRole[role]} className="flex items-center gap-2.5" aria-label="На главную">
-            <CatMark className="h-7 w-9 text-[color:var(--color-text-primary)]/70" strokeWidth={2} />
+            <CatMark
+              className="h-7 w-9 text-[color:var(--color-text-primary)]/70"
+              strokeWidth={2}
+            />
             <StencilLogo className="logo-sm" />
             {role !== "client" ? (
               <span className="ml-2 hidden border-l border-[color:var(--color-line)] pl-3 text-[13px] font-semibold lg:block">
@@ -98,7 +104,11 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
             >
               {initials}
             </div>
-            <button onClick={signOut} className="btn btn-ghost text-[12px]" aria-label="Выйти из кабинета">
+            <button
+              onClick={signOut}
+              className="btn btn-ghost text-[12px]"
+              aria-label="Выйти из кабинета"
+            >
               Выйти
             </button>
           </div>
@@ -113,7 +123,10 @@ export function AppShell({ children, allow }: { children: ReactNode; allow: Role
       <main className="mx-auto max-w-[1240px] px-5 py-8 sm:px-6">{children}</main>
       <footer className="mx-auto flex max-w-[1240px] items-end justify-between gap-4 px-6 pb-10 pt-4 text-[11.5px] text-muted-foreground">
         <span>Платформа «Без Воды»</span>
-        <CatMark className="h-10 w-12 flex-none text-[color:var(--color-text-primary)]/50" strokeWidth={2} />
+        <CatMark
+          className="h-10 w-12 flex-none text-[color:var(--color-text-primary)]/50"
+          strokeWidth={2}
+        />
       </footer>
     </div>
   );

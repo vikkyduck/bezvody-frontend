@@ -41,7 +41,12 @@ function prettyUrl(raw: string): string {
 
 /** Ссылка показана самим адресом (автоссылка), а не подписью. */
 function isBareUrl(children: ReactNode, href: string): boolean {
-  const text = typeof children === "string" ? children : Array.isArray(children) && children.length === 1 && typeof children[0] === "string" ? children[0] : null;
+  const text =
+    typeof children === "string"
+      ? children
+      : Array.isArray(children) && children.length === 1 && typeof children[0] === "string"
+        ? children[0]
+        : null;
   if (!text) return false;
   const bare = text.trim();
   return bare === href || `${bare}/` === href || bare === href.replace(/^https?:\/\//, "");

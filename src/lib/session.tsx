@@ -9,7 +9,15 @@
  * он работает как ключ. Настоящая сессия (httpOnly-cookie, срок жизни,
  * защита от подбора) приедет вместе с бэкендом платформы.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { Participant, Role } from "./participants";
 import { meServer, signInServer } from "./server-directory";
@@ -57,10 +65,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           // Код отозвали, пока вкладка была открыта — выходим молча.
           try {
             sessionStorage.removeItem(KEY);
-          } catch { /* см. выше */ }
+          } catch {
+            /* см. выше */
+          }
         }
       })
-      .catch(() => { /* сеть недоступна — покажем экран входа */ })
+      .catch(() => {
+        /* сеть недоступна — покажем экран входа */
+      })
       .finally(() => setReady(true));
   }, []);
 
@@ -82,7 +94,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setPerson(res.me);
       try {
         sessionStorage.setItem(KEY, clean);
-      } catch { /* см. выше */ }
+      } catch {
+        /* см. выше */
+      }
       return { ok: true as const };
     } catch {
       return { ok: false as const, error: "Платформа не отвечает. Попробуйте ещё раз" };
@@ -94,14 +108,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setPerson(null);
     try {
       sessionStorage.removeItem(KEY);
-    } catch { /* см. выше */ }
+    } catch {
+      /* см. выше */
+    }
   }, []);
 
   const refresh = useCallback(() => {
     if (!code) return;
     meServer({ data: { code } })
       .then((res) => setPerson(res.me ?? null))
-      .catch(() => { /* молча: следующий раз получится */ });
+      .catch(() => {
+        /* молча: следующий раз получится */
+      });
   }, [code]);
 
   // Возврат на вкладку — повод перечитать себя: пока человек ходил по своим
