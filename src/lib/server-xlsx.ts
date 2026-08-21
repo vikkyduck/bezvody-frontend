@@ -230,7 +230,9 @@ export async function templateFields(buf: Buffer): Promise<SheetField[]> {
             }
           }
         }
-        const head = headerRow ? cells.get(`${COL(ref)}${headerRow}`) : undefined;
+        // Заголовок колонки живёт в строке шапки, а не в строке поля: без
+        // этого четыре квартала подряд подписаны одинаково и неразличимы.
+        const head = headerRow ? rows.get(headerRow)?.get(`${COL(ref)}${headerRow}`) : undefined;
         const column = head ? cellText(head, book.shared) : "";
 
         out.push({
@@ -307,6 +309,64 @@ export function cellsFromMarkdown(text: string): FilledCell[] {
     out.push({ sheet, ref, value });
   }
   return out;
+}
+
+/**
+ * Ответ Счетовода — в вид, пригодный для Word.
+ *
+ * Таблица «Лист / Ячейка / Значение» — разметка для машины: по ней платформа
+ * заполняет шаблон. Человеку в записке она бесполезна и занимает страницы:
+ * «Вводные C14 = 6290» не говорит ничего. Поэтому в Word уходит записка, а
+ * подставленные значения — приложением, но подписями полей из шаблона:
+ * «Текущее значение метрики (база), млн ₽ — 6290 — выгрузка BI».
+ *
+ * Сама модель в Word не переносится вовсе: она многолистовая и со формулами,
+ * её место — файл Excel рядом.
+ */
+export function answerForNote(text: string, fields: SheetField[]): string {
+  const cells = cellsFromMarkdown(text);
+  if (!cells.length) return text;
+
+  // Режем по заголовкам первого уровня: раздел с таблицей полей — служебный.
+  const parts: { head: string; body: string[] }[] = [{ head: "", body: [] }];
+  for (const line of text.split("\n")) {
+    if (/^#\s+\S/.test(line)) parts.push({ head: line, body: [] });
+    else parts[parts.length - 1]!.body.push(line);
+  }
+
+  const kept = parts.filter((p) => {
+    const whole = [p.head, ...p.body].join("\n");
+    // В разделе есть строки-адреса — значит это таблица для заполнения.
+    return !cellsFromMarkdown(whole).length;
+  });
+
+  const note = kept
+    .map((p) => [p.head, ...p.body].join("\n"))
+    .join("\n")
+    .trim();
+
+  const label = (c: FilledCell): string => {
+    const f = fields.find(
+      (x) => x.sheet.toLowerCase() === c.sheet.toLowerCase() && x.ref === c.ref.toUpperCase(),
+    );
+    if (!f) return `${c.sheet} · ${c.ref}`;
+    const head = f.column ? ` (${f.column})` : "";
+    return `${f.label || c.ref}${head} · лист «${c.sheet}»`;
+  };
+
+  // Источник у каждой строки свой — вытаскиваем из той же таблицы ответа.
+  const sources = new Map<string, string>();
+  for (const line of text.split("\n")) {
+    const cols = line.split("|").map((x) => x.trim());
+    const ref = cols[2]?.replace(/\$/g, "").toUpperCase() ?? "";
+    if (/^[A-Z]{1,3}\d{1,5}$/.test(ref) && cols[4]) sources.set(`${cols[1]}!${ref}`, cols[4]);
+  }
+
+  const rows = cells
+    .map((c) => `| ${label(c)} | ${c.value} | ${sources.get(`${c.sheet}!${c.ref}`) ?? ""} |`)
+    .join("\n");
+
+  return `${note}\n\n# Что подставлено в модель\n\nЗаполненная модель — отдельным файлом Excel; здесь видно, что и откуда в неё встало.\n\n| Поле | Значение | Источник |\n|---|---|---|\n${rows}\n`;
 }
 
 // ── Запись книги ──────────────────────────────────────────────────────────────

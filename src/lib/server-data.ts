@@ -134,6 +134,10 @@ type Secrets = {
   anthropicKey?: string;
   openaiKey?: string;
   geminiKey?: string;
+  /** Ключ служебного аккаунта Google — целиком, как его отдаёт консоль */
+  googleAccount?: { client_email: string; private_key: string };
+  /** Папка на Диске, куда складывать выгруженное */
+  googleFolderId?: string;
   /** Ключ провайдера конкретного агента: override глобального ключа */
   agentProviderKeys?: Record<string, Partial<Record<string, string>>>;
   /** Ключ для HTTP-сервиса агента */
@@ -192,6 +196,24 @@ export async function writeApiKey(
     const { field } = KEY_FIELD[provider] ?? KEY_FIELD.anthropic;
     await writeSecrets({ ...cur, [field]: key });
   }
+}
+
+/**
+ * Доступ к Google Диску: ключ служебного аккаунта и папка.
+ *
+ * Ключ — такой же секрет, как ключ модели: лежит в том же файле с правами
+ * 600 и в браузер не возвращается никогда.
+ */
+export async function readGoogle(): Promise<{
+  account: { client_email: string; private_key: string } | null;
+  folderId: string;
+}> {
+  const raw = await readSecrets();
+  const a = raw.googleAccount;
+  return {
+    account: a?.client_email && a?.private_key ? a : null,
+    folderId: raw.googleFolderId?.trim() ?? "",
+  };
 }
 
 /** Секрет доступа к чужому API — свой на каждого агента. */

@@ -1058,7 +1058,11 @@ const Message = memo(function Message({
                 disabled={saving}
                 className="btn btn-glass text-[11.5px] disabled:opacity-50"
               >
-                {saving ? "Собираю документ" : "Скачать в Word"}
+                {saving
+                  ? "Собираю документ"
+                  : hasCells
+                    ? "Скачать записку в Word"
+                    : "Скачать в Word"}
               </button>
             </div>
           )}

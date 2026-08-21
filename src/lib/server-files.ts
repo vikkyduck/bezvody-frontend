@@ -734,9 +734,135 @@ export const downloadAnswerServer = createServerFn({ method: "POST" })
       date: new Date(answer.at).toLocaleDateString("ru-RU"),
     };
 
+    // Ответ с полями модели готовим отдельно: таблица адресов ячеек — разметка
+    // для машины, в записке ей делать нечего.
+    const { cellsFromMarkdown } = await import("./server-xlsx");
+    const isModel = cellsFromMarkdown(answer.text).length > 0;
+    const text = await forWord(w.agentId, answer.text);
+
     const { answerToDocx, docxFileName } = await import("./server-docx");
-    const file = await answerToDocx(answer.text, meta);
-    return { ok: true, name: docxFileName(meta), base64: file.toString("base64") };
+    const file = await answerToDocx(text, meta);
+    // Файл с моделью человек кладёт рядом с таблицей Excel — пусть по имени
+    // сразу видно, что это записка, а не сама модель.
+    const name = docxFileName(isModel ? { ...meta, question: "Пояснительная записка" } : meta);
+    return { ok: true, name, base64: file.toString("base64") };
+  });
+
+/**
+ * Текст ответа для файла Word.
+ *
+ * Если агент собрал модель, вместо служебной таблицы «лист/ячейка» в записку
+ * идёт приложение с человеческими подписями полей — их берём из шаблона.
+ * Шаблона нет — таблицу всё равно убираем: адреса ячеек без шаблона не значат
+ * ничего.
+ */
+async function forWord(agentId: string, text: string): Promise<string> {
+  const { answerForNote, cellsFromMarkdown, templateFields } = await import("./server-xlsx");
+  if (!cellsFromMarkdown(text).length) return text;
+
+  const template = ((await readAgentFiles())[agentId] ?? []).find((f) =>
+    f.name.toLowerCase().endsWith(".xlsx"),
+  );
+  if (!template) return answerForNote(text, []);
+
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const dir = await folder("agent", agentId);
+    const raw = await readFile(`${dir}/${template.id}.bin`);
+    return answerForNote(text, await templateFields(raw));
+  } catch {
+    return answerForNote(text, []);
+  }
+}
+
+/**
+ * Документ — на Google Диск.
+ *
+ * Одна кнопка на всё, что человек и так может скачать: разбор агента, модель,
+ * принесённый им файл. Собираем то же самое, что ушло бы в «Загрузки», и
+ * кладём на служебный Диск, превращая Word и Excel в Google-документы —
+ * иначе на Диске лежал бы файл, который надо скачать, чтобы прочитать.
+ *
+ * Что именно заливать, говорит вызывающий: разбор (docx), модель (xlsx) или
+ * документ окна либо папки.
+ */
+export const toGoogleServer = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      code: string;
+      kind: "answer" | "model" | "file";
+      windowId?: string;
+      messageId?: string;
+      fileId?: string;
+      projectId?: string;
+    }) => data,
+  )
+  .handler(async ({ data }): Promise<{ ok: boolean; url: string; note: string }> => {
+    const deny = { ok: false, url: "", note: "" };
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me) return deny;
+
+    const settings = await d.readGoogle();
+    if (!settings.account) {
+      return { ...deny, note: "Google Диск не подключён — администратор задаёт доступ" };
+    }
+
+    // Собираем ровно тот файл, который человек скачал бы кнопкой рядом.
+    let name = "";
+    let mime = "";
+    let bytes: Buffer | null = null;
+
+    if (data.kind === "file") {
+      const { projects, windows } = await d.readWorkspace(me.id);
+      const all = [...projects.flatMap((p) => p.files), ...windows.flatMap((w) => w.files)];
+      const file = all.find((f) => f.id === data.fileId);
+      if (!file) return { ...deny, note: "документ не найден" };
+      const { readFile } = await import("node:fs/promises");
+      const dir = await folder("window", me.id);
+      try {
+        bytes = await readFile(`${dir}/${file.id}.bin`);
+      } catch {
+        return { ...deny, note: "файл не нашёлся на диске" };
+      }
+      name = file.name;
+      mime = file.mime;
+    } else if (data.kind === "model") {
+      const res = await downloadModelServer({
+        data: {
+          code: data.code,
+          windowId: String(data.windowId),
+          messageId: String(data.messageId),
+        },
+      });
+      if (!res.ok) return { ...deny, note: res.note || "модель собрать не удалось" };
+      name = res.name;
+      mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      bytes = Buffer.from(res.base64, "base64");
+    } else {
+      const res = await downloadAnswerServer({
+        data: {
+          code: data.code,
+          windowId: String(data.windowId),
+          messageId: String(data.messageId),
+        },
+      });
+      if (!res.ok) return { ...deny, note: "разбор собрать не удалось" };
+      name = res.name;
+      mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      bytes = Buffer.from(res.base64, "base64");
+    }
+
+    const { uploadToDrive } = await import("./server-google");
+    const out = await uploadToDrive({
+      settings,
+      name,
+      mime,
+      bytes,
+      // Почта записана — открываем документ лично человеку, а не всему свету.
+      ...(me.email ? { email: me.email } : {}),
+    });
+    return out.ok ? { ok: true, url: out.url, note: out.shared } : { ...deny, note: out.error };
   });
 
 /**
