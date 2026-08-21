@@ -136,6 +136,8 @@ type Secrets = {
   geminiKey?: string;
   /** Ключ служебного аккаунта Google — целиком, как его отдаёт консоль */
   googleAccount?: { client_email: string; private_key: string };
+  /** Доступ от имени живого аккаунта: файлы должны кому-то принадлежать */
+  googleOAuth?: { client_id: string; client_secret: string; refresh_token: string };
   /** Папка на Диске, куда складывать выгруженное */
   googleFolderId?: string;
   /** Ключ провайдера конкретного агента: override глобального ключа */
@@ -206,12 +208,15 @@ export async function writeApiKey(
  */
 export async function readGoogle(): Promise<{
   account: { client_email: string; private_key: string } | null;
+  oauth: { client_id: string; client_secret: string; refresh_token: string } | null;
   folderId: string;
 }> {
   const raw = await readSecrets();
   const a = raw.googleAccount;
+  const o = raw.googleOAuth;
   return {
     account: a?.client_email && a?.private_key ? a : null,
+    oauth: o?.client_id && o?.client_secret && o?.refresh_token ? o : null,
     folderId: raw.googleFolderId?.trim() ?? "",
   };
 }

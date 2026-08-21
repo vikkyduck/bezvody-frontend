@@ -25,9 +25,24 @@ export type ServiceAccount = {
   private_key: string;
 };
 
+/**
+ * Доступ от имени живого аккаунта компании (OAuth).
+ *
+ * Появился не от хорошей жизни: Google отобрал у сервисных аккаунтов
+ * собственное хранилище — папку они создать могут, а файл с содержимым уже
+ * нет. Файлы должны принадлежать настоящему аккаунту, поэтому платформа
+ * ходит от его имени по refresh-токену, выданному один раз.
+ */
+export type OAuthAccount = {
+  client_id: string;
+  client_secret: string;
+  refresh_token: string;
+};
+
 export type GoogleSettings = {
   account: ServiceAccount | null;
-  /** Папка на Диске, куда складывать. Пусто — корень служебного аккаунта */
+  oauth: OAuthAccount | null;
+  /** Папка на Диске, куда складывать. Пусто — корень Диска */
   folderId: string;
 };
 
@@ -40,6 +55,34 @@ export type UploadResult =
  * получит новый.
  */
 let cached: { token: string; until: number } | null = null;
+
+/** Токен по refresh-токену живого аккаунта. */
+async function oauthToken(oauth: OAuthAccount): Promise<string> {
+  if (cached && cached.until > Date.now()) return cached.token;
+
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: oauth.client_id,
+      client_secret: oauth.client_secret,
+      refresh_token: oauth.refresh_token,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`Google не дал токен: ${res.status} ${raw.slice(0, 200)}`);
+  const data = JSON.parse(raw) as { access_token?: string; expires_in?: number };
+  if (!data.access_token) throw new Error("Google вернул ответ без токена");
+
+  cached = {
+    token: data.access_token,
+    until: Date.now() + (data.expires_in ?? 3600) * 1000 - 60_000,
+  };
+  return data.access_token;
+}
 
 async function accessToken(account: ServiceAccount): Promise<string> {
   if (cached && cached.until > Date.now()) return cached.token;
@@ -117,13 +160,14 @@ export async function uploadToDrive(opts: {
   /** Кому дать доступ. Пусто — доступ по ссылке */
   email?: string;
 }): Promise<UploadResult> {
-  const { account, folderId } = opts.settings;
-  if (!account) {
+  const { account, oauth, folderId } = opts.settings;
+  if (!account && !oauth) {
     return { ok: false, error: "Google Диск не подключён — администратор задаёт ключ доступа" };
   }
 
   try {
-    const token = await accessToken(account);
+    // Живой аккаунт первичен: у сервисного нет своего хранилища.
+    const token = oauth ? await oauthToken(oauth) : await accessToken(account!);
     const convert = googleType(opts.mime, opts.name);
     const meta: Record<string, unknown> = {
       name: opts.name,
