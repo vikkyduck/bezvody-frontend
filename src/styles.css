@@ -1429,7 +1429,8 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
 .bv-md li { margin: .3em 0; }
 .bv-md li::marker { color: var(--color-text-muted); }
 .bv-md strong { font-weight: 700; }
-.bv-md a { text-decoration: underline; text-underline-offset: 2px; }
+/* Длинный адрес не должен распирать колонку: рвём его где придётся. */
+.bv-md a { text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
 .bv-md hr { border: 0; border-top: 1px solid var(--color-line); margin: 1.4em 0; }
 .bv-md blockquote {
   margin: .9em 0;

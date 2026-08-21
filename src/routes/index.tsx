@@ -533,6 +533,8 @@ const Message = memo(function Message({
 }) {
   const mine = from === "user";
   const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState("");
+  const body = useRef<HTMLDivElement>(null);
 
   async function save() {
     setSaving(true);
@@ -541,6 +543,39 @@ const Message = memo(function Message({
     } finally {
       setSaving(false);
     }
+  }
+
+  /**
+   * Скопировать ответ.
+   *
+   * Кладём в буфер две версии сразу: размеченную и простым текстом. Тогда в
+   * письмо, Word или Телеграм вставится готовый документ с заголовками и
+   * таблицами, а в поле, которое разметку не понимает, — чистый текст.
+   * Берём то, что нарисовано на экране, а не исходную разметку: решётки и
+   * звёздочки человеку в письме не нужны.
+   */
+  async function copy() {
+    const el = body.current;
+    if (!el) return;
+    const text = plainOf(el);
+    try {
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([el.innerHTML], { type: "text/html" }),
+            "text/plain": new Blob([text], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      setCopied("Скопировано");
+    } catch {
+      // Буфер закрыт настройками браузера — молчать нельзя, человек будет
+      // думать, что скопировалось.
+      setCopied("Браузер не дал доступ к буферу");
+    }
+    setTimeout(() => setCopied(""), 2500);
   }
 
   return (
@@ -554,11 +589,21 @@ const Message = memo(function Message({
               : "border border-[color:var(--color-line)] text-foreground"
           }`}
         >
-          {mine ? text : <Markdown>{text}</Markdown>}
+          {mine ? (
+            text
+          ) : (
+            <div ref={body}>
+              <Markdown>{text}</Markdown>
+            </div>
+          )}
 
           {/* Разбор нужен на руках: переслать, распечатать, принести на защиту */}
           {mine ? null : (
-            <div className="mt-3 flex justify-end border-t border-[color:var(--color-line)] pt-2.5">
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2.5 border-t border-[color:var(--color-line)] pt-2.5">
+              {copied ? <span className="mr-auto text-[11.5px] text-muted-foreground">{copied}</span> : null}
+              <button onClick={() => void copy()} className="btn btn-glass text-[11.5px]">
+                Скопировать текст
+              </button>
               <button onClick={() => void save()} disabled={saving} className="btn btn-glass text-[11.5px] disabled:opacity-50">
                 {saving ? "Собираю документ" : "Скачать в Word"}
               </button>
@@ -569,6 +614,29 @@ const Message = memo(function Message({
     </div>
   );
 });
+
+/**
+ * Ответ простым текстом — так, как он выглядит на экране.
+ *
+ * Одна поправка: сокращённым ссылкам возвращаем полный адрес. На экране
+ * «docs.google.com/spreadsheets/d/1AbC…» читается лучше полотна, но в письме
+ * это уже не ссылка, а обрубок, по которому никто никуда не попадёт.
+ *
+ * Копию кладём в страницу за левый край: innerText считает переносы строк по
+ * тому, как элемент нарисован, и у оторванного от страницы узла абзацы
+ * слиплись бы в одну строку.
+ */
+function plainOf(el: HTMLElement): string {
+  const copy = el.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll("a[data-short]").forEach((a) => {
+    a.textContent = a.getAttribute("href") ?? a.textContent;
+  });
+  copy.style.cssText = `position:absolute;left:-99999px;top:0;width:${el.clientWidth || 720}px`;
+  document.body.appendChild(copy);
+  const text = copy.innerText.trim();
+  copy.remove();
+  return text;
+}
 
 /** Дата человеческим языком: сегодня, вчера или число. */
 function when(iso: string): string {
