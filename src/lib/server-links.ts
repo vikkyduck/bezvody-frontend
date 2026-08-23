@@ -23,7 +23,7 @@ export type LinkResult =
 /** Сколько ссылок разбираем из одного сообщения: остальное — уже не вопрос, а список. */
 export const MAX_LINKS_PER_MESSAGE = 5;
 
-const AGENT = "BezVody-Platform/1.0 (+https://id.withoutwater.ru)";
+const AGENT = "BezVody-Platform/1.0 (+https://nowater.tech)";
 const TIMEOUT_MS = 90_000;
 
 // ── Поиск ссылок в тексте ─────────────────────────────────────────────────────
