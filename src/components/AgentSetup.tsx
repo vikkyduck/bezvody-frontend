@@ -224,13 +224,107 @@ function AgentCard({
     : (settings.defaultRoles[id] ?? []);
   const [roles, setRoles] = useState<AgentRole[]>(savedRoles);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState("");
+  const [error, setError] = useState("");
+  /** Есть несохранённый черновик, отложенный браузером */
+  const [draftAt, setDraftAt] = useState("");
   const [test, setTest] = useState<{
     ok: boolean;
     detail: string;
     raw: string;
     text: string;
   } | null>(null);
+
+  // ── Черновик ───────────────────────────────────────────────────────────────
+  /**
+   * Пока карточка открыта, правки складываются в браузер. Инструкция агента —
+   * это полчаса работы; оборванный запрос, случайная перезагрузка или
+   * закрытая вкладка не должны стирать её. Черновик исчезает, как только
+   * сохранение прошло.
+   */
+  const draftKey = `bv-agent-draft-${id}`;
+
+  const dropDraft = () => {
+    setDraftAt("");
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      /* приватный режим браузера — работаем без черновика */
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    // Пока черновик ждёт решения человека, не трогаем его: иначе открытая
+    // карточка сама стирает его через секунду — возвращать будет нечего.
+    if (draftAt) return;
+    const timer = setTimeout(() => {
+      try {
+        const same =
+          prompt === saved.prompt &&
+          finishRule === saved.finishRule &&
+          JSON.stringify(roles) === JSON.stringify(savedRoles);
+        if (same) {
+          localStorage.removeItem(draftKey);
+          return;
+        }
+        localStorage.setItem(
+          draftKey,
+          JSON.stringify({ at: new Date().toISOString(), prompt, finishRule, roles }),
+        );
+      } catch {
+        /* см. выше */
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, draftAt, prompt, finishRule, JSON.stringify(roles)]);
+
+  // Открыли карточку — проверяем, не осталось ли неспасённой работы.
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw) as {
+        at: string;
+        prompt: string;
+        finishRule: string;
+        roles: AgentRole[];
+      };
+      const same =
+        d.prompt === saved.prompt && JSON.stringify(d.roles ?? []) === JSON.stringify(savedRoles);
+      if (same) {
+        localStorage.removeItem(draftKey);
+        return;
+      }
+      setDraftAt(
+        new Date(d.at).toLocaleString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      );
+    } catch {
+      /* см. выше */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  function restoreDraft() {
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw) as { prompt: string; finishRule: string; roles: AgentRole[] };
+      setPrompt(d.prompt ?? "");
+      setFinishRule(d.finishRule ?? "");
+      if (Array.isArray(d.roles)) setRoles(d.roles);
+      setDraftAt("");
+    } catch {
+      /* см. выше */
+    }
+  }
 
   // Сохранили из другого места — подхватываем, пока карточка свёрнута.
   useEffect(() => {
@@ -260,14 +354,29 @@ function AgentCard({
     JSON.stringify(savedRoles),
   ]);
 
+  /**
+   * Сохранение с потолком ожидания и внятным исходом.
+   *
+   * Раньше сорвавшийся запрос оставлял кнопку в «Сохраняю» навсегда: ни
+   * ошибки, ни подтверждения. Человек уходил со страницы, считая, что
+   * сохранилось, и терял работу. Теперь ждём не дольше полутора минут и в
+   * любом исходе говорим словами, что произошло; текст при этом остаётся
+   * в поле и в черновике.
+   */
   async function save() {
     if (!code) return;
     setBusy(true);
-    setDone(false);
+    setDone("");
+    setError("");
     setTest(null);
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("долго")), 90_000),
+    );
+
     try {
-      onSaved(
-        await saveAgentServer({
+      const next = await Promise.race([
+        saveAgentServer({
           data: {
             code,
             agentId: id,
@@ -283,9 +392,40 @@ function AgentCard({
             roles,
           },
         }),
-      );
+        timeout,
+      ]);
+
+      onSaved(next);
       setAuth("");
-      setDone(true);
+      dropDraft();
+
+      // Сверяем, что вернулось: сервер не записывает роль без имени или без
+      // инструкции — про это надо сказать, а не терять её молча.
+      const back = next.agents[id];
+      const lostRoles =
+        roles.filter((r) => r.name.trim() && r.prompt.trim()).length - (back?.roles?.length ?? 0);
+      const badRoles = roles.filter((r) => !r.name.trim() || !r.prompt.trim()).length;
+
+      const at = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+      if (badRoles) {
+        setError(
+          `Сохранено в ${at}, но ${badRoles === 1 ? "одна роль не записана" : `${badRoles} рол(и) не записаны`}: ` +
+            "у роли обязательны имя и инструкция.",
+        );
+      } else if (lostRoles > 0) {
+        setError(
+          `Сохранено в ${at}, но ролей записалось меньше, чем отправлено. Проверьте список.`,
+        );
+      } else {
+        setDone(`Сохранено в ${at}`);
+      }
+    } catch (err) {
+      const long = err instanceof Error && err.message === "долго";
+      setError(
+        long
+          ? "Сервер не ответил за полторы минуты. Текст никуда не делся — он в поле и в черновике; нажмите «Сохранить» ещё раз."
+          : "Не удалось сохранить: связь оборвалась. Текст остался в поле и в черновике — попробуйте ещё раз.",
+      );
     } finally {
       setBusy(false);
     }
@@ -344,6 +484,21 @@ function AgentCard({
 
       {open ? (
         <div className="mt-5 space-y-4 border-t border-[color:var(--color-line)] pt-5">
+          {/* Незаписанная работа с прошлого захода: сорвался запрос, закрылась вкладка */}
+          {draftAt ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-[color:var(--color-accent)] px-4 py-2.5">
+              <span className="flex-1 text-[12.5px]">
+                Остался несохранённый черновик от {draftAt} — правки, которые не доехали до сервера.
+              </span>
+              <button onClick={restoreDraft} className="btn btn-glass text-[12px]">
+                Вернуть в поля
+              </button>
+              <button onClick={dropDraft} className="btn btn-ghost text-[12px]">
+                Выбросить
+              </button>
+            </div>
+          ) : null}
+
           <div>
             <span className="label-caps">Кто отвечает</span>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -374,7 +529,7 @@ function AgentCard({
                       // Имя модели принадлежит провайдеру: claude-opus-5 в GPT
                       // не существует, и оставлять его — готовая ошибка.
                       setModel(DEFAULT_MODEL_OF[pr.id]);
-                      setDone(false);
+                      setDone("");
                     }}
                     className={`btn text-[12px] ${provider === pr.id ? "btn-primary" : "btn-glass"}`}
                   >
@@ -466,7 +621,7 @@ function AgentCard({
               value={prompt}
               onChange={(e) => {
                 setPrompt(e.target.value);
-                setDone(false);
+                setDone("");
               }}
               rows={transport === "http" ? 6 : 16}
               placeholder="Вставьте сюда текст инструкции: кто агент, что делает, в каком виде отдаёт результат"
@@ -496,7 +651,7 @@ function AgentCard({
               value={finishRule}
               onChange={(e) => {
                 setFinishRule(e.target.value);
-                setDone(false);
+                setDone("");
               }}
               rows={7}
               placeholder="Пусто — агент заканчивает работу так, как решит сам"
@@ -510,7 +665,7 @@ function AgentCard({
               roles={roles}
               onChange={(next) => {
                 setRoles(next);
-                setDone(false);
+                setDone("");
               }}
             />
           ) : null}
@@ -536,7 +691,7 @@ function AgentCard({
                     value={model}
                     onChange={(e) => {
                       setModel(e.target.value);
-                      setDone(false);
+                      setDone("");
                     }}
                     list={`models-${id}`}
                     spellCheck={false}
@@ -567,13 +722,19 @@ function AgentCard({
                 Проверить связь
               </button>
             ) : null}
-            {done ? <span className="text-[12px] text-muted-foreground">Сохранено</span> : null}
+            {done ? <span className="text-[12px] text-muted-foreground">{done}</span> : null}
             {transport === "model" ? (
               <span className="text-[11.5px] text-muted-foreground">
                 Проверка идёт по сохранённой настройке — сначала «Сохранить»
               </span>
             ) : null}
           </div>
+
+          {error ? (
+            <div className="rounded-[10px] border border-[color:var(--color-error)] px-4 py-2.5 text-[12.5px] text-[color:var(--color-error)]">
+              {error}
+            </div>
+          ) : null}
 
           <div className="border-t border-[color:var(--color-line)] pt-4">
             <div className="label-caps">Документы агента</div>
