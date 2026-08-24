@@ -559,6 +559,22 @@ export async function attachmentsFor(opts: {
   windowFiles: StoredFile[];
 }): Promise<Attachment[]> {
   const agentFiles = (await readAgentFiles())[opts.agentId] ?? [];
+
+  // Встроенные документы агента: не файл на диске, а методика из кода. Так у
+  // человека на экране и у агента в запросе один и тот же текст — правится в
+  // одном месте и не расходится.
+  const builtIn: Attachment[] = [];
+  if (opts.agentId === "architect") {
+    const { checklistAsText } = await import("./sixpager");
+    builtIn.push({
+      title: "Структура 6-pager: разделы и вопросы",
+      kind: "text",
+      text: checklistAsText(),
+      base64: "",
+      mime: "",
+      origin: "agent",
+    });
+  }
   const queue: {
     scope: "window" | "agent";
     ownerId: string;
@@ -581,7 +597,8 @@ export async function attachmentsFor(opts: {
 
   let textLeft = MAX_TEXT_CHARS;
   let rawLeft = MAX_RAW_BYTES;
-  const out: Attachment[] = [];
+  const out: Attachment[] = [...builtIn];
+  for (const a of builtIn) textLeft -= a.text.length;
 
   for (const item of queue) {
     const base = {

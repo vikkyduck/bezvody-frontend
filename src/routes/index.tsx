@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
 import { Attachments } from "@/components/Attachments";
+import { Checklist } from "@/components/Checklist";
 import { Markdown } from "@/components/Markdown";
 import type { StoredWindow } from "@/lib/conversations";
 import { MAX_WINDOW_FILES, type StoredFile } from "@/lib/documents";
@@ -707,6 +708,9 @@ function Conversation({
           </button>
         </form>
       </div>
+
+      {/* Шпаргалка методики — рядом с разговором, но только там, где она про дело */}
+      {w.agentId === "architect" ? <Checklist /> : null}
 
       {/* Разбор соседнего агента — сюда же, но только по решению человека */}
       <FromProject
