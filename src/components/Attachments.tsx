@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 
-import {
-  MAX_FILE_BYTES,
-  SUPPORTED_HINT,
-  fileNote,
-  humanSize,
-  type StoredFile,
-} from "@/lib/documents";
+import { SUPPORTED_HINT, fileNote, humanSize, requestFit, type StoredFile } from "@/lib/documents";
 
 /**
  * Документы: список и приём новых.
@@ -21,6 +15,21 @@ import {
  */
 
 type DownloadResult = { ok: boolean; name: string; mime: string; base64: string };
+
+/**
+ * Имя режем по середине, а не с конца.
+ *
+ * Версия документа живёт в хвосте: «Бюджет_2026_v3.xlsx» и «Бюджет_2026_v7.xlsx»
+ * с обрезанным концом превращаются в два одинаковых «Бюджет_2026_v…», и человек
+ * скачивает не тот файл. Начало и хвост с расширением оставляем, пропуск —
+ * в середине.
+ */
+function shortName(name: string, max: number): string {
+  if (name.length <= max) return name;
+  const tail = Math.max(8, Math.ceil(max / 2));
+  const head = Math.max(1, max - tail - 1);
+  return `${name.slice(0, head)}…${name.slice(-tail)}`;
+}
 
 /**
  * Пока файл едет, видно, что он едет.
@@ -74,6 +83,38 @@ export function Attachments({
   const [errors, setErrors] = useState<string[]>([]);
   const [over, setOver] = useState(false);
   const [drive, setDrive] = useState("");
+  /**
+   * У какого файла спрошено «убрать?».
+   *
+   * Спрашиваем на месте, в самой строке, а не убираем сразу с паузой на
+   * «вернуть»: удаление у нас настоящее — файл уходит с сервера и пропадает
+   * у всех агентов задачи разом. Пауза же означала бы, что список на экране
+   * и список на сервере какое-то время разные, и всё, что человек за эти
+   * секунды сделает — задаст вопрос, уйдёт на другой экран, — врёт ему об
+   * исходе. Вопрос на месте защищает от промаха ровно так же и ничего не
+   * обещает заранее.
+   */
+  const [asking, setAsking] = useState<string | null>(null);
+  /** Пока запрос идёт — кнопка неактивна, чтобы не убрать дважды */
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  async function confirmRemove(f: StoredFile) {
+    if (!onRemove) return;
+    setRemoving(f.id);
+    try {
+      await onRemove(f.id);
+    } catch {
+      // Отказ сервера нельзя проглатывать: человек нажал «Убрать» и считает
+      // документ убранным. Молча вернувшийся в список файл он прочитает как
+      // сбой интерфейса, а не как «сервер отказал».
+      const said = `${f.name}: убрать не удалось, документ на месте`;
+      // Повторные попытки не должны копить одну и ту же строку столбиком.
+      setErrors((prev) => (prev.includes(said) ? prev : [...prev, said]));
+    } finally {
+      setRemoving(null);
+      setAsking(null);
+    }
+  }
 
   async function toDrive(f: StoredFile) {
     if (!onGoogle) return;
@@ -87,6 +128,19 @@ export function Attachments({
   }
 
   const full = files.length >= max;
+
+  /**
+   * Сказать до вопроса, а не после.
+   *
+   * Документ, который не поместился в запрос, выглядит в списке точно так же,
+   * как прочитанный, и человек узнаёт правду в лучшем случае из служебной
+   * строки под ответом — когда разбор уже сделан по половине цифр.
+   */
+  const fit = requestFit(files);
+  // Что именно набралось сверх меры, стоит назвать: тяжёлые PDF и длинный
+  // текст человек разгружает по-разному.
+  const overWhat =
+    fit.overRaw && fit.overText ? "документов" : fit.overRaw ? "PDF и картинок" : "текста";
 
   async function take(list: FileList | null) {
     if (!list || !onUpload) return;
@@ -144,6 +198,13 @@ export function Attachments({
           : ""
       }
     >
+      {fit.fits ? null : (
+        <p className="ui-support mb-3 text-[color:var(--color-error)]">
+          Здесь больше {overWhat}, чем агент читает за один вопрос: часть документов он увидит не
+          целиком. Уберите лишние — иначе разбор будет сделан по неполным данным.
+        </p>
+      )}
+
       {files.length ? (
         <ul
           className={
@@ -152,70 +213,128 @@ export function Attachments({
               : "divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]"
           }
         >
-          {files.map((f) => (
-            <li
-              key={f.id}
-              className={
-                compact
-                  ? "flex items-center gap-2 rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2.5 py-1"
-                  : "flex flex-wrap items-baseline justify-between gap-3 py-3"
-              }
-            >
-              <span className="min-w-0">
-                {/* Скачивать нечего, если файл не приехал: у неоткрывшейся
-                    ссылки есть только имя и причина. */}
-                {onDownload && f.size > 0 ? (
-                  <button
-                    onClick={() => void save(f)}
-                    title={f.source ? `Скачать · ${f.source}` : "Скачать"}
-                    className={`block max-w-[420px] truncate text-left ${compact ? "text-[12px]" : "text-[14px]"} underline decoration-[color:var(--color-line)] underline-offset-4 hover:decoration-current`}
-                  >
-                    {f.name}
-                  </button>
-                ) : (
+          {files.map((f) => {
+            // Имя урезано по середине, поэтому полное — и состояние файла
+            // вместе с ним — держим в title: его достаточно навести.
+            const hint = [f.name, compact ? fileNote(f) : f.source].filter(Boolean).join(" · ");
+            const shown = shortName(f.name, compact ? 24 : 38);
+
+            // Вопрос занимает место самой строки файла: человек смотрит туда,
+            // куда только что нажал, и видит там ответ на своё нажатие,
+            // а не отдельное окно поверх экрана.
+            if (asking === f.id) {
+              const wait = removing === f.id;
+              return (
+                <li
+                  key={f.id}
+                  role="status"
+                  aria-live="polite"
+                  className={
+                    compact
+                      ? "flex items-center gap-2 rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2.5 py-1"
+                      : "flex flex-wrap items-center gap-3 py-3"
+                  }
+                >
                   <span
-                    title={f.source}
-                    className={`block max-w-[420px] truncate ${compact ? "text-[12px]" : "text-[14px]"}`}
+                    title={f.name}
+                    className={`min-w-0 truncate ${compact ? "ui-support" : "ui-body"}`}
                   >
-                    {f.name}
+                    {compact ? "Убрать?" : `Убрать «${shown}»?`}
                   </span>
-                )}
-                {compact ? null : (
-                  <span
-                    className={`mt-0.5 block text-[12px] ${f.note ? "text-[color:var(--color-error)]" : "text-muted-foreground"}`}
-                  >
-                    {fileNote(f)}
-                  </span>
-                )}
-              </span>
-              <span className="flex flex-none items-center gap-2">
-                {compact ? (
-                  <span className="text-[11px] text-muted-foreground">{humanSize(f.size)}</span>
-                ) : null}
-                {onGoogle && !compact && f.size > 0 ? (
                   <button
-                    onClick={() => void toDrive(f)}
-                    title="Положить на Google Диск"
-                    className="btn btn-glass text-[11px]"
+                    onClick={() => void confirmRemove(f)}
+                    disabled={wait}
+                    className="tap-44 btn btn-glass ui-meta disabled:opacity-40"
                   >
-                    В Google
+                    {wait ? "Убираю" : "Убрать"}
                   </button>
-                ) : null}
-                {onRemove ? (
                   <button
-                    onClick={() => void onRemove(f.id)}
-                    aria-label={`Убрать ${f.name}`}
-                    className="text-[12px] text-muted-foreground transition-colors hover:text-[color:var(--color-error)]"
+                    onClick={() => setAsking(null)}
+                    disabled={wait}
+                    className="tap-44 btn btn-glass ui-meta disabled:opacity-40"
                   >
-                    ✕
+                    Отмена
                   </button>
-                ) : null}
-              </span>
-            </li>
-          ))}
+                </li>
+              );
+            }
+
+            return (
+              <li
+                key={f.id}
+                className={
+                  compact
+                    ? "flex items-center gap-2 rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2.5 py-1"
+                    : "flex flex-wrap items-baseline justify-between gap-3 py-3"
+                }
+              >
+                <span className="min-w-0">
+                  {/* Скачивать нечего, если файл не приехал: у неоткрывшейся
+                    ссылки есть только имя и причина.
+                    truncate оставлен подстраховкой: на 375 px даже укороченное
+                    имя может не влезть в строку. */}
+                  {onDownload && f.size > 0 ? (
+                    <button
+                      onClick={() => void save(f)}
+                      title={hint}
+                      aria-label={`Скачать ${f.name}`}
+                      className={`block max-w-full truncate text-left ${compact ? "ui-support" : "ui-body"} underline decoration-[color:var(--color-line)] underline-offset-4 hover:decoration-current`}
+                    >
+                      {shown}
+                    </button>
+                  ) : (
+                    <span
+                      title={hint}
+                      className={`block max-w-full truncate ${compact ? "ui-support" : "ui-body"}`}
+                    >
+                      {shown}
+                    </span>
+                  )}
+                  {compact ? null : (
+                    <span
+                      className={`ui-support mt-0.5 block ${f.note ? "text-[color:var(--color-error)]" : "text-muted-foreground"}`}
+                    >
+                      {fileNote(f)}
+                    </span>
+                  )}
+                </span>
+                <span className="flex flex-none items-center gap-2">
+                  {/* В сжатом виде строки про файл нет, а знать, что документ
+                    не прочитан, важнее всего именно в разговоре: человек
+                    ждёт ответа по документу, которого агент не увидел. */}
+                  {compact && f.note ? (
+                    <span title={fileNote(f)} className="ui-meta text-[color:var(--color-error)]">
+                      не прочитан
+                    </span>
+                  ) : null}
+                  {compact ? (
+                    <span className="ui-meta text-muted-foreground">{humanSize(f.size)}</span>
+                  ) : null}
+                  {onGoogle && !compact && f.size > 0 ? (
+                    <button
+                      onClick={() => void toDrive(f)}
+                      title="Положить на Google Диск"
+                      className="btn btn-glass ui-meta"
+                    >
+                      В Google
+                    </button>
+                  ) : null}
+                  {onRemove ? (
+                    <button
+                      onClick={() => setAsking(f.id)}
+                      aria-label={`Убрать ${f.name}`}
+                      className="tap-44 ui-body text-muted-foreground transition-colors hover:text-[color:var(--color-error)]"
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       ) : empty ? (
-        <p className="text-[13px] text-muted-foreground">{empty}</p>
+        <p className="ui-support text-muted-foreground">{empty}</p>
       ) : null}
 
       {onUpload ? (
@@ -231,29 +350,37 @@ export function Attachments({
             <button
               onClick={() => picker.current?.click()}
               disabled={Boolean(busy) || full}
-              className="btn btn-glass text-[12px] disabled:opacity-40"
+              className="btn btn-glass ui-support disabled:opacity-40"
             >
               {busy ? "Загружаю" : "Прикрепить документ"}
             </button>
-            <span className="text-[11.5px] text-muted-foreground">
+            <span className="ui-support text-muted-foreground">
               {busy ? (
                 <Uploading name={busy.name} size={busy.size} />
               ) : full ? (
                 `Больше ${max} документов сюда не поместится — уберите лишние`
               ) : (
-                `${SUPPORTED_HINT} · до ${humanSize(MAX_FILE_BYTES)} · можно перетащить мышью или прислать ссылкой в сообщении`
+                <>
+                  {/* Пределы человеку до дела нет, пока он в них не упёрся:
+                      о превышении скажет сама загрузка. В покое — только виды
+                      файлов, всё остальное было шумом в три строки. */}
+                  {SUPPORTED_HINT}
+                  <span className="hidden md:inline"> · или перетащите мышью</span>
+                </>
               )}
             </span>
           </div>
         </div>
       ) : null}
 
-      {drive ? <p className="mt-3 text-[12px] text-muted-foreground">{drive}</p> : null}
+      {drive ? <p className="ui-support mt-3 text-muted-foreground">{drive}</p> : null}
 
+      {/* Причина отказа — то, что человеку нужнее всего прочесть на этом
+          экране: мелким кеглем её просто не замечают и жмут «прикрепить» ещё раз. */}
       {errors.length ? (
         <ul className="mt-3 space-y-1">
           {errors.map((e, i) => (
-            <li key={i} className="text-[12px] text-[color:var(--color-error)]">
+            <li key={i} className="ui-body text-[color:var(--color-error)]">
               {e}
             </li>
           ))}

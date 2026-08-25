@@ -11,7 +11,7 @@ export function AgentAccess({ person }: { person: Participant }) {
 
   if (agents.length === 0) {
     return (
-      <p className="text-[12.5px] text-muted-foreground">
+      <p className="ui-support">
         Каталог пуст: агентов ещё не завели. Как только они появятся, вы сможете открывать их
         отсюда.
       </p>
@@ -29,7 +29,7 @@ export function AgentAccess({ person }: { person: Participant }) {
               onClick={() => toggleAgent(person.id, a.id)}
               aria-pressed={on}
               title={a.result}
-              className={`btn text-[12px] ${on ? "btn-primary" : "btn-glass"}`}
+              className={`btn ui-meta ${on ? "btn-primary" : "btn-glass"}`}
             >
               {on ? "✓ " : ""}
               {a.name}
@@ -37,10 +37,10 @@ export function AgentAccess({ person }: { person: Participant }) {
           );
         })}
       </div>
-      <p className="mt-3 text-[11.5px] text-muted-foreground">
+      <p className="ui-support mt-3">
         {person.agentIds.length
-          ? `Открыто ${person.agentIds.length} из ${agents.length} — появятся у человека в окне сразу.`
-          : "Пока не открыт ни один агент: в своём кабинете человек увидит пустое окно."}
+          ? `Открыто ${person.agentIds.length} из ${agents.length} — появятся у человека в кабинете сразу.`
+          : "Пока не открыт ни один агент: человек войдёт и увидит пустой кабинет."}
       </p>
     </div>
   );

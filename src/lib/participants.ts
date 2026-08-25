@@ -13,7 +13,7 @@ export type Role = "client" | "project" | "admin";
 
 export const roleLabel: Record<Role, string> = {
   client: "Клиент",
-  project: "Проджект",
+  project: "Менеджер",
   admin: "Администратор",
 };
 
@@ -35,6 +35,30 @@ export type Participant = {
   lastUsedAt: string | null;
   /** Отозванный код остаётся в списке: видно, кому и что открывали */
   active: boolean;
+  /**
+   * Руководитель: видит, над какими задачами работают его люди и прогнали ли
+   * они документ через систему. Не отдельная роль, а свойство обычного
+   * кабинета — у руководителя есть и своя работа, отбирать её незачем.
+   */
+  leads?: boolean;
+  /**
+   * Служебный кабинет: не показывается руководителю. Нужен для тестовых
+   * и внутренних кабинетов, которым в списке команды делать нечего.
+   */
+  hidden?: boolean;
+  /**
+   * Куда присылать готовый разбор, кроме кабинета. Пусто — никуда: молчание
+   * по умолчанию честнее, чем рассылка, о которой человек не просил.
+   */
+  deliver?: { telegram: boolean; email: boolean };
+  /** Привязан ли телеграм — считает сервер, в справочнике этого нет */
+  tgLinked?: boolean;
+  /**
+   * Видна ли работа этого человека какому-нибудь руководителю. Считается
+   * сервером и отдаётся вместе с кабинетом: об этом надо честно сказать
+   * в интерфейсе, а не оставлять человека в неведении.
+   */
+  watched?: boolean;
 };
 
 export type ParticipantDraft = {
@@ -91,6 +115,9 @@ export function normalize(p: Partial<Participant>): Participant {
     createdAt: p.createdAt ?? "—",
     lastUsedAt: p.lastUsedAt ?? null,
     active: p.active ?? true,
+    leads: p.leads ?? false,
+    hidden: p.hidden ?? false,
+    deliver: p.deliver ?? { telegram: false, email: false },
   };
 }
 

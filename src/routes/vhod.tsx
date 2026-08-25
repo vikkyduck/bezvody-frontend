@@ -53,10 +53,11 @@ function SignIn() {
             <StencilLogo className="logo-sm" />
           </div>
 
-          <h1 className="t-h1 text-[30px] leading-[1.1]">Вход в кабинет</h1>
-          <p className="measure mt-3 text-[13.5px] text-muted-foreground">
-            Код доступа выдаёт администратор платформы. Один код — один человек: по нему видно, кто
-            и что смотрел, и его можно отозвать в любой момент.
+          <h1 className="t-h1">Вход в кабинет</h1>
+          {/* Первая строка отвечает на вопрос «что я отсюда унесу», а не предупреждает
+              о слежке: до входа человек ещё не знает, зачем ему этот кабинет. */}
+          <p className="measure ui-support mt-3 text-muted-foreground">
+            Агенты разберут вашу задачу и соберут решение, которое можно нести на защиту.
           </p>
 
           <form onSubmit={submit} className="card-flat mt-7 px-6 py-6">
@@ -67,7 +68,10 @@ function SignIn() {
               id="code"
               value={code}
               autoFocus
-              autoComplete="one-time-code"
+              // Код здесь — постоянный логин, а не разовый пароль из СМС. С
+              // one-time-code ни браузер, ни менеджер паролей его не сохраняют,
+              // и человек лезет за кодом в переписку при каждом заходе.
+              autoComplete="username"
               spellCheck={false}
               onChange={(e) => {
                 setCode(e.target.value);
@@ -76,31 +80,45 @@ function SignIn() {
               placeholder="BV-CLIENT-01"
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? "code-error" : undefined}
-              className="mt-2.5 w-full rounded-[var(--radius-md,10px)] border border-[color:var(--color-line)] bg-transparent px-3.5 py-2.5 text-[14px] tracking-[0.06em] uppercase outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+              // 16 px, а не 14: на меньшем кегле iOS Safari зумит страницу при
+              // касании поля, и половина экрана уезжает за край.
+              className="mt-2.5 w-full rounded-[var(--radius-md,10px)] border border-[color:var(--color-line)] bg-transparent px-3.5 py-2.5 text-base tracking-[0.06em] uppercase outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
             />
+            {/* Текст ошибки приходит из session: «код не подходит» и «платформа
+                не отвечает» — разные строки, здесь их только показываем читаемым
+                кеглем, не подменяя одной общей формулировкой. */}
             {error ? (
               <p
                 id="code-error"
                 role="alert"
-                className="mt-2.5 text-[12.5px] text-[color:var(--color-accent)]"
+                className="ui-support mt-2.5 text-[color:var(--color-accent)]"
               >
                 {error}
               </p>
             ) : null}
 
+            {/* Кегль кнопки задаёт сама утилита btn (15 px); прежний text-[13.5px]
+                уменьшал единственное действие на экране. */}
             <button
               type="submit"
               disabled={busy}
-              className="btn btn-primary mt-5 w-full text-[13.5px] disabled:opacity-50"
+              className="btn btn-primary mt-5 w-full disabled:opacity-50"
             >
               {busy ? "Проверяем" : "Войти"}
             </button>
-
-            <p className="mt-4 text-[11.5px] leading-relaxed text-muted-foreground">
-              Потеряли код — напишите вашему проджект-менеджеру, он выпустит новый. Старый после
-              этого перестанет работать.
-            </p>
           </form>
+
+          {/* Про именной код — после кнопки: до входа это не условие допуска,
+              а ответ на вопрос «кто ещё увидит мои документы». */}
+          <p className="measure ui-support mt-5 text-muted-foreground">
+            Код именной — открывает только ваши задачи. Потерялся — администратор выдаст новый.
+          </p>
+          {/* Решение о том, нести ли сюда закрытые цифры, человек принимает
+              на этом экране — значит и ответ про хранение нужен здесь, а не
+              в подвале кабинета, куда он попадёт уже после. */}
+          <p className="measure ui-support mt-3 text-muted-foreground">
+            Документы и переписка хранятся на серверах в России, по требованиям 152-ФЗ.
+          </p>
         </div>
       </div>
     </div>

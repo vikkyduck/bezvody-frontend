@@ -16,6 +16,7 @@ import {
   DEFAULT_PROJECT_TITLE,
   MAX_PROJECTS,
   cleanProjectTitle,
+  isProjectOpen,
   type StoredProject,
 } from "./projects";
 
@@ -39,14 +40,26 @@ export const listWorkspaceServer = createServerFn({ method: "POST" })
 
 export const createProjectServer = createServerFn({ method: "POST" })
   .validator((data: { code: string; title: string }) => data)
-  .handler(async ({ data }): Promise<Workspace & { opened: string | null }> => {
+  .handler(async ({ data }): Promise<Workspace & { opened: string | null; note?: string }> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me) return { ...empty, opened: null };
+    if (!me)
+      return { ...empty, opened: null, note: "Кабинет вас не узнал — войдите по коду ещё раз." };
 
     const { projects, windows } = await d.readWorkspace(me.id);
-    if (projects.length >= MAX_PROJECTS) {
-      return { projects, windows, opened: null };
+    // Считаем только те, что в работе. Закрытые лежат в архиве и списку не
+    // мешают — упираться из-за них в потолок значило бы наказывать человека
+    // за то, что он закрывает сделанное, а это ровно то поведение, ради
+    // которого закрытие и заводили.
+    if (projects.filter(isProjectOpen).length >= MAX_PROJECTS) {
+      // Упереться в предел — не то же самое, что потерять связь. Раньше отказ
+      // выглядел как сбой сети, и человек жал «создать» снова и снова.
+      return {
+        projects,
+        windows,
+        opened: null,
+        note: `Больше ${MAX_PROJECTS} задач в работе разом не держим — закончите сделанные или удалите ненужную.`,
+      };
     }
 
     const project: StoredProject = {
@@ -78,6 +91,109 @@ export const renameProjectServer = createServerFn({ method: "POST" })
     );
     await d.writeProjects(me.id, next);
     return { projects: next, windows };
+  });
+
+/**
+ * Сложить одну задачу в другую.
+ *
+ * Список задач у активного человека зарастает: демонстрационные заходы,
+ * «Новый вопрос» на каждый быстрый вопрос, задачи, оказавшиеся одной и той же
+ * работой. Убирать их удалением значит терять разговоры. Складывание ничего
+ * не теряет: разговоры и документы переезжают в задачу-приёмник целиком,
+ * а опустевшая оболочка исчезает — от неё оставалось только имя.
+ */
+export const mergeProjectServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; fromId: string; toId: string }) => data)
+  .handler(async ({ data }): Promise<Workspace & { ok: boolean; note: string }> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me)
+      return { ...empty, ok: false, note: "Кабинет вас не узнал — войдите по коду ещё раз." };
+
+    const { projects, windows } = await d.readWorkspace(me.id);
+    const from = projects.find((p) => p.id === data.fromId);
+    const to = projects.find((p) => p.id === data.toId);
+    // Сложить задачу саму в себя — жест мимо, а не намерение.
+    if (!from || !to || from.id === to.id)
+      return { projects, windows, ok: false, note: "Задача не нашлась — обновите страницу." };
+
+    // Документы не задваиваем: один и тот же файл мог попасть в обе задачи.
+    const seen = new Set(to.files.map((f) => f.id));
+    const files = [...to.files, ...from.files.filter((f) => !seen.has(f.id))];
+
+    // updatedAt окон не трогаем: переезд — не работа по разговору,
+    // и всплывать в ленте от него разговоры не должны.
+    const nextWindows = windows.map((w) =>
+      w.projectId === from.id ? { ...w, projectId: to.id } : w,
+    );
+    const nextProjects = projects
+      .filter((p) => p.id !== from.id)
+      .map((p) => (p.id === to.id ? { ...p, files, updatedAt: stamp() } : p));
+
+    await d.writeWindows(me.id, nextWindows);
+    await d.writeProjects(me.id, nextProjects);
+    return { projects: nextProjects, windows: nextWindows, ok: true, note: "" };
+  });
+
+/**
+ * Закончить задачу — или вернуть её в работу.
+ *
+ * Соседнее удаление необратимо: оно уносит документы и разговоры, и человек им
+ * не пользуется, чтобы разгрести список, — а список у активного человека к
+ * третьему месяцу перестаёт читаться. Поэтому закрытие ничего не трогает:
+ * задача целиком остаётся на диске, меняется только `closedAt`. Действие
+ * дешёвое в обе стороны, и цена ошибки — один клик обратно.
+ *
+ * Права те же, что у переименования и удаления: чужие задачи закрывать нельзя,
+ * даже руководителю — он их видит, но работает в них человек.
+ */
+export const closeProjectServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; projectId: string; closed: boolean }) => data)
+  .handler(async ({ data }): Promise<Workspace & { ok: boolean; note: string }> => {
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me)
+      return { ...empty, ok: false, note: "Кабинет вас не узнал — войдите по коду ещё раз." };
+
+    const { projects, windows } = await d.readWorkspace(me.id);
+    const target = projects.find((p) => p.id === data.projectId);
+    // Чужая задача или уже удалённая. Молчаливое «получилось» здесь хуже
+    // отказа: человек уйдёт в уверенности, что задача закончена, а она нет.
+    if (!target)
+      return { projects, windows, ok: false, note: "Такая задача в вашем кабинете не нашлась." };
+
+    const closed = Boolean(data.closed);
+    const alreadyThere = isProjectOpen(target) === !closed;
+    // Второй клик по той же кнопке или вторая вкладка: состояние уже нужное,
+    // писать файл заново незачем — и незачем пугать человека отказом.
+    if (alreadyThere) return { projects, windows, ok: true, note: "" };
+
+    /**
+     * Про `updatedAt` — по нему список сортируется, поэтому решаем осознанно и
+     * по-разному в две стороны.
+     *
+     * Закрываем — не трогаем. Закрытие не работа по задаче, а признание, что
+     * работа кончилась; проставь мы здесь свежую дату, потеряли бы день, когда
+     * по задаче реально что-то делали. Хуже того, `visaOf` берёт максимум из
+     * дат задачи и её разговоров, и в кабинете руководителя задача, закрытая
+     * спустя полгода тишины, всплыла бы наверх как самая живая. А архиву своя
+     * дата и не нужна: `closedAt` — это и есть «когда закончили».
+     *
+     * Возвращаем в работу — обновляем. Задача снова в ленте активных, и
+     * человек только что сам её туда вернул: если она сядет двадцать второй
+     * строкой по прошлогодней дате, действие выглядит как не сработавшее.
+     * Всплывать наверх при повторном открытии — не искажение, а единственное
+     * место, где человек её сейчас ищет.
+     */
+    const next = projects.map((p) =>
+      p.id !== target.id
+        ? p
+        : closed
+          ? { ...p, closedAt: stamp() }
+          : { ...p, closedAt: null, updatedAt: stamp() },
+    );
+    await d.writeProjects(me.id, next);
+    return { projects: next, windows, ok: true, note: "" };
   });
 
 /**
@@ -128,7 +244,7 @@ export const takeIntoWindowServer = createServerFn({ method: "POST" })
 
     const { projects, windows } = await d.readWorkspace(me.id);
     const target = windows.find((w) => w.id === data.windowId);
-    if (!target) return { projects, windows, error: "окно не найдено" };
+    if (!target) return { projects, windows, error: "разговор не найден" };
 
     // Берём только из своей же папки: чужая задача — чужие материалы.
     const source = windows.find(
@@ -136,7 +252,7 @@ export const takeIntoWindowServer = createServerFn({ method: "POST" })
     );
     const message = source?.messages.find((m) => m.id === data.messageId);
     if (!source || !message || message.from !== "agent") {
-      return { projects, windows, error: "этот разбор не нашёлся в папке" };
+      return { projects, windows, error: "этот разбор не нашёлся в задаче" };
     }
 
     const doc = source.docs.find((x) => x.messageId === data.messageId);

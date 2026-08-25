@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as KomandaRouteImport } from './routes/komanda'
 import { Route as PmRouteImport } from './routes/pm'
 import { Route as VhodRouteImport } from './routes/vhod'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KomandaRoute = KomandaRouteImport.update({
+  id: '/komanda',
+  path: '/komanda',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PmRoute = PmRouteImport.update({
@@ -38,12 +44,14 @@ const VhodRoute = VhodRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/komanda': typeof KomandaRoute
   '/pm': typeof PmRoute
   '/vhod': typeof VhodRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/komanda': typeof KomandaRoute
   '/pm': typeof PmRoute
   '/vhod': typeof VhodRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/komanda': typeof KomandaRoute
   '/pm': typeof PmRoute
   '/vhod': typeof VhodRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/pm' | '/vhod'
+  fullPaths: '/' | '/admin' | '/komanda' | '/pm' | '/vhod'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/pm' | '/vhod'
-  id: '__root__' | '/' | '/admin' | '/pm' | '/vhod'
+  to: '/' | '/admin' | '/komanda' | '/pm' | '/vhod'
+  id: '__root__' | '/' | '/admin' | '/komanda' | '/pm' | '/vhod'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  KomandaRoute: typeof KomandaRoute
   PmRoute: typeof PmRoute
   VhodRoute: typeof VhodRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/komanda': {
+      id: '/komanda'
+      path: '/komanda'
+      fullPath: '/komanda'
+      preLoaderRoute: typeof KomandaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pm': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  KomandaRoute: KomandaRoute,
   PmRoute: PmRoute,
   VhodRoute: VhodRoute,
 }

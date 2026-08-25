@@ -51,7 +51,54 @@ export const signInServer = createServerFn({ method: "POST" })
     await d.writeParticipants(
       list.map((p) => (p.id === me.id ? { ...p, lastUsedAt: d.today() } : p)),
     );
-    return { ok: true as const, me: { ...me, lastUsedAt: d.today() } };
+    return { ok: true as const, me: withWatched({ ...me, lastUsedAt: d.today() }, list) };
+  });
+
+/**
+ * Видно ли работу этого человека кому-то из руководителей.
+ *
+ * Кабинет обещает, что код «открывает только ваши задачи и документы». С
+ * появлением панели руководителя это перестало быть полной правдой, и человек
+ * должен узнать об этом от нас, а не случайно. Признак считаем здесь и отдаём
+ * вместе с кабинетом — интерфейс говорит о нём в подвале.
+ */
+function withWatched(me: Participant, list: Participant[]): Participant {
+  if (me.role !== "client" || me.hidden) return { ...me, watched: false };
+  const hasChief = list.some((p) => p.leads && p.active && p.id !== me.id);
+  return { ...me, watched: hasChief };
+}
+
+/**
+ * Куда присылать готовое — решает сам человек, а не администратор.
+ *
+ * Это его почта и его телеграм, и просить исполнителя переключить тумблер
+ * было бы странно. Поэтому функция правит только СВОЮ запись: чужой id она
+ * не принимает вовсе.
+ */
+export const setDeliveryServer = createServerFn({ method: "POST" })
+  .validator((data: { code: string; telegram: boolean; email: boolean }) => data)
+  .handler(async ({ data }): Promise<{ ok: boolean; me: Participant | null; note: string }> => {
+    const d = await import("./server-data");
+    const { list, me } = await d.whoIs(String(data.code ?? ""));
+    if (!me)
+      return { ok: false, me: null, note: "Кабинет вас не узнал — войдите по коду ещё раз." };
+
+    // Почта включается только когда есть куда слать: тумблер без адреса —
+    // обещание, которое платформа не сдержит.
+    const email = data.email && Boolean(me.email.trim());
+    const next = list.map((p) =>
+      p.id === me.id ? normalize({ ...p, deliver: { telegram: data.telegram, email } }) : p,
+    );
+    await d.writeParticipants(next);
+    const fresh = next.find((p) => p.id === me.id) ?? me;
+    return {
+      ok: true,
+      me: withWatched(fresh, next),
+      note:
+        data.email && !email
+          ? "Почта в вашей карточке не записана — попросите менеджера её вписать."
+          : "",
+    };
   });
 
 /** Кто я и что мне открыто — свежими данными, а не тем, что осело в браузере. */
@@ -59,8 +106,8 @@ export const meServer = createServerFn({ method: "POST" })
   .validator((data: { code: string }) => data)
   .handler(async ({ data }) => {
     const d = await import("./server-data");
-    const { me } = await d.whoIs(String(data.code ?? ""));
-    return { me };
+    const { list, me } = await d.whoIs(String(data.code ?? ""));
+    return { me: me ? withWatched(me, list) : me };
   });
 
 // ── Список ────────────────────────────────────────────────────────────────────
@@ -141,12 +188,16 @@ export const mutateServer = createServerFn({ method: "POST" })
         // потерять вход в платформу насовсем.
         if (m.id !== me.id) {
           next = list.filter((p) => p.id !== m.id);
-          // Вместе с кабинетом уходит и переписка, и принесённые документы:
-          // держать чужие материалы после удаления человека незачем — ни нам,
-          // ни по 152-ФЗ. id перед подстановкой в путь чистим: он приходит извне.
+          // Вместе с кабинетом уходят и задачи, и переписка, и принесённые
+          // документы: держать чужие материалы после удаления человека незачем —
+          // ни нам, ни по 152-ФЗ. Задачи лежат отдельным файлом от разговоров
+          // (см. server-data.ts), и без этой строки подтверждение на экране
+          // обещало удалить их, а на диске они оставались.
+          // id перед подстановкой в путь чистим: он приходит извне.
           const who = m.id.replace(/[^a-zA-Z0-9_-]/g, "");
           if (who) {
             const { rm } = await import("node:fs/promises");
+            await rm(`${d.dataDir()}/projects/${who}.json`, { force: true });
             await rm(`${d.dataDir()}/windows/${who}.json`, { force: true });
             await rm(`${d.dataDir()}/files/w/${who}`, { recursive: true, force: true });
           }

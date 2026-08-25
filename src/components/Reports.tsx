@@ -12,7 +12,7 @@ import { agentById } from "@/lib/shtab-data";
  *
  * Свежее сверху: администратора интересует, что происходит сейчас. Текст
  * разбора грузится только когда его открывают: иначе список из полусотни
- * шестистраничников весит мегабайты и открывается секундами.
+ * решений на шести страницах весит мегабайты и открывается секундами.
  */
 export function Reports() {
   const { code } = useSession();
@@ -73,15 +73,15 @@ export function Reports() {
     }
   }
 
-  if (!rows) return <p className="text-[13px] text-muted-foreground">Загружаю…</p>;
+  if (!rows) return <p className="ui-support">Загружаю…</p>;
 
   return (
     <div className="space-y-6">
       <section>
-        <h2 className="mb-1 text-[15px] font-semibold">
+        <h2 className="ui-h2 mb-1">
           Что получили клиенты <span className="text-muted-foreground">· {rows.length}</span>
         </h2>
-        <p className="measure mb-4 text-[12.5px] text-muted-foreground">
+        <p className="measure ui-support mb-4">
           Каждый разбор, который агент собрал и отдал человеку. Открыть — прочитать целиком, скачать
           — получить тот же файл Word, что и у клиента.
         </p>
@@ -89,7 +89,7 @@ export function Reports() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Имя, компания или вопрос"
-          className="w-full max-w-[420px] rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 text-[13px] outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+          className="ui-body w-full max-w-[420px] rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
         />
       </section>
 
@@ -102,32 +102,28 @@ export function Reports() {
                 <div className="flex flex-wrap items-start gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="text-[14.5px] font-semibold leading-snug">
-                        {r.personName}
-                      </span>
-                      {r.company ? (
-                        <span className="text-[12px] text-muted-foreground">{r.company}</span>
-                      ) : null}
-                      <span className="rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2 py-[2px] text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                      <span className="ui-title">{r.personName}</span>
+                      {r.company ? <span className="ui-meta">{r.company}</span> : null}
+                      <span className="label-caps rounded-[var(--radius-pill)] border border-[color:var(--color-line)] px-2 py-[2px]">
                         {agentById(r.agentId)?.name ?? r.agentId}
                       </span>
                     </div>
-                    <p className="mt-1 text-[13px] leading-snug">{r.windowTitle}</p>
-                    <p className="measure mt-1 text-[12px] text-muted-foreground">{r.preview}…</p>
+                    <p className="ui-body mt-1">{r.windowTitle}</p>
+                    <p className="measure ui-support mt-1">{r.preview}…</p>
                   </div>
 
                   <div className="flex flex-none flex-col items-end gap-2">
-                    <span className="text-[11.5px] text-muted-foreground">
+                    <span className="ui-meta">
                       {when(r.at)} · {r.chars.toLocaleString("ru-RU")} знаков
                     </span>
                     <span className="flex gap-2">
-                      <button onClick={() => void open(r)} className="btn btn-ghost text-[12px]">
+                      <button onClick={() => void open(r)} className="btn btn-ghost ui-meta">
                         {opened ? "Свернуть" : "Прочитать"}
                       </button>
                       <button
                         onClick={() => void save(r)}
                         disabled={busy === r.messageId}
-                        className="btn btn-glass text-[12px] disabled:opacity-50"
+                        className="btn btn-glass ui-meta disabled:opacity-50"
                       >
                         {busy === r.messageId ? "Собираю" : "Скачать в Word"}
                       </button>
@@ -140,7 +136,7 @@ export function Reports() {
                     {text[r.messageId] ? (
                       <Markdown>{text[r.messageId]!}</Markdown>
                     ) : (
-                      <p className="text-[12.5px] text-muted-foreground">Открываю…</p>
+                      <p className="ui-support">Открываю…</p>
                     )}
                   </div>
                 ) : null}
@@ -149,7 +145,7 @@ export function Reports() {
           })}
         </ul>
       ) : (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="ui-support">
           {rows.length ? "По этому запросу ничего нет." : "Пока ни один агент не отдал разбор."}
         </p>
       )}

@@ -14,26 +14,50 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { WindowsProvider } from "../lib/windows-store";
 import { SessionProvider } from "../lib/session";
 import { DirectoryProvider } from "../lib/directory";
+import { CatMark, LensFilter, Scene, StencilLogo } from "@/components/bv/core";
 
-function NotFoundComponent() {
+/* Сбойные экраны собраны на той же обёртке, что и вход: та же сцена, тот же
+   логотип. Человек, у которого только что что-то не открылось, должен видеть
+   свой кабинет, а не чужую служебную страницу на английском. */
+function FallbackScreen({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
-        </p>
-        <div className="mt-6">
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Go home
-          </Link>
+    <div className="stage grain flex min-h-screen flex-col">
+      <LensFilter />
+      <Scene blobs={[{ className: "left-[-18%] top-[-10%] h-[560px] w-[560px]", tone: "rose" }]} />
+
+      <div className="flex flex-1 items-center justify-center px-5 py-12">
+        <div className="w-full max-w-[420px]">
+          <div className="mb-8 flex items-center gap-3">
+            <CatMark
+              className="h-9 w-11 text-[color:var(--color-text-primary)]/70"
+              strokeWidth={2}
+            />
+            <StencilLogo className="logo-sm" />
+          </div>
+          {children}
         </div>
       </div>
     </div>
+  );
+}
+
+function NotFoundComponent() {
+  return (
+    <FallbackScreen>
+      {/* Крупных цифр «404» здесь нет: код ошибки ничего не говорит
+          руководителю и читается как чужой технический экран. */}
+      <h1 className="ui-h2">Такой страницы нет</h1>
+      <p className="ui-support measure mt-3 text-muted-foreground">
+        Ссылка устарела или в адресе опечатка. Ваши задачи, документы и разговоры на месте — они в
+        кабинете.
+      </p>
+      {/* Выход один: на сбойном экране выбирать не из чего. */}
+      <div className="mt-7">
+        <Link to="/" className="btn btn-primary w-full">
+          В кабинет
+        </Link>
+      </div>
+    </FallbackScreen>
   );
 }
 
@@ -45,33 +69,36 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button
-            onClick={() => {
-              router.invalidate();
-              reset();
-            }}
-            className="inline-flex items-center justify-center rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Try again
-          </button>
-          <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
-            Go home
-          </a>
-        </div>
+    <FallbackScreen>
+      <h1 className="ui-h2">Сбой на нашей стороне</h1>
+      {/* Первым делом снимаем главный страх: «я нажал не то и всё потерял».
+          Документы и разговоры лежат на сервере, страница их не хранит —
+          поэтому это можно обещать честно. Стек и код ошибки не показываем:
+          они уходят в reportLovableError, читателю от них толку нет. */}
+      <p className="ui-support measure mt-3 text-muted-foreground">
+        Страница не открылась — это наша ошибка, не ваша. Задачи, документы и разговоры хранятся на
+        сервере, с ними ничего не случилось.
+      </p>
+      {/* basis-[12rem] вместо flex-1: с нулевой базой «Попробовать снова»
+          на 375 px обрезается (.btn стоит на overflow:hidden), а так кнопки
+          просто встают в две строки. */}
+      <div className="mt-7 flex flex-wrap gap-3">
+        <button
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
+          className="btn btn-primary grow basis-[12rem]"
+        >
+          Попробовать снова
+        </button>
+        {/* Обычная ссылка, а не Link: после падения роутер сам может быть
+            в нерабочем состоянии, и полная перезагрузка надёжнее. */}
+        <a href="/" className="btn btn-glass grow basis-[12rem]">
+          В кабинет
+        </a>
       </div>
-    </div>
+    </FallbackScreen>
   );
 }
 

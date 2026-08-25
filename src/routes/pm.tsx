@@ -3,13 +3,14 @@ import { useState } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
 import { AgentAccess, Contacts } from "@/components/AgentAccess";
+import { Chevron, Reveal } from "@/components/bv/Reveal";
 import { useDirectory, type Participant } from "@/lib/directory";
 
 export const Route = createFileRoute("/pm")({
   head: () => ({
     meta: [
       { title: "Мои клиенты — платформа «Без Воды»" },
-      { name: "description", content: "Кабинет проджекта: участники и их агенты." },
+      { name: "description", content: "Кабинет менеджера: клиенты и их агенты." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -35,7 +36,7 @@ function Body() {
     <>
       <PageHead
         n="01"
-        eyebrow="Кабинет проджекта"
+        eyebrow="Кабинет менеджера"
         title={
           clients.length
             ? `${clients.length} ${declension(clients.length, "клиент", "клиента", "клиентов")} на вас`
@@ -46,22 +47,20 @@ function Body() {
 
       {clients.length ? (
         <>
+          {/* Цифры здесь служебные: их читают первыми, но заголовок страницы
+              они не перекрикивают — отсюда t-h2, а не витринный t-number. */}
           <section className="grid gap-4 border-y border-[color:var(--color-line)] py-5 sm:grid-cols-2">
             <div>
               <div className="label-caps">Клиентов на вас</div>
-              <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">
-                {clients.length}
-              </div>
-              <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+              <div className="t-h2 mt-1.5 tabular-nums">{clients.length}</div>
+              <p className="ui-support mt-1.5 text-muted-foreground">
                 агентов открыто {clients.reduce((s, c) => s + c.agentIds.length, 0)}
               </p>
             </div>
             <div>
               <div className="label-caps">Без единого агента</div>
-              <div className="t-number mt-1.5 text-[26px] leading-none tabular-nums">
-                {withoutAgents.length}
-              </div>
-              <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+              <div className="t-h2 mt-1.5 tabular-nums">{withoutAgents.length}</div>
+              <p className="ui-support mt-1.5 text-muted-foreground">
                 {withoutAgents.length
                   ? withoutAgents.map((c) => c.name).join(", ")
                   : "у каждого открыт хотя бы один"}
@@ -69,7 +68,7 @@ function Body() {
             </div>
           </section>
 
-          <section className="mt-8 space-y-3">
+          <section className="stagger mt-8 space-y-3">
             {clients.map((c) => (
               <ClientCard
                 key={c.id}
@@ -82,7 +81,7 @@ function Body() {
         </>
       ) : (
         <div className="card-flat px-6 py-10 text-center">
-          <p className="measure mx-auto text-[13.5px] text-muted-foreground">
+          <p className="ui-body measure mx-auto text-muted-foreground">
             Как только администратор заведёт клиентов, они появятся здесь вместе со своими агентами.
           </p>
         </div>
@@ -104,35 +103,34 @@ function ClientCard({
     <div className="card-flat px-5 py-5">
       <div className="flex flex-wrap items-start gap-4">
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-semibold leading-snug">{p.name}</div>
-          <p className="mt-1 text-[12.5px] text-muted-foreground">
+          <div className="ui-title">{p.name}</div>
+          <p className="ui-support mt-1 text-muted-foreground">
             {[p.position, p.company].filter(Boolean).join(" · ") || "должность не указана"}
           </p>
-          <p className="mt-1 text-[12px] text-muted-foreground">
+          <p className="ui-meta mt-1 text-muted-foreground">
             <Contacts person={p} />
           </p>
         </div>
 
         <div className="text-right">
-          <div className="text-[12.5px]">
+          <div className="ui-meta text-foreground">
             {p.agentIds.length} {declension(p.agentIds.length, "агент", "агента", "агентов")}
           </div>
-          <div className="text-[10.5px] text-muted-foreground">
+          <div className="ui-meta text-muted-foreground">
             {p.lastUsedAt ? `заходил ${p.lastUsedAt}` : "ни разу не заходил"}
           </div>
         </div>
 
-        <button onClick={onToggle} className="btn btn-glass text-[12.5px]">
+        <button onClick={onToggle} aria-expanded={open} className="btn btn-glass gap-1.5">
           {open ? "Свернуть" : "Агенты клиента"}
+          <Chevron />
         </button>
       </div>
 
-      {open ? (
-        <div className="mt-5 border-t border-[color:var(--color-line)] pt-5">
-          <div className="label-caps mb-2.5">Какие агенты открыты</div>
-          <AgentAccess person={p} />
-        </div>
-      ) : null}
+      <Reveal open={open} className="mt-5 border-t border-[color:var(--color-line)] pt-5">
+        <div className="label-caps mb-2.5">Какие агенты открыты</div>
+        <AgentAccess person={p} />
+      </Reveal>
     </div>
   );
 }

@@ -5,13 +5,13 @@ import type { ChecklistSection } from "@/lib/sixpager";
 import { useSession } from "@/lib/session";
 
 /**
- * Шпаргалка по 6-pager рядом с разговором.
+ * Из чего состоит решение — шпаргалка рядом с разговором.
  *
  * Человек видит те же разделы и вопросы, по которым работает агент: что
  * спросят, что уже закрыто, чего не хватает. Отметки живут в браузере —
  * это личная рабочая пометка, а не документ, и на сервере ей делать нечего.
  *
- * Свёрнута по умолчанию: окно разговора — главное на экране, шпаргалка
+ * Свёрнута по умолчанию: разговор — главное на экране, шпаргалка
  * открывается, когда человек сам к ней потянулся.
  */
 
@@ -45,17 +45,14 @@ export function Checklist() {
         setSections(r.sections);
       })
       .catch(() => {
-        /* молча: шпаргалка — подсказка, без неё окно работает */
+        /* молча: шпаргалка — подсказка, без неё разговор работает */
       });
   }, [code]);
 
   const total = useMemo(() => sections.reduce((n, s) => n + s.questions.length, 0), [sections]);
   const closed = useMemo(
     () =>
-      sections.reduce(
-        (n, s) => n + s.questions.filter((_, i) => done[`${s.id}:${i}`]).length,
-        0,
-      ),
+      sections.reduce((n, s) => n + s.questions.filter((_, i) => done[`${s.id}:${i}`]).length, 0),
     [sections, done],
   );
 
@@ -93,20 +90,21 @@ export function Checklist() {
   return (
     <section className="mt-8">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="text-[15px] font-semibold">Шпаргалка: структура 6-pager</h2>
-        <button onClick={() => setShown((v) => !v)} className="btn btn-glass text-[12px]">
-          {shown ? "Свернуть" : `Открыть · ${total} вопросов`}
+        <h2 className="ui-title">Из чего состоит решение</h2>
+        {/* Подпись кнопки отвечает на вопрос «зачем открывать»: не «открыть
+            список», а «увидеть, о чём спросит агент». Счётчик остаётся —
+            по нему видно, насколько это долгий разговор. */}
+        <button onClick={() => setShown((v) => !v)} className="btn btn-glass ui-meta">
+          {shown ? "Свернуть" : `Показать · ${total}`}
         </button>
       </div>
-      <p className="measure mt-1 text-[12.5px] text-muted-foreground">
-        Те же разделы и вопросы, по которым работает Никита. Отмечайте закрытое — видно, чего
-        документу ещё не хватает. Отметки остаются в этом браузере.
-      </p>
 
       {shown ? (
         <>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <span className="t-number text-[13px] tabular-nums">
+            {/* Счётчик набран мета-ролью, а не трафаретной цифрой: в кабинете
+                нумеровать нечего, это просто состояние работы. */}
+            <span className="ui-meta">
               {closed} / {total}
             </span>
             <div
@@ -121,14 +119,14 @@ export function Checklist() {
                 style={{ width: total ? `${Math.round((closed / total) * 100)}%` : "0%" }}
               />
             </div>
-            <button onClick={() => setAll(true)} className="btn btn-ghost text-[12px]">
+            <button onClick={() => setAll(true)} className="btn btn-ghost ui-meta">
               Развернуть всё
             </button>
-            <button onClick={() => setAll(false)} className="btn btn-ghost text-[12px]">
+            <button onClick={() => setAll(false)} className="btn btn-ghost ui-meta">
               Свернуть всё
             </button>
             {closed ? (
-              <button onClick={reset} className="btn btn-ghost text-[12px] text-muted-foreground">
+              <button onClick={reset} className="btn btn-ghost ui-meta">
                 Снять отметки
               </button>
             ) : null}
@@ -139,33 +137,26 @@ export function Checklist() {
               const isOpen = open[s.id] ?? false;
               const sectionDone = s.questions.filter((_, i) => done[`${s.id}:${i}`]).length;
               return (
-                <div key={s.id} className="card-flat px-5 py-4">
+                <div key={s.id} className="card-plain px-5 py-4">
                   <button
                     onClick={() => setOpen((o) => ({ ...o, [s.id]: !isOpen }))}
                     className="flex w-full items-start gap-3 text-left"
                   >
-                    <span className="t-number mt-[3px] flex-none text-[12px] text-muted-foreground">
-                      {s.num}
-                    </span>
+                    <span className="ui-meta mt-[3px] flex-none">{s.num}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-[14.5px] font-semibold leading-snug">
-                        {s.title}
-                      </span>
-                      <span className="mt-1 block text-[11.5px] uppercase tracking-[0.12em] text-muted-foreground">
-                        {s.questions.length} вопрос{ending(s.questions.length)} · закрыто {sectionDone}
+                      <span className="ui-title block">{s.title}</span>
+                      <span className="label-caps mt-1 block">
+                        {s.questions.length} вопрос{ending(s.questions.length)} · закрыто{" "}
+                        {sectionDone}
                       </span>
                     </span>
-                    <span className="flex-none text-[13px] text-muted-foreground">
-                      {isOpen ? "−" : "+"}
-                    </span>
+                    <span className="ui-meta flex-none">{isOpen ? "−" : "+"}</span>
                   </button>
 
                   {isOpen ? (
                     <div className="mt-4 border-t border-[color:var(--color-line)] pt-4">
-                      <p className="measure text-[13px] font-medium">{s.note}</p>
-                      {s.lead ? (
-                        <p className="measure mt-1.5 text-[12.5px] text-muted-foreground">{s.lead}</p>
-                      ) : null}
+                      <p className="measure ui-body font-medium">{s.note}</p>
+                      {s.lead ? <p className="measure ui-support mt-1.5">{s.lead}</p> : null}
 
                       <ol className="mt-3">
                         {s.questions.map((q, i) => {
@@ -177,9 +168,14 @@ export function Checklist() {
                                 onClick={() => mark(key)}
                                 className="flex w-full items-start gap-3 border-t border-[color:var(--color-line)] py-2.5 text-left"
                               >
+                                {/* Галочка выросла с 17 до 20 px вместе с набором:
+                                    при 15 px в строке прежняя клетка читалась
+                                    как соринка рядом с текстом. Своего кегля
+                                    у неё нет — наследует строку вопроса, чтобы
+                                    не заводить шестой размер ради одного знака. */}
                                 <span
                                   aria-hidden
-                                  className={`mt-[2px] flex h-[17px] w-[17px] flex-none items-center justify-center rounded-[5px] border text-[10px] font-bold ${
+                                  className={`mt-[2px] flex h-[20px] w-[20px] flex-none items-center justify-center rounded-[6px] border ${
                                     isDone
                                       ? "border-[color:var(--color-text-primary)] bg-[color:var(--color-text-primary)] text-[color:var(--color-bg-primary)]"
                                       : "border-[color:var(--color-line)]"
@@ -187,11 +183,9 @@ export function Checklist() {
                                 >
                                   {isDone ? "✓" : ""}
                                 </span>
-                                <span className="t-number flex-none text-[11.5px] text-muted-foreground">
-                                  {i + 1}.
-                                </span>
+                                <span className="ui-meta flex-none">{i + 1}.</span>
                                 <span
-                                  className={`flex-1 text-[13.5px] leading-relaxed ${
+                                  className={`ui-body flex-1 ${
                                     isDone ? "text-muted-foreground line-through decoration-1" : ""
                                   }`}
                                 >
@@ -205,7 +199,7 @@ export function Checklist() {
 
                       <div className="mt-4 rounded-[12px] border border-[color:var(--color-line)] px-4 py-3">
                         <div className="label-caps">Что должно получиться</div>
-                        <p className="measure mt-1.5 text-[13px]">{s.result}</p>
+                        <p className="measure ui-body mt-1.5">{s.result}</p>
                       </div>
                     </div>
                   ) : null}

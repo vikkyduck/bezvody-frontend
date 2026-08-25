@@ -726,7 +726,11 @@ html[data-calm="true"] .lg::before { display: none; }
 .node-divider i:nth-child(2) { background: var(--color-accent); }
 
 /* Графическая сцена: под стеклом должно быть что преломлять */
-@utility stage { position: relative; overflow: hidden; }
+/* clip, а не hidden: hidden делает .stage прокруточным контекстом, и
+   position: sticky у шапки перестаёт работать — при прокрутке человек
+   оставался без логотипа-выхода и кнопки «Все задачи». clip режет блобы
+   так же, но скролл-контекста не создаёт. */
+@utility stage { position: relative; overflow: clip; }
 .stage__bg {
   position: absolute;
   inset: 0;
@@ -734,7 +738,19 @@ html[data-calm="true"] .lg::before { display: none; }
   pointer-events: none;
   overflow: hidden;
 }
-.stage > *:not(.stage__bg) { position: relative; z-index: 1; }
+/* Содержимое лежит НАД фоновыми пятнами. `position: relative` здесь ставился
+   всем детям подряд — и перебивал `sticky` у шапки кабинета (правило-класс
+   специфичнее утилиты Tailwind). Из-за этого шапка с логотипом-выходом и
+   дорожкой уезжала вверх при первой прокрутке, и на длинном экране человек
+   оставался без единого ориентира. Слой поднимаем z-index'ом, а позицию
+   назначаем только тем, у кого её нет своей. */
+.stage > *:not(.stage__bg):not(.sticky):not(.fixed):not(.absolute) {
+  position: relative;
+  z-index: 1;
+}
+/* Липкой шапке своё положение и свой слой (z-40) — иначе она уезжает под
+   содержимое: правило-класс специфичнее утилиты Tailwind и перебивало оба. */
+.stage > .sticky { z-index: 40; }
 
 .stage__blob { position: absolute; border-radius: 50%; filter: blur(4px); }
 .stage__blob--rose { background: radial-gradient(closest-side, rgba(228, 169, 206, 0.28), rgba(228, 169, 206, 0)); }
@@ -1071,7 +1087,13 @@ details[open] > summary [data-chevron] { transform: rotate(180deg); }
   color: var(--color-text-primary);
 }
 [role="tab"]:focus-visible { outline-offset: -2px; }
-:where(button, a)[aria-expanded="true"] { color: var(--color-text-primary); }
+/* Раскрытая строка-переключатель темнеет до основного тона. Кнопки исключены:
+   у .btn цвет текста идёт в паре с заливкой, и общее правило её ломало —
+   у .btn-primary фон как раз --color-text-primary, поэтому «Забрать документ»
+   после раскрытия писалась цветом собственного фона, то есть исчезала.
+   Исключаем весь .btn, а не только .btn-primary: у .btn-invert заливка тоже
+   светлая, и правило погасило бы её ровно так же. */
+:where(button, a):not(.btn)[aria-expanded="true"] { color: var(--color-text-primary); }
 
 /* Ссылка-стрелка: один отклик на hover, фокус и нажатие */
 .link-arrow:hover [data-arrow],
@@ -1292,6 +1314,52 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
    ========================================================================== */
 
 
+/* Пять ролей набора кабинета: заголовок раздела, имя, набор, пояснение, мета.
+   Шкала отдельная от сайтовой (t-h1/t-h2/t-body) по одной причине: сайт читают
+   подряд с одной колонкой, кабинет — глазами по карточкам и таблицам. Наборный
+   текст здесь 15, а не 17 как на сайте: в карточке шириной в треть экрана и
+   в строке таблицы 17 переносит слова и рвёт сетку. Ниже 14 система не
+   опускается (разд. 16) — единственное исключение остаётся у label-caps,
+   где разрядка 0.14em возвращает читаемость.
+   Шаг между ролями крупный (20 · 17 · 15 · 14 · 13) — чтобы роль различалась
+   с одного взгляда и не хотелось завести шестой кегль «где-то посередине». */
+@utility ui-h2 {
+  font-family: var(--font-sans);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+@utility ui-title {
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+@utility ui-body {
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.55;
+}
+@utility ui-support {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+/* Дата, счётчик, единица измерения: 500 вместо 400 — мелкая строка из цифр
+   на тонком начертании выглядит блёклой рядом с наборным текстом. */
+@utility ui-meta {
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 @utility label-caps {
   font-size: 0.75rem;
   font-weight: 600;
@@ -1319,6 +1387,7 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
    Координаты курсора задаёт GlassPointer через --mx / --my.
    ========================================================================== */
 
+
 .card-flat {
   --mx: 50%;
   --my: 0%;
@@ -1344,6 +1413,72 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
   .talk-pane { height: min(760px, calc(100dvh - 210px)); }
 }
 
+/* Телефон: одна прокрутка на страницу.
+   На десктопе лента крутится внутри пластины, и это правильно — шапка разговора
+   и поле ввода остаются на месте. На 375 px тот же приём даёт две вложенные
+   прокрутки: палец в ленте двигает ленту, палец в сантиметре от неё — страницу,
+   и человек перестаёт понимать, что именно он тянет. Поэтому на узком экране
+   пластина растёт по содержимому, а прокрутка остаётся одна — страничная. */
+@media (max-width: 767px) {
+  .talk-pane {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  /* Лента внутри пластины перестаёт быть отдельным окном прокрутки.
+     Класс Tailwind в селекторе — потому что своего имени у контейнера ленты
+     нет; data-атрибут оставлен на случай, если он появится. */
+  .talk-pane [data-talk-list],
+  .talk-pane .overflow-y-auto {
+    overflow: visible;
+    max-height: none;
+  }
+
+  /* iOS Safari зумит страницу при фокусе в поле мельче 16 px и обратно уже
+     не отъезжает — человек дописывает сообщение на съехавшем экране.
+     Другой причины у этой строки нет. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* Печать разговора. Ctrl+P на пластине с ограниченной высотой даёт ровно один
+   экран ленты: остальное браузер обрезает вместе с прокруткой. А уносят отсюда
+   именно бумагу — распечатанный разговор кладут на стол совещания. */
+@media print {
+  .talk-pane {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  .talk-pane [data-talk-list],
+  .talk-pane .overflow-y-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  /* На бумаге нечего нажимать — но «нечего нажимать» относится к органам
+     управления, а не ко всему, что размечено кнопкой. Прежнее `.talk-pane
+     button` уносило с распечатки и имена приложенных документов: имя файла —
+     это <button> со ссылкой на скачивание, и перечень документов пропадал
+     из разговора целиком. Перечисляем ровно органы управления:
+     поле ввода, ряд кнопок выгрузки (data-take-away), действия-кнопки .btn,
+     мелкие иконки .tap-44 (убрать/вернуть) и кнопку служебной строки. */
+  .talk-pane form,
+  .talk-pane [data-take-away],
+  .talk-pane .btn,
+  .talk-pane .tap-44,
+  .sys-note button {
+    display: none !important;
+  }
+  /* Имена документов остаются, но кнопкой уже не притворяются */
+  .talk-pane button {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+}
+
 /* Кромка-линза: преломляет и чуть увеличивает фон по краям пластины */
 .card-flat::before {
   content: "";
@@ -1365,6 +1500,7 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
     backdrop-filter: blur(3px) saturate(210%) brightness(1.1) contrast(1.04);
   }
 }
+
 
 /* Блик под курсором + мягкая световая кромка сверху */
 .card-flat::after {
@@ -1399,10 +1535,56 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
   .card-flat { transition: none; }
 }
 
+/* Зона касания мелкой кнопки-иконки. Крестик у документа рисуется в 16–20 px:
+   пальцем в него попадают не с первого раза, а промах здесь стоит документа.
+   Растим саму кнопку, а не событие: прежняя версия вешала невидимую накладку
+   44×44 псевдоэлементом, и она вылезала за границы кнопки поверх соседа —
+   в строке документа «В Google» стоит вплотную к крестику, и нажатие по краю
+   «В Google» попадало в накладку крестика, то есть удаляло документ.
+   Настоящий размер соседей раздвигает вёрстка, перекрывать нечего. */
+@utility tap-44 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Служебная строка платформы: «связь прервалась», «не удалось загрузить».
+   Это говорит система, а не собеседник, поэтому материала собеседника —
+   стекла — здесь нет: плоская подложка, тихая рамка, отметка цветом ошибки
+   слева. Репликой агента такая строка не притворяется. */
+.sys-note {
+  border: 1px solid var(--color-line);
+  border-left: 2px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  background: var(--color-error-soft);
+  color: var(--color-text-secondary);
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Разметка ответов агента. Документ, а не чат: заголовки держат структуру,
    таблицы читаются построчно, ничего не кричит.
    ══════════════════════════════════════════════════════════════════════════ */
+/* Кегль ответа — 16/1.65, а не 14.5, как было: это решение на шесть страниц,
+   его читают целиком, а не проглядывают. */
+.bv-md {
+  font-size: 1rem;
+  line-height: 1.65;
+}
+/* Мерой чтения ограничен наборный текст, а не весь ответ. Пока max-width стоял
+   на самой .bv-md, в 65ch (≈570 px) зажимало и таблицы: широкая таблица уезжала
+   в собственную боковую прокрутку внутри и без того узкой колонки, хотя места
+   на экране хватало. Таблицам, коду и заголовкам оставляем полную ширину. */
+.bv-md > p,
+.bv-md > ul,
+.bv-md > ol,
+.bv-md > blockquote {
+  max-width: var(--measure);
+}
 .bv-md > *:first-child { margin-top: 0; }
 .bv-md > *:last-child { margin-bottom: 0; }
 /* Ответ агента — документ, а не реплика: заголовки должны быть видны с одного
@@ -1468,4 +1650,313 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
   letter-spacing: .06em;
   color: var(--color-text-secondary);
   white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Микроотклик карточек: наведение, нажатие, раскрытие.
+
+   Кабинет — рабочее место, а не витрина: движение здесь отвечает на действие
+   руки и заканчивается вместе с ним. Ничего не пульсирует само по себе, все
+   длительности взяты из раздела «Движение» выше, глушители calm-режима и
+   prefers-reduced-motion действуют на всё, что здесь описано.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* .card-flat объявлена ниже .card-link и перебивала её transition целиком:
+   подъём карточки при наведении получался мгновенным. Собираем оба свойства
+   в одном правиле, чтобы стеклянная карточка-кнопка двигалась плавно. */
+.card-flat.card-link {
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    box-shadow 520ms var(--ease-glass),
+    border-color 520ms var(--ease-glass);
+}
+/* И кромка: у .card-flat при наведении она белёсая, у .card-link — розовая.
+   Побеждала белёсая, и карточка-кнопка ничем не отличалась от пластины,
+   на которую просто навели мышь. Розовая кромка — признак «сюда можно нажать». */
+.card-flat.card-link:hover {
+  border-color: color-mix(in oklab, var(--color-accent) 34%, var(--color-line));
+}
+
+/* Нажатие: карточка проседает под пальцем и тут же возвращается. Это
+   единственное подтверждение касания на телефоне — там наведения нет вовсе,
+   и без просадки непонятно, попал ты по карточке или промахнулся. */
+.card-link:active {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 90ms;
+}
+
+/* На тач-экране :hover залипает после касания до следующего тапа в стороне —
+   приподнятая карточка так и осталась бы висеть. */
+@media (hover: none) {
+  .card-flat.card-link:hover {
+    transform: none;
+  }
+}
+
+/* Появление списка: карточки всплывают по очереди, шаг меньше кадра глаза.
+   Задержка задаётся порядком в разметке, а не инлайновым стилем. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+}
+.stagger > * {
+  animation: rise-in var(--duration-slow) var(--ease-out) both;
+}
+.stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: 45ms;
+}
+.stagger > *:nth-child(3) {
+  animation-delay: 90ms;
+}
+.stagger > *:nth-child(4) {
+  animation-delay: 135ms;
+}
+.stagger > *:nth-child(5) {
+  animation-delay: 180ms;
+}
+.stagger > *:nth-child(6) {
+  animation-delay: 225ms;
+}
+.stagger > *:nth-child(7) {
+  animation-delay: 270ms;
+}
+.stagger > *:nth-child(n + 8) {
+  animation-delay: 315ms;
+}
+
+/* Кнопка выбора (роль, участник списка): та же логика, что у карточки, но
+   тише — она мельче и стоит в плотной сетке. */
+@utility pick {
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .pick:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-hairline);
+  }
+}
+.pick:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  transition-duration: 90ms;
+}
+
+/* Выбор состоялся — карточка коротко «отзывается». Один раз, на смену
+   состояния: это отметка о попадании, а не привлечение внимания.
+
+   Отклик вынесен на псевдоэлемент-кольцо. Раньше здесь стояла анимация
+   pick-pop на самой карточке — то есть на том же узле, где уже работает
+   rise-in из .stagger. При выборе роли менялось animation-name, браузер
+   перезапускал анимацию с нуля, и из-за animation-fill-mode: both карточка
+   на кадр проваливалась в начальный кадр rise-in — в нулевую прозрачность.
+   Выбор роли моргал. У кольца своей анимации появления нет, перезапускать
+   нечего: оно просто расходится и гаснет. */
+@keyframes pick-ring {
+  from {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1.06);
+    opacity: 0;
+  }
+}
+.pick[data-picked="true"] {
+  /* нужен для позиционирования кольца */
+  position: relative;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 45%, transparent);
+}
+.pick[data-picked="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  /* кольцо лежит поверх карточки — нажатие оно перехватывать не должно */
+  pointer-events: none;
+  border: 1px solid var(--color-accent);
+  animation: pick-ring 320ms var(--ease-out) forwards;
+}
+
+/* Точка «с этой ролью уже говорили» проявляется, а не выскакивает */
+@keyframes dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+[data-dot] {
+  animation: dot-in var(--duration-base) var(--ease-out) both;
+}
+
+/* Раскрытие карточки: высота едет от нуля к содержимому.
+   Через grid-template-rows, потому что height: auto не анимируется, а замер
+   высоты скриптом даёт рывок на первом кадре и врёт при смене шрифта. */
+.reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--duration-slow) var(--ease-glass),
+    opacity var(--duration-base) var(--ease-out);
+}
+.reveal[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+/* min-height: 0 обязателен: без него grid-элемент не сжимается ниже контента */
+.reveal__inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Маркер раскрытия у кнопки-переключателя — тот же поворот, что у аккордеонов */
+[aria-expanded="true"] [data-chevron] {
+  transform: rotate(180deg);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Перекладывание разговоров по задачам.
+
+   Перетаскивание должно быть видно всё время, пока оно идёт: взятая строка
+   бледнеет, папки-приёмники просыпаются, та, что под курсором, — заливается.
+   Без этого человек тащит строку в пустоту и не понимает, отпускать или нет.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Строку можно взять: курсор говорит об этом раньше, чем подсказка под списком */
+.talk-row {
+  cursor: grab;
+}
+.talk-row:active {
+  cursor: grabbing;
+}
+.talk-row[data-taken="true"] {
+  opacity: 0.5;
+  /* Строка «уехала» — её место видно, но она больше не спорит за внимание */
+  background: color-mix(in oklab, var(--color-accent) 6%, transparent);
+}
+/* На телефоне перетаскивания нет вовсе — и рука-хваталка там врёт */
+@media (hover: none) {
+  .talk-row,
+  .talk-row:active {
+    cursor: default;
+  }
+}
+
+/* Папка-приёмник. В покое — обычная тихая плашка, чтобы не шуметь на экране */
+.drop-folder {
+  border-color: var(--color-line);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+@media (hover: hover) {
+  .drop-folder:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--color-accent) 40%, var(--color-line));
+  }
+}
+/* Перенос начат: все папки показывают, что готовы принять */
+.drop-folder[data-armed="true"] {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--color-accent) 55%, var(--color-line));
+}
+/* Уронишь сюда: заливка и лёгкий подъём — ответ на «куда именно» */
+.drop-folder[data-over="true"] {
+  border-style: solid;
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  transform: translateY(-1px);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Плоская карточка — материал по умолчанию в кабинете.
+
+   «Жидкое стекло» красиво, но дорого: у .card-flat backdrop-filter на всю
+   площадь, линза по кромке и блик под курсором — три слоя, которые браузер
+   пересчитывает при каждой прокрутке. На экране задачи таких пластин было
+   до одиннадцати, и на дешёвом ноутбуке в переговорке это чувствуется.
+
+   Поэтому стекло стало акцентом: оно осталось там, где несёт смысл, —
+   у документа-героя. Всё остальное — бумага с линией и мягкой тенью.
+   Материал служит содержанию, а не наоборот.
+   ══════════════════════════════════════════════════════════════════════════ */
+@utility card-plain {
+  position: relative;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-hairline);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+@media (hover: hover) {
+  .card-plain:hover {
+    border-color: color-mix(in oklab, var(--color-accent) 22%, var(--color-line));
+    box-shadow: var(--shadow-soft);
+  }
+}
+/* Кликабельная плоская карточка отзывается тем же движением, что стеклянная */
+.card-plain.card-link:hover {
+  border-color: color-mix(in oklab, var(--color-accent) 34%, var(--color-line));
+}
+
+/* Тяжёлое стекло на слабом железе — плоская бумага. Определяет само
+   устройство (useLowPower в bv/core.tsx ставит data-lowpower на <html>). */
+html[data-lowpower="true"] .card-flat {
+  backdrop-filter: none;
+  background: var(--color-surface);
+}
+html[data-lowpower="true"] .card-flat::before,
+html[data-lowpower="true"] .card-flat::after {
+  display: none;
+}
+
+/* Тихая зона: тёмная кнопка внутри неё уступает главному действию экрана.
+   Правило «одна тёмная кнопка на экран» иначе приходится соблюдать вручную
+   в каждом месте, где одна и та же форма показывается в разных контекстах. */
+.quiet-action .btn-primary {
+  background: var(--lg-tint);
+  color: var(--color-text-primary);
+  box-shadow: var(--lg-rim), var(--shadow-soft);
+  --lg-glow: 0.16;
+}
+.quiet-action .btn-primary:hover {
+  background: var(--lg-tint);
+  color: var(--color-text-primary);
+  --lg-glow: 0.5;
+}
+
+/* Строка задачи на стартовой: берётся мышью и принимает другую задачу —
+   как файл и папка в Finder. Отдельного «режима папок» нет: любая задача
+   может сложить в себя другую, поэтому одна и та же строка и груз, и цель. */
+.task-row {
+  cursor: grab;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.task-row:active { cursor: grabbing; }
+.task-row[data-taken="true"] {
+  opacity: 0.5;
+  background: color-mix(in oklab, var(--color-accent) 6%, transparent);
+}
+/* Над этой строкой отпустишь — сюда и ляжет */
+.task-row[data-over="true"] {
+  background: color-mix(in oklab, var(--color-accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--color-accent);
+  border-radius: 10px;
+}
+/* На телефоне перетаскивания нет — рука-хваталка там врёт */
+@media (hover: none) {
+  .task-row,
+  .task-row:active { cursor: default; }
 }

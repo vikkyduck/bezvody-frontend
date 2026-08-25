@@ -56,7 +56,9 @@ function plainText(bytes: Buffer): string {
   }
 }
 
-async function saveFile(
+// export: телеграм-бот принимает документы тем же путём, что и кабинет, —
+// один разбор форматов, одни пределы, никакого второго кода приёма.
+export async function saveFile(
   scope: "window" | "agent",
   ownerId: string,
   name: string,
@@ -230,10 +232,14 @@ export const uploadWindowFileServer = createServerFn({ method: "POST" })
 
     const windows = await d.readWindows(me.id);
     const target = windows.find((w) => w.id === windowId);
-    if (!target) return { ok: false, error: "окно не найдено", windows };
+    if (!target) return { ok: false, error: "разговор не найден", windows };
 
     if (target.files.length >= MAX_WINDOW_FILES) {
-      return { ok: false, error: `в одном окне не больше ${MAX_WINDOW_FILES} документов`, windows };
+      return {
+        ok: false,
+        error: `в одном разговоре не больше ${MAX_WINDOW_FILES} документов`,
+        windows,
+      };
     }
 
     const bad = rejectReason(upload.name, upload.size);
@@ -242,7 +248,7 @@ export const uploadWindowFileServer = createServerFn({ method: "POST" })
     if (tooHeavy(target.files, upload.size, MAX_WINDOW_BYTES)) {
       return {
         ok: false,
-        error: `документы окна весят больше ${humanSize(MAX_WINDOW_BYTES)} — уберите лишние`,
+        error: `документы разговора весят больше ${humanSize(MAX_WINDOW_BYTES)} — уберите лишние`,
         windows,
       };
     }
@@ -295,12 +301,12 @@ export const uploadProjectFileServer = createServerFn({ method: "POST" })
 
     const projects = await d.readProjects(me.id);
     const target = projects.find((p) => p.id === projectId);
-    if (!target) return { ok: false, error: "папка не найдена", projects };
+    if (!target) return { ok: false, error: "задача не найдена", projects };
 
     if (target.files.length >= MAX_WINDOW_FILES) {
       return {
         ok: false,
-        error: `в одну папку не больше ${MAX_WINDOW_FILES} документов`,
+        error: `в одну задачу не больше ${MAX_WINDOW_FILES} документов`,
         projects,
       };
     }
@@ -311,7 +317,7 @@ export const uploadProjectFileServer = createServerFn({ method: "POST" })
     if (tooHeavy(target.files, upload.size, MAX_WINDOW_BYTES)) {
       return {
         ok: false,
-        error: `документы папки весят больше ${humanSize(MAX_WINDOW_BYTES)} — уберите лишние`,
+        error: `документы задачи весят больше ${humanSize(MAX_WINDOW_BYTES)} — уберите лишние`,
         projects,
       };
     }
@@ -528,8 +534,14 @@ export const downloadFileServer = createServerFn({ method: "POST" })
         found = (await readAgentFiles())[data.ownerId]?.find((f) => f.id === data.fileId);
       } else {
         if (me.role !== "admin" && me.id !== data.ownerId) return deny;
-        const windows = await d.readWindows(data.ownerId);
-        found = windows.flatMap((w) => w.files).find((f) => f.id === data.fileId);
+        // Ищем и в задачах, и в разговорах. Документ, положенный в задачу,
+        // числится в проекте, а байты его лежат в той же папке человека
+        // (см. uploadProjectFileServer) — искали бы только по разговорам,
+        // человек не смог бы скачать собственный договор.
+        const { projects, windows } = await d.readWorkspace(data.ownerId);
+        found = [...projects.flatMap((p) => p.files), ...windows.flatMap((w) => w.files)].find(
+          (f) => f.id === data.fileId,
+        );
       }
       if (!found) return deny;
 
@@ -546,18 +558,48 @@ export const downloadFileServer = createServerFn({ method: "POST" })
 
 // ── Сборка для модели ─────────────────────────────────────────────────────────
 /**
+ * Что не поместилось в запрос — именами документов, как их видит человек.
+ *
+ * Приписки «обрезано» в тексте вложения читает только модель. Человеку они
+ * не видны, а решение по разбору принимает он — значит, о недочитанном
+ * документе надо сказать и ему, наверх, в разговор.
+ */
+export type AttachmentsFit = {
+  /** Уехал кусок: агент видел начало документа, но не весь */
+  trimmed: string[];
+  /** Не уехал вовсе: агент этого документа не видел */
+  skipped: string[];
+};
+
+export type AttachmentsResult = {
+  items: Attachment[];
+  fit: AttachmentsFit;
+};
+
+/**
  * Что уедет к агенту вместе с вопросом: сначала его постоянные документы,
  * потом материалы окна. Порядок не случаен — методика идёт до фактуры.
  *
  * Бюджет считаем честно и вслух: если материалы не помещаются в запрос,
  * агенту так и говорим — обрезано. Молча терять половину отчёта нельзя,
  * иначе он сделает вывод по куску и не предупредит об этом.
+ *
+ * Знаковый бюджет здесь — грубый предварительный фильтр, а не последнее слово.
+ * Знаки плохо меряют окно модели: выгрузка из 1С даёт вдвое больше токенов,
+ * чем страница прозы того же объёма. Поэтому наша задача — не пустить в память
+ * заведомо неподъёмный объём, а влезает ли собранное на самом деле, считает
+ * настоящим счётчиком fitForModel (server-llm.ts) уже перед отправкой; он же
+ * дочитывает по частям то, что в один запрос не помещается. Оттого и trimmed
+ * со skipped теперь почти всегда пустые: сюда попадает только то, что не берёт
+ * даже чтение по частям.
+ *
+ * Те же имена возвращаем вызывающему: их показывают человеку в разговоре.
  */
 export async function attachmentsFor(opts: {
   agentId: string;
   personId: string;
   windowFiles: StoredFile[];
-}): Promise<Attachment[]> {
+}): Promise<AttachmentsResult> {
   const agentFiles = (await readAgentFiles())[opts.agentId] ?? [];
 
   // Встроенные документы агента: не файл на диске, а методика из кода. Так у
@@ -598,6 +640,7 @@ export async function attachmentsFor(opts: {
   let textLeft = MAX_TEXT_CHARS;
   let rawLeft = MAX_RAW_BYTES;
   const out: Attachment[] = [...builtIn];
+  const fit: AttachmentsFit = { trimmed: [], skipped: [] };
   for (const a of builtIn) textLeft -= a.text.length;
 
   for (const item of queue) {
@@ -624,15 +667,30 @@ export async function attachmentsFor(opts: {
 
     const loaded = await loadForModel(item.scope, item.ownerId, item.file);
 
-    if (item.file.kind === "pdf" || item.file.kind === "image") {
-      if (!loaded.base64) continue;
+    /**
+     * PDF и картинка едут файлом — но только если файл для модели вообще есть.
+     *
+     * Тяжёлый PDF (больше MAX_PDF_NATIVE_BYTES) мы распознаём в текст ещё при
+     * загрузке, и loadForModel нарочно отдаёт его текстом с пустым base64 —
+     * так и задумано. Раньше здесь стоял безусловный continue, и такой
+     * документ выпадал из запроса целиком: агент писал разбор, ни разу его
+     * не увидев, а в списке файл выглядел принятым, «распознано N знаков».
+     * Теперь текст такого PDF идёт общей дорогой, ниже.
+     */
+    const asFile =
+      Boolean(loaded.base64) && (item.file.kind === "pdf" || item.file.kind === "image");
+
+    if (asFile) {
       if (item.file.size > rawLeft) {
         out.push({
           ...base,
-          text: "(документ не поместился в запрос — уберите лишние файлы из окна)",
+          text: "(документ не поместился в запрос — уберите лишние файлы из разговора)",
           base64: "",
           mime: "",
         });
+        // PDF и картинку режут не по половине — они либо уезжают целиком,
+        // либо не уезжают совсем.
+        fit.skipped.push(item.file.name);
         continue;
       }
       rawLeft -= item.file.size;
@@ -641,7 +699,12 @@ export async function attachmentsFor(opts: {
     }
 
     const text = loaded.text.trim();
-    if (!text) continue;
+    if (!text) {
+      // Ни файла, ни текста: документ пропал с диска или не распознался.
+      // Раньше это был молчаливый пропуск — в списке он выглядел принятым.
+      fit.skipped.push(item.file.name);
+      continue;
+    }
     if (text.length > textLeft) {
       out.push({
         ...base,
@@ -649,6 +712,11 @@ export async function attachmentsFor(opts: {
         base64: "",
         mime: "",
       });
+      // Бюджет мог кончиться ровно на этом документе: тогда уехала приписка
+      // и ни строчки текста. Для человека это разные вещи — «прочитал начало»
+      // и «не видел вовсе», поэтому и говорим по-разному.
+      if (textLeft > 0) fit.trimmed.push(item.file.name);
+      else fit.skipped.push(item.file.name);
       textLeft = 0;
       continue;
     }
@@ -675,7 +743,7 @@ export async function attachmentsFor(opts: {
     }
   }
 
-  return out;
+  return { items: out, fit };
 }
 
 /** Карта полей шаблона словами. Не вышло разобрать — работаем без неё. */
@@ -699,41 +767,44 @@ async function templateBrief(agentId: string, file: StoredFile): Promise<string>
  * таблицами, а не «звёздочками» разметки. Файл не храним: собирается по
  * запросу, значит всегда соответствует тому, что видно на экране.
  */
-export const downloadAnswerServer = createServerFn({ method: "POST" })
-  .validator(
-    (data: { code: string; windowId: string; messageId: string; personId?: string }) => data,
-  )
-  .handler(async ({ data }): Promise<{ ok: boolean; name: string; base64: string }> => {
-    const deny = { ok: false, name: "", base64: "" };
-    const d = await import("./server-data");
-    const { list, me } = await d.whoIs(String(data.code ?? ""));
-    if (!me) return deny;
+/**
+ * Собрать Word-файл ответа БЕЗ проверки сессии.
+ *
+ * Ядро выгрузки, общее для кнопки «Скачать в Word» и доставки готового в
+ * телеграм и почту: документ во всех трёх местах обязан быть одним и тем же.
+ * Прав не проверяет нарочно — они у вызывающих разные (кнопка ходит по коду,
+ * доставка запускается сервером для владельца), а ядро одно.
+ */
+export async function buildAnswerDocx(
+  ownerId: string,
+  windowId: string,
+  messageId: string,
+): Promise<{ ok: boolean; name: string; base64: string }> {
+  const deny = { ok: false, name: "", base64: "" };
+  const d = await import("./server-data");
+  const list = await d.readParticipants();
 
-    // Чужой разбор скачивает только администратор — как и чужую переписку.
-    const wanted = data.personId?.trim();
-    if (wanted && wanted !== me.id && me.role !== "admin") return deny;
-    const ownerId = wanted || me.id;
-
+  {
     const windows = await d.readWindows(ownerId);
-    const w = windows.find((x) => x.id === data.windowId);
+    const w = windows.find((x) => x.id === windowId);
     if (!w) return deny;
 
-    const at = w.messages.findIndex((m) => m.id === data.messageId && m.from === "agent");
+    const at = w.messages.findIndex((m) => m.id === messageId && m.from === "agent");
     const answer = at >= 0 ? w.messages[at] : undefined;
     if (!answer) return deny;
 
-    // Вопрос — ближайшая реплика человека перед этим ответом. Первую реплику
-    // разговора с ролью пишет платформа, и в шапке файла она бесполезна:
-    // вместо неё ставим то, что роль разбирала.
-    const { ROLE_OPENING, ROLE_VERDICT } = await import("./roles");
-    const asked =
-      [...w.messages.slice(0, at)].reverse().find((m) => m.from === "user")?.text || w.title;
-    const question = asked === ROLE_OPENING || asked === ROLE_VERDICT ? w.title : asked;
-
     const owner = list.find((p) => p.id === ownerId);
-    const { agentById } = await import("./shtab-data");
-    // Ответ роли подписан ролью: через месяц «Стейкхолдеры» ни о чём не скажет,
-    // а «Стейкхолдеры · Логистика» — скажет.
+
+    // Документ называется задачей, а не репликой из чата: его пересылают
+    // финдиректору и кладут на стол, и «посмотри, что тут не так» в этой
+    // роли не работает. Название берём из задачи, к которой принадлежит
+    // разговор; у старых разговоров задачи может не быть — тогда заголовок.
+    const projects = await d.readProjects(ownerId);
+    const task = projects.find((p) => p.id === w.projectId)?.title || w.title || "Решение";
+
+    // Вердикт роли — отдельный документ той же задачи, и по одному названию
+    // его не отличить от разбора. Роль здесь не имя бота, а должность из
+    // методики, поэтому в заголовке ей место.
     const { rolesOf, roleById } = await import("./server-agents");
     const cfgAll = await d.readJson<Record<string, Partial<AgentConfig>>>(
       `${d.dataDir()}/agents.json`,
@@ -742,12 +813,11 @@ export const downloadAnswerServer = createServerFn({ method: "POST" })
     const role = answer.roleId
       ? roleById(rolesOf(w.agentId, cfgAll[w.agentId]), answer.roleId)
       : null;
-    const agentName = agentById(w.agentId)?.name ?? "Агент";
+
     const meta = {
-      agent: role ? `${agentName} · ${role.name}` : agentName,
+      task: role ? `${task} — вердикт: ${role.name}` : task,
       person: owner?.name ?? "",
       company: owner?.company ?? "",
-      question,
       date: new Date(answer.at).toLocaleDateString("ru-RU"),
     };
 
@@ -761,8 +831,33 @@ export const downloadAnswerServer = createServerFn({ method: "POST" })
     const file = await answerToDocx(text, meta);
     // Файл с моделью человек кладёт рядом с таблицей Excel — пусть по имени
     // сразу видно, что это записка, а не сама модель.
-    const name = docxFileName(isModel ? { ...meta, question: "Пояснительная записка" } : meta);
+    const name = docxFileName(
+      isModel ? { ...meta, task: `${meta.task} — пояснительная записка` } : meta,
+    );
     return { ok: true, name, base64: file.toString("base64") };
+  }
+}
+
+/**
+ * Готовый разбор — файлом Word по запросу из кабинета.
+ *
+ * Файл не хранится на диске: собирается по запросу, значит всегда совпадает
+ * с тем, что на экране.
+ */
+export const downloadAnswerServer = createServerFn({ method: "POST" })
+  .validator(
+    (data: { code: string; windowId: string; messageId: string; personId?: string }) => data,
+  )
+  .handler(async ({ data }): Promise<{ ok: boolean; name: string; base64: string }> => {
+    const deny = { ok: false, name: "", base64: "" };
+    const d = await import("./server-data");
+    const { me } = await d.whoIs(String(data.code ?? ""));
+    if (!me) return deny;
+
+    // Чужой разбор скачивает только администратор — как и чужую переписку.
+    const wanted = data.personId?.trim();
+    if (wanted && wanted !== me.id && me.role !== "admin") return deny;
+    return buildAnswerDocx(wanted || me.id, data.windowId, data.messageId);
   });
 
 /**

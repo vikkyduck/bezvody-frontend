@@ -24,7 +24,7 @@ export function NavPills({
             key={n.to}
             to={n.to}
             aria-current={active ? "page" : undefined}
-            className={`relative flex-none rounded-[var(--radius-pill)] px-3.5 py-1.5 text-[13px] transition-colors ${
+            className={`ui-meta relative flex-none rounded-[var(--radius-pill)] px-3.5 py-1.5 transition-colors ${
               active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >

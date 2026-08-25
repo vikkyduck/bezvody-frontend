@@ -13,8 +13,8 @@ import { useSession } from "@/lib/session";
 
 /**
  * Чужая переписка глазами администратора — только чтение и только по запросу.
- * Вместе с репликами видно и документы, которые клиент принёс в окно: без них
- * половина разговора непонятна, а скачать их иногда нужно, чтобы разобраться.
+ * Вместе с репликами видно и документы, которые клиент принёс в разговор: без
+ * них половина разговора непонятна, а скачать их иногда нужно, чтобы разобраться.
  *
  * Раздел свёрнут и ничего не грузит, пока его не откроют: в списке участников
  * это одна строка, а не стена текста. Отвечать за клиента отсюда нельзя —
@@ -27,7 +27,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
   const [projects, setProjects] = useState<StoredProject[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  /** Что видел агент в этом окне: документы задачи плюс принесённое сюда. */
+  /** Что видел агент в этом разговоре: документы задачи плюс принесённое сюда. */
   const docsOf = (w: StoredWindow) => [
     ...(projects.find((p) => p.id === w.projectId)?.files ?? []),
     ...w.files,
@@ -52,7 +52,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
 
   return (
     <div>
-      <button onClick={toggle} className="btn btn-ghost text-[12px]">
+      <button onClick={toggle} className="btn btn-ghost ui-meta">
         {state === "open"
           ? "Скрыть переписку"
           : state === "loading"
@@ -76,24 +76,20 @@ export function Conversations({ personId, personName }: { personId: string; pers
                     className="flex w-full flex-wrap items-baseline justify-between gap-3 text-left"
                   >
                     <span className="min-w-0">
-                      <span className="block text-[13.5px] font-medium leading-snug">
-                        {w.title}
-                      </span>
-                      <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
+                      <span className="ui-title block">{w.title}</span>
+                      <span className="ui-meta mt-0.5 block">
                         {agent?.name ?? "агент недоступен"} · сообщений {w.messages.length}
                         {projects.find((p) => p.id === w.projectId)?.title
                           ? ` · задача «${projects.find((p) => p.id === w.projectId)?.title}»`
                           : ""}
                       </span>
                     </span>
-                    <span className="flex-none text-[11.5px] text-muted-foreground">
-                      {shown ? "свернуть" : "открыть"}
-                    </span>
+                    <span className="ui-meta flex-none">{shown ? "свернуть" : "открыть"}</span>
                   </button>
 
-                  {/* Чужой разбор — тоже шесть страниц: читаем его в окне,
-                      иначе одна раскрытая переписка растягивает админку
-                      на десятки тысяч пикселей. */}
+                  {/* Чужой разбор — тоже шесть страниц: читаем его в отдельной
+                      прокрутке, иначе одна раскрытая переписка растягивает
+                      админку на десятки тысяч пикселей. */}
                   {shown ? (
                     <div className="mt-3 max-h-[520px] space-y-2.5 overflow-y-auto border-t border-[color:var(--color-line)] pt-3">
                       {docsOf(w).length ? (
@@ -120,7 +116,10 @@ export function Conversations({ personId, personName }: { personId: string; pers
 
                       {w.messages.length ? (
                         w.messages.map((m) => (
-                          <div key={m.id} className="text-[12.5px] leading-relaxed">
+                          // Реплики набраны наборным кеглем: это переписка,
+                          // которую администратор читает глазами целиком,
+                          // а не подпись под карточкой.
+                          <div key={m.id} className="ui-body">
                             {/* Реплику читают глазами сверху вниз — имя отдельной строкой */}
                             <div className="label-caps">
                               {m.from === "user" ? personName : (agent?.name ?? "Агент")}
@@ -139,7 +138,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
                                       if (r.ok) saveFile(r.name, r.base64, DOCX_MIME);
                                     });
                                   }}
-                                  className="btn btn-glass mt-2 text-[11px]"
+                                  className="btn btn-glass ui-meta mt-2"
                                 >
                                   Скачать в Word
                                 </button>
@@ -148,9 +147,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
                           </div>
                         ))
                       ) : (
-                        <p className="text-[12.5px] text-muted-foreground">
-                          Окно открыли, но не написали ни слова.
-                        </p>
+                        <p className="ui-support">Разговор открыли, но не написали ни слова.</p>
                       )}
                     </div>
                   ) : null}
@@ -159,7 +156,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
             })}
           </div>
         ) : (
-          <p className="mt-3 text-[12.5px] text-muted-foreground">Окон пока нет.</p>
+          <p className="ui-support mt-3">Разговоров пока нет.</p>
         )
       ) : null}
     </div>

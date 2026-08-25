@@ -286,12 +286,20 @@ function blocks(nodes: readonly RootContent[], depth = 0): (Paragraph | Table)[]
  * Если агент не разметил части (старый ответ, свой текст правила) — весь
  * текст идёт документом. Потерять кусок хуже, чем не разделить.
  */
-const headingText = (h: Heading): string =>
-  h.children
-    .map((c) => ("value" in c ? c.value : ""))
-    .join(" ")
-    .trim()
-    .toLowerCase();
+/** Текст заголовка без оформления: «**Документ**» и «Документ» — одно и то же. */
+const flatText = (nodes: readonly PhrasingContent[]): string =>
+  nodes
+    .map((n) =>
+      "value" in n && typeof n.value === "string"
+        ? n.value
+        : "children" in n && Array.isArray(n.children)
+          ? flatText(n.children as PhrasingContent[])
+          : "",
+    )
+    .join("")
+    .trim();
+
+const headingText = (h: Heading): string => flatText(h.children).toLowerCase();
 
 const isReviewHeading = (n: RootContent): boolean =>
   n.type === "heading" && /разбор|вопрос/.test(headingText(n));
@@ -309,26 +317,70 @@ function splitAnswer(all: RootContent[]): { main: RootContent[]; review: RootCon
 
 // ── Документ целиком ──────────────────────────────────────────────────────────
 
+/**
+ * Шапка документа.
+ *
+ * Этот файл несут на совет директоров и пересылают финдиректору, поэтому
+ * выглядеть он должен документом заказчика, а не выгрузкой из чата. Раньше
+ * заголовком стояла дословная реплика человека («посмотри, что тут не так»),
+ * автором — имя агента, а первой строкой — бренд подрядчика; всё это
+ * приходилось вычищать руками, то есть делать работу, за которую заплачено.
+ */
 export type DocxMeta = {
-  /** Имя агента — он автор разбора */
-  agent: string;
-  /** Кому он его написал */
+  /** Название задачи — им и озаглавлен документ */
+  task: string;
+  /** Чей это документ: его имя стоит автором */
   person: string;
   company: string;
-  /** Вопрос, с которого всё началось */
-  question: string;
   date: string;
 };
 
-export async function answerToDocx(markdown: string, meta: DocxMeta): Promise<Buffer> {
+/** Разметка в дерево. Разбираем ровно тем же способом, что и экран. */
+async function parse(markdown: string): Promise<Root> {
   const { fromMarkdown } = await import("mdast-util-from-markdown");
   const { gfm } = await import("micromark-extension-gfm");
   const { gfmFromMarkdown } = await import("mdast-util-gfm");
 
-  const tree = fromMarkdown(markdown, {
+  return fromMarkdown(markdown, {
     extensions: [gfm()],
     mdastExtensions: [gfmFromMarkdown()],
   }) as Root;
+}
+
+/** Строка-пояснение мелким серым: она объясняет, а не читается наравне с текстом. */
+const aside = (text: string) =>
+  new Paragraph({
+    children: [new TextRun({ text, italics: true, color: MUTED, size: 19 })],
+    spacing: { after: 200 },
+  });
+
+const REVIEW_ASIDE =
+  "Эта часть — автору документа, а не согласующим: что в фактуре сильное и слабое, чем закрыть пустые графы. Перед отправкой её можно убрать.";
+
+/**
+ * Титул документа: название задачи, под ним автор и дата. Вопроса из чата
+ * в шапке нет — он относится к переписке, а не к документу.
+ */
+const titleBlocks = (meta: DocxMeta): (Paragraph | Table)[] => [
+  new Paragraph({
+    children: [new TextRun({ text: meta.task, bold: true, size: 34 })],
+    spacing: { after: 100 },
+  }),
+  new Paragraph({
+    children: [
+      new TextRun({
+        text: [meta.person, meta.company, meta.date].filter(Boolean).join(" · "),
+        color: MUTED,
+        size: 19,
+      }),
+    ],
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: LINE, space: 10 } },
+    spacing: { after: 300 },
+  }),
+];
+
+export async function answerToDocx(markdown: string, meta: DocxMeta): Promise<Buffer> {
+  const tree = await parse(markdown);
 
   const { main, review } = splitAnswer(tree.children);
   const body = blocks(main);
@@ -340,85 +392,51 @@ export async function answerToDocx(markdown: string, meta: DocxMeta): Promise<Bu
           heading: HeadingLevel.HEADING_1,
           children: [new TextRun({ text: "Приложение. Разбор и вопросы", bold: true })],
         }),
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: "Эта часть — автору документа, а не согласующим: что в фактуре сильное и слабое, чем закрыть пустые графы. Перед отправкой её можно убрать.",
-              italics: true,
-              color: MUTED,
-              size: 19,
-            }),
-          ],
-          spacing: { after: 200 },
-        }),
+        aside(REVIEW_ASIDE),
         ...blocks(review),
       ]
     : [];
 
-  const head: (Paragraph | Table)[] = [
-    new Paragraph({
-      children: [
-        new TextRun({
-          text: `Платформа «Без Воды» · ${meta.agent}`,
-          color: MUTED,
-          size: 18,
-          characterSpacing: 20,
-        }),
-      ],
-      spacing: { after: 80 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: shorten(meta.question, 110), bold: true, size: 34 })],
-      spacing: { after: 100 },
-    }),
-    new Paragraph({
-      children: [
-        new TextRun({
-          text: [meta.person, meta.company, meta.date].filter(Boolean).join(" · "),
-          color: MUTED,
-          size: 19,
-        }),
-      ],
-      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: LINE, space: 10 } },
-      spacing: { after: 260 },
-    }),
-    new Paragraph({
-      children: [
-        new TextRun({ text: "Вопрос", bold: true, size: 18, color: MUTED, characterSpacing: 20 }),
-      ],
-      spacing: { after: 60 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: meta.question, italics: true, color: "3B3B3B" })],
-      indent: { left: 240 },
-      border: { left: { style: BorderStyle.SINGLE, size: 6, color: LINE, space: 12 } },
-      spacing: { after: 280 },
-    }),
-  ];
+  return pack(meta, [...titleBlocks(meta), ...body, ...appendix]);
+}
 
+/** Поля, колонцифра, стили — одинаковые у одиночного ответа и у сборки. */
+async function pack(meta: DocxMeta, children: (Paragraph | Table)[]): Promise<Buffer> {
   const section: ISectionOptions = {
     properties: {
       page: { margin: { top: 1134, bottom: 1134, left: 1134, right: 1134 } },
     },
     footers: {
+      // Колонцифра подписана задачей и датой: по ним документ узнают через
+      // месяц на столе. Имени агента и названия платформы здесь нет — документ
+      // принадлежит тому, кто его несёт.
       default: new Footer({
         children: [
           new Paragraph({
             alignment: AlignmentType.CENTER,
             children: [
-              new TextRun({ text: `${meta.agent} · ${meta.date} · `, color: MUTED, size: 16 }),
+              new TextRun({
+                text: `${shorten(meta.task, 70)} · ${meta.date} · `,
+                color: MUTED,
+                size: 16,
+              }),
               new TextRun({ children: [PageNumber.CURRENT], color: MUTED, size: 16 }),
             ],
           }),
         ],
       }),
     },
-    children: [...head, ...body, ...appendix],
+    children,
   };
 
   const doc = new Document({
-    creator: `Платформа «Без Воды» · ${meta.agent}`,
-    title: shorten(meta.question, 110),
+    // Свойства файла Word видны в проводнике и в Google Документах. Автор —
+    // человек: он этот документ защищает и им подписывается.
+    creator: meta.person || "Автор",
+    // Без этого библиотека пишет «Un-named» — видно в свойствах файла у того,
+    // кому документ переслали.
+    lastModifiedBy: meta.person || "Автор",
+    title: meta.task,
     styles: {
       default: {
         document: {
@@ -449,16 +467,137 @@ export async function answerToDocx(markdown: string, meta: DocxMeta): Promise<Bu
   return Buffer.from(await Packer.toBuffer(doc));
 }
 
+// ── Несколько ответов одним документом ────────────────────────────────────────
+/**
+ * Собранное решение.
+ *
+ * За неделю по одной задаче набирается решение архитектора, вердикты
+ * согласующих и записка счетовода — и человек сшивает их в Word руками, то
+ * есть делает ровно ту работу, ради избавления от которой платил. Здесь то же
+ * самое делает платформа: оглавление, части по порядку, разборы — приложениями
+ * в конце, чтобы их было легко отрезать перед отправкой.
+ *
+ * Части приезжают уже названными: кто и в каком порядке вошёл в документ —
+ * решает человек, а не этот файл. Здесь только вёрстка.
+ */
+export type AssembledPart = {
+  /** Название части: строка оглавления и заголовок в тексте */
+  title: string;
+  /** Ответ агента целиком — «Разбор и вопросы» отделим сами */
+  markdown: string;
+};
+
+export async function assembledToDocx(
+  parts: readonly AssembledPart[],
+  meta: DocxMeta,
+): Promise<Buffer> {
+  const pieces: { title: string; main: RootContent[]; review: RootContent[] }[] = [];
+  for (const part of parts) {
+    const { main, review } = splitAnswer((await parse(part.markdown)).children);
+    // Свой заголовок части мы печатаем сами; если ответ начинается ровно с
+    // него — второй раз он не нужен.
+    const first = main[0];
+    const same =
+      first && first.type === "heading" && headingText(first) === part.title.toLowerCase();
+    pieces.push({ title: part.title, main: same ? main.slice(1) : main, review });
+  }
+
+  const withReview = pieces.filter((p) => p.review.length);
+
+  /**
+   * Оглавление — списком, а не полем Word.
+   *
+   * Настоящее поле оглавления Word показывает пустым, пока читатель не
+   * согласится «обновить поля», а половина тех, кому документ перешлют,
+   * откроет его в почте или на телефоне и увидит пустую страницу. Список
+   * названий виден всегда и печатается как есть.
+   */
+  const toc: (Paragraph | Table)[] = [
+    new Paragraph({
+      heading: HeadingLevel.HEADING_2,
+      children: [new TextRun({ text: "Оглавление", bold: true })],
+    }),
+    ...pieces.map(
+      (p, i) =>
+        new Paragraph({
+          children: [run(`${i + 1}. `, {}), run(p.title, {})],
+          indent: { left: 360, hanging: 260 },
+          spacing: { before: 40, after: 40 },
+        }),
+    ),
+    ...(withReview.length
+      ? [
+          new Paragraph({
+            children: [run("Приложения. Разбор и вопросы", { italics: true })],
+            indent: { left: 360, hanging: 260 },
+            spacing: { before: 40, after: 40 },
+          }),
+        ]
+      : []),
+  ];
+
+  const body = pieces.flatMap((p) => [
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      children: [new TextRun({ text: p.title, bold: true })],
+    }),
+    ...blocks(p.main),
+  ]);
+
+  const appendix: (Paragraph | Table)[] = withReview.length
+    ? [
+        new Paragraph({ children: [new PageBreak()] }),
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun({ text: "Приложения. Разбор и вопросы", bold: true })],
+        }),
+        aside(REVIEW_ASIDE),
+        // Каждый разбор подписан своей частью: иначе через неделю не понять,
+        // к чему относится вопрос про «пустую графу в третьей таблице».
+        ...withReview.flatMap((p) => [
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({ text: `К части «${p.title}»`, bold: true })],
+          }),
+          ...blocks(p.review),
+        ]),
+      ]
+    : [];
+
+  return pack(meta, [...titleBlocks(meta), ...toc, ...body, ...appendix]);
+}
+
+/**
+ * Первый осмысленный заголовок ответа — им подписывают часть в оглавлении.
+ *
+ * «Документ» и «Разбор и вопросы» пропускаем: это служебные части ответа,
+ * они одинаковы у всех и в оглавлении ничего не различают.
+ */
+export async function firstHeadingOf(markdown: string): Promise<string> {
+  for (const node of (await parse(markdown)).children) {
+    if (node.type !== "heading") continue;
+    if (isDocumentHeading(node) || isReviewHeading(node)) continue;
+    const text = flatText(node.children);
+    if (text) return text;
+  }
+  return "";
+}
+
 const shorten = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
 
-/** Имя файла: по нему документ ищут в папке «Загрузки» через неделю. */
+/**
+ * Имя файла: по нему документ ищут в папке «Загрузки» через неделю и по нему
+ * же его находят в почте у того, кому переслали. Поэтому — название задачи
+ * и дата, без имени агента: «Никита — посмотри, что тут не так….docx»
+ * пересылать неловко.
+ */
 export function docxFileName(meta: DocxMeta): string {
   const base = shorten(
-    meta.question
+    meta.task
       .replace(/[\\/:*?"<>|\n\r\t]/g, " ")
       .replace(/\s+/g, " ")
       .trim(),
-    60,
+    70,
   );
-  return `${meta.agent} — ${base || "разбор"} — ${meta.date}.docx`;
+  return `${base || "Решение"} — ${meta.date}.docx`;
 }
