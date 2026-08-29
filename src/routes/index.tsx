@@ -2,6 +2,7 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell, PageHead, type Crumb } from "@/components/AppShell";
+import { Landing } from "@/components/Landing";
 import { Attachments } from "@/components/Attachments";
 import { Checklist } from "@/components/Checklist";
 import { Markdown } from "@/components/Markdown";
@@ -47,13 +48,36 @@ export const Route = createFileRoute("/")({
   }),
   head: () => ({
     meta: [
-      { title: "Кабинет — платформа «Без Воды»" },
-      { name: "description", content: "Выберите агента и работайте над своей задачей." },
-      { name: "robots", content: "noindex" },
+      { title: "NOWATER.TECH — управленческие решения на ИИ-агентах" },
+      {
+        name: "description",
+        content:
+          "Агенты собирают данные, проверяют источники и спорят с выводами, готовя документ к защите. Первая выдача на пятый день.",
+      },
+      { property: "og:title", content: "NOWATER.TECH — управленческие решения на ИИ-агентах" },
+      {
+        property: "og:description",
+        content:
+          "Платформа подготовки управленческих решений: агенты, методолог, руководитель. Первая выдача на пятый день.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: Workspace,
+  component: Home,
 });
+
+/**
+ * Корень сайта — витрина для гостя и кабинет для вошедшего. Раньше «/» сразу
+ * выбрасывал на форму входа, и о платформе снаружи узнать было неоткуда.
+ */
+function Home() {
+  const { role, ready } = useSession();
+  // До чтения сессии показываем лендинг: он одинаково уместен и как первый
+  // кадр для гостя, и как заставка на те доли секунды для своего.
+  if (!ready || !role) return <Landing />;
+  return <Workspace />;
+}
 
 function Workspace() {
   const { projects, windows } = useWindows();
@@ -71,7 +95,7 @@ function Workspace() {
   if (talk) crumbs.push({ label: talk.title });
 
   return (
-    <AppShell allow={["client"]} crumbs={crumbs}>
+    <AppShell allow={["client", "admin"]} crumbs={crumbs}>
       <Body />
     </AppShell>
   );
@@ -116,9 +140,6 @@ function Body() {
     return (
       <div className="card-plain mx-auto mt-10 max-w-[520px] px-6 py-8 text-center">
         <h1 className="ui-h2">Не удалось загрузить ваши задачи</h1>
-        <p className="ui-body measure mx-auto mt-2 text-muted-foreground">
-          Связь прервалась. Всё на месте — задачи и документы лежат на сервере.
-        </p>
         <button onClick={reload} className="btn btn-primary ui-body mt-5">
           Попробовать снова
         </button>
@@ -149,137 +170,121 @@ function Body() {
  * состав команды и что унесёт, до того как его просят придумать название.
  * Внутри задачи те же карточки становятся кнопками.
  */
+/** Порядок работы: собрать → отчелленджить → посчитать. Остальные — по надобности. */
+const STEP_ORDER = ["architect", "stakeholders", "accountant"];
+
 function Team({
   mine,
   onPick,
   started,
-  managerHint,
   compact = false,
   path,
 }: {
   mine: Agent[];
   onPick?: (agentId: string) => void;
-  /** Завести второй разговор с тем же агентом — по умолчанию карточка продолжает начатый */
-  /** С кем разговор уже идёт: тогда карточка обещает продолжить, а не открыть заново */
+  /** С кем разговор уже идёт: карточка обещает продолжить, а не открыть заново */
   started?: Set<string>;
-  managerHint: boolean;
-  /**
-   * Короткие карточки в один ряд. Внутри задачи описание команды человек уже
-   * читал на первом экране, а вот сама возможность позвать агента должна быть
-   * видна без прокрутки: развёрнутые карточки уводили её под документы.
-   */
+  /** Плотная раскладка внутри задачи: четыре карточки в ряд */
   compact?: boolean;
-  /**
-   * Дорожка вместо меню. У методологии есть естественный порядок — собрать
-   * решение, защитить его перед согласующими, свести цифры, — и продукт
-   * ведёт по нему, а не перекладывает выбор на человека. Кто хочет, идёт
-   * вразнобой: карточки остаются кнопками.
-   */
+  /** Пройденные шаги и текущее место в дорожке */
   path?: { order: string[]; done: Set<string> };
 }) {
   if (!mine.length) {
     return (
       <div className="card-plain px-5 py-5">
         <div className="ui-title">Агентов вам ещё не открыли</div>
-        <p className="ui-body measure mt-1.5 text-muted-foreground">
-          {managerHint
-            ? "Доступ открывает ваш менеджер — тот, кто передал вам код. Напишите ему, и команда появится здесь."
-            : "Как только доступ откроют, команда появится здесь."}
-        </p>
       </div>
     );
   }
 
-  // Порядок дорожки: шаги сначала, остальные (Нейросовет) — после.
-  const ordered = path
-    ? [...mine].sort((a, b) => {
-        const ai = path.order.indexOf(a.id);
-        const bi = path.order.indexOf(b.id);
-        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
-      })
-    : mine;
-  const hereId = path ? path.order.find((id) => !path.done.has(id)) : undefined;
+  // Дорожка одинакова везде: и на первом экране, и внутри задачи. Человек
+  // видит один и тот же порядок, поэтому не гадает, с кого начинать.
+  const order = path?.order ?? STEP_ORDER;
+  const done = path?.done ?? new Set<string>();
+  const ordered = [...mine].sort((a, b) => {
+    const ai = order.indexOf(a.id);
+    const bi = order.indexOf(b.id);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
+  const hereId = order.find((id) => ordered.some((a) => a.id === id) && !done.has(id));
 
   return (
-    <div
-      className={`stagger grid gap-3 ${compact ? "sm:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-2"}`}
+    <ol
+      className={`stagger grid gap-3 sm:grid-cols-2 ${
+        compact ? "lg:grid-cols-4" : "lg:grid-cols-3"
+      }`}
     >
       {ordered.map((a) => {
-        const stepAt = path ? path.order.indexOf(a.id) : -1;
-        const stepState = !path
-          ? null
-          : stepAt < 0
-            ? "при разногласиях"
-            : path.done.has(a.id)
-              ? "пройден"
-              : a.id === hereId
-                ? "вы здесь"
-                : "впереди";
-        const inner = compact ? (
-          <>
-            {path ? (
-              <span className="mb-1.5 flex items-baseline justify-between gap-2">
-                <span className="label-caps text-[color:var(--color-accent)]">
-                  {stepAt >= 0 ? `Шаг ${stepAt + 1}` : "Кстати"}
-                </span>
-                <span
-                  className={`ui-meta ${
-                    stepState === "вы здесь"
-                      ? "font-semibold"
-                      : stepState === "пройден"
-                        ? "text-[color:var(--color-success)]"
-                        : "text-muted-foreground"
-                  }`}
-                >
-                  {stepState}
-                </span>
-              </span>
-            ) : null}
-            <span className="ui-title block leading-snug">{a.name}</span>
-            <span className="ui-meta mt-0.5 block flex-1 text-muted-foreground">{a.role}</span>
-          </>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="ui-title">{a.name}</span>
-              <span className="ui-meta text-muted-foreground">{a.role}</span>
-            </div>
-            <p className="ui-body mt-2 flex-1">{a.result}</p>
-            <p className="ui-support mt-2 text-muted-foreground">Принесите: {a.needs}</p>
-          </>
-        );
+        const stepAt = order.indexOf(a.id);
+        const isStep = stepAt >= 0;
+        const state = !isStep
+          ? "по надобности"
+          : done.has(a.id)
+            ? "готово"
+            : a.id === hereId
+              ? "вы здесь"
+              : "дальше";
+        const here = state === "вы здесь";
         const going = Boolean(started?.has(a.id));
-        // Карточка — единый предмет: действие внутри, высота одна на весь ряд.
-        // Болтавшаяся под карточкой кнопка «Начать новый разговор» делала ряд
-        // рваным — она переехала в сам разговор, где это действие и совершают.
-        return onPick ? (
-          <button
-            key={a.id}
-            onClick={() => onPick(a.id)}
-            title={compact ? `${a.result}. Принесите: ${a.needs}` : undefined}
-            className={`card-plain card-link flex h-full flex-col text-left ${
-              compact ? "px-4 py-4" : "px-5 py-5"
-            }`}
-          >
-            {inner}
-            <span
-              className={`mt-3 flex items-center gap-1.5 font-semibold ${
-                compact ? "ui-meta" : "ui-body mt-4"
-              }`}
-            >
-              {going ? "Продолжить" : "Открыть разговор"}
-              <span data-arrow aria-hidden>
-                →
+
+        const inner = (
+          <>
+            <span className="flex items-center justify-between gap-3">
+              <span
+                className={`text-[11px] font-bold tabular-nums tracking-[0.18em] ${
+                  here ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                {isStep ? `0${stepAt + 1}` : "—"}
+              </span>
+              <span
+                className={`text-[10px] font-bold uppercase tracking-[0.16em] ${
+                  state === "готово"
+                    ? "text-[color:var(--color-success)]"
+                    : here
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                }`}
+              >
+                {state}
               </span>
             </span>
-          </button>
-        ) : (
-          <div key={a.id} className="card-plain flex h-full flex-col px-5 py-5">
-            {inner}
-          </div>
+
+            <span className="mt-6 block text-[1.35rem] font-normal leading-tight tracking-[-0.01em]">
+              {a.name}
+            </span>
+            <span className="mt-1.5 block flex-1 text-[13px] leading-snug text-muted-foreground">
+              {a.role}
+            </span>
+          </>
+        );
+
+        const base = `relative flex h-full flex-col border border-[color:var(--color-line)] px-6 py-7 text-left ${
+          here ? "shadow-[inset_2px_0_0_0_var(--color-text-primary)]" : ""
+        }`;
+
+        return (
+          <li key={a.id} className="contents">
+            {onPick ? (
+              <button
+                onClick={() => onPick(a.id)}
+                className={`${base} card-link transition-colors hover:bg-[color:color-mix(in_oklab,var(--color-text-primary)_5%,transparent)]`}
+              >
+                {inner}
+                <span className="mt-6 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em]">
+                  {going ? "Продолжить" : "Начать"}
+                  <span data-arrow aria-hidden>
+                    →
+                  </span>
+                </span>
+              </button>
+            ) : (
+              <div className={base}>{inner}</div>
+            )}
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 
@@ -318,7 +323,7 @@ function Start({
     const res = await mergeProject(fromId, toId);
     setMerged(
       res.ok
-        ? `«${from.title}» сложена в «${to.title}» — разговоры и документы теперь там.`
+        ? `«${from.title}» сложена в «${to.title}»`
         : "Сложить не получилось. Попробуйте ещё раз.",
     );
   }
@@ -400,19 +405,19 @@ function Start({
         e.preventDefault();
         void create();
       }}
-      className="flex flex-wrap items-center gap-2.5"
+      className="flex flex-wrap items-end gap-5"
     >
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Например: тариф M-сегмента"
         aria-label="Над чем работаем"
-        className="ui-body min-w-[240px] flex-1 rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-2.5 outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+        className="min-w-[240px] flex-1 border-0 border-b border-[color:var(--color-line)] bg-transparent pb-3 text-lg outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-[color:var(--color-text-primary)]"
       />
       <button
         type="submit"
         disabled={!title.trim() || busy}
-        className="btn btn-primary ui-body disabled:opacity-40"
+        className="bg-foreground px-7 py-3.5 text-[10px] font-bold uppercase tracking-[0.2em] text-background transition-opacity hover:opacity-80 disabled:opacity-30"
       >
         {busy ? "Завожу" : "Завести задачу"}
       </button>
@@ -437,9 +442,11 @@ function Start({
 
   const tasks = (
     <section>
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="ui-h2">Ваши задачи</h2>
-        <span className="ui-meta text-muted-foreground">
+      <div className="mb-7 flex flex-wrap items-baseline justify-between gap-3 border-b border-[color:var(--color-line)] pb-4">
+        <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+          Ваши задачи
+        </h2>
+        <span className="text-[12px] font-medium tabular-nums text-muted-foreground">
           {projects.filter(isProjectOpen).length}
           {closed.length ? ` · законченных ${closed.length}` : ""}
         </span>
@@ -460,7 +467,7 @@ function Start({
         <p className="ui-body text-muted-foreground">Загружаю ваши задачи…</p>
       ) : !found.length ? (
         <p className="ui-body text-muted-foreground">
-          {needle ? `По запросу «${query.trim()}» ничего не нашлось.` : "Задач пока нет."}
+          {needle ? `По запросу «${query.trim()}» ничего не нашлось` : "Задач пока нет"}
         </p>
       ) : (
         <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
@@ -506,11 +513,13 @@ function Start({
                   search={{ z: p.id }}
                   // Ссылку браузер тащит сам и унёс бы адрес вместо строки.
                   draggable={false}
-                  className="flex w-full flex-wrap items-baseline justify-between gap-3 py-4 text-left"
+                  className="flex w-full flex-wrap items-baseline justify-between gap-3 py-7 text-left"
                 >
                   <span className="min-w-0">
-                    <span className="ui-title block leading-snug">{p.title}</span>
-                    <span className="ui-meta mt-1 block text-muted-foreground">
+                    <span className="block text-2xl font-normal leading-tight tracking-[-0.01em] sm:text-[1.75rem]">
+                      {p.title}
+                    </span>
+                    <span className="mt-2 block text-[12px] uppercase tracking-[0.14em] text-muted-foreground">
                       {last
                         ? `${agentById(last.agentId)?.name ?? "агент"} · ${when(last.updatedAt)}`
                         : p.files.length
@@ -568,8 +577,12 @@ function Start({
 
   const team = (
     <section>
-      <h2 className="ui-h2 mb-1">Ваша команда</h2>
-      <Team mine={mine} managerHint />
+      <div className="mb-6 flex flex-wrap items-baseline justify-between gap-3 border-b border-[color:var(--color-line)] pb-4">
+        <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+          Как идёт работа
+        </h2>
+      </div>
+      <Team mine={mine} />
     </section>
   );
 
@@ -577,43 +590,40 @@ function Start({
   if (firstTime) {
     return (
       <>
-        <PageHead
-          eyebrow="Ваш кабинет"
-          title="С чего начнём"
-          lead="Принесите документы — команда соберёт решение, которое можно нести на защиту."
-        />
-        <section className="card-plain px-6 py-6">
-          <h2 className="ui-title">Принесите любой рабочий документ</h2>
-          <p className="ui-support measure mt-1 mb-4 text-muted-foreground">
-            Отчёт, финмодель, черновик — что угодно. Задача заведётся сама, и команда сразу
-            возьмётся за документ.
-          </p>
+        <PageHead eyebrow="Кабинет заказчика" title="С чего начнём" />
+        <section className="grid gap-10 border-b border-[color:var(--color-line)] pb-16 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div>
+            <h2
+              className="max-w-[14ch] font-normal leading-[1.02] tracking-[-0.01em]"
+              style={{ fontSize: "clamp(1.75rem, 3.2vw, 2.75rem)" }}
+            >
+              Принесите любой рабочий документ
+            </h2>
+          </div>
           <input
             ref={demoPicker}
             type="file"
             hidden
             onChange={(e) => void startWithFile(e.target.files?.[0] ?? null)}
           />
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => demoPicker.current?.click()}
-              disabled={busy}
-              className="btn btn-primary ui-body disabled:opacity-40"
-            >
-              {busy ? "Завожу задачу" : "Принести документ"}
-            </button>
-          </div>
+          <button
+            onClick={() => demoPicker.current?.click()}
+            disabled={busy}
+            className="justify-self-start bg-foreground px-9 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-background transition-opacity hover:opacity-80 disabled:opacity-30"
+          >
+            {busy ? "Завожу задачу" : "Принести документ"}
+          </button>
           {error ? (
-            <p className="ui-support mt-3 text-[color:var(--color-error)]">{error}</p>
+            <p className="text-[13px] text-[color:var(--color-error)] md:col-span-2">{error}</p>
           ) : null}
         </section>
 
-        <div className="mt-10">{team}</div>
+        <div className="mt-20">{team}</div>
 
-        {/* Тёмная кнопка на этом экране одна — «Принести документ».
-            Путь через название остаётся, но не спорит с главным. */}
-        <section className="quiet-action mt-10 border-t border-[color:var(--color-line)] pt-6">
-          <h2 className="ui-title mb-3">Или начните с названия</h2>
+        <section className="mt-20 border-t border-[color:var(--color-line)] pt-10">
+          <h2 className="mb-6 text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+            Или начните с названия
+          </h2>
           {form}
         </section>
       </>
@@ -623,14 +633,14 @@ function Start({
   // Вернувшемуся: сверху его работа, заведение — одной строкой.
   return (
     <>
-      <PageHead eyebrow="Ваш кабинет" title="Над чем работаем" />
-      <section className="card-plain mb-10 px-5 py-4">
+      <PageHead eyebrow="Кабинет заказчика" title="Над чем работаем" />
+      <section className="mb-16">
         {form}
-        {error ? <p className="ui-support mt-2 text-[color:var(--color-error)]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13px] text-[color:var(--color-error)]">{error}</p> : null}
       </section>
       {tasks}
-      <div className="mt-12">{team}</div>
-      <div className="mt-12">
+      <div className="mt-20">{team}</div>
+      <div className="mt-20">
         <Delivery />
       </div>
     </>
@@ -865,17 +875,16 @@ function Project({
 
       <div className="mt-7">
         <section className="mb-11">
-          <h2 className="ui-h2 mb-1">Путь решения</h2>
-          {project.files.length ? null : (
-            <p className="ui-support measure mb-4 text-muted-foreground">
-              Без документов агент разбирает с ваших слов — принести можно ниже.
-            </p>
-          )}
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-[color:var(--color-line)] pb-4">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+              Путь решения
+            </h2>
+          </div>
+
           <Team
             mine={mine}
             onPick={(id) => void openAgent(id)}
             started={new Set(windows.map((w) => w.agentId))}
-            managerHint
             compact
             path={{
               order: ["architect", "stakeholders", "accountant"],
@@ -913,7 +922,6 @@ function Project({
           и агенты уезжали под него — человек их просто не находил. */}
       <section className="mb-11">
         <h2 className="ui-h2 mb-1">Документы задачи</h2>
-        <p className="ui-support measure mb-4 text-muted-foreground">Видны всем агентам задачи.</p>
         <Attachments
           files={project.files}
           max={MAX_WINDOW_FILES}
@@ -921,7 +929,7 @@ function Project({
           onRemove={(fileId) => detachFromProject(project.id, fileId)}
           onDownload={download}
           onGoogle={toDrive}
-          empty="Пока пусто."
+          empty="Пока пусто"
         />
       </section>
 
@@ -935,7 +943,6 @@ function Project({
         >
           {isProjectOpen(project) ? "Закончить задачу" : "Вернуть в работу"}
         </button>
-        <span className="ui-support text-muted-foreground"></span>
       </section>
 
       {/* Разрушительное — внизу экрана и в стороне от рабочих кнопок */}
@@ -943,7 +950,7 @@ function Project({
         {confirmDelete ? (
           <div className="flex flex-wrap items-center gap-3">
             <span className="ui-support measure text-muted-foreground">
-              Сотрётся вся задача: {countLine(project, windows)}. Вернуть будет нельзя.
+              Сотрётся вся задача: {countLine(project, windows)}
             </span>
             <button
               onClick={() => {
@@ -1010,7 +1017,7 @@ function Talks({
       setPicked("");
       setSaid(
         res.ok
-          ? `Разговор перенесён в «${to.title}» — теперь он читает её документы.`
+          ? `Разговор перенесён в «${to.title}»`
           : "Перенести не удалось. Проверьте связь и попробуйте ещё раз.",
       );
     } finally {
@@ -1146,7 +1153,7 @@ function Assemble({
       const res = await assembleServer({ data: { code, projectId: project.id, parts: chosen } });
       if (res.ok) {
         saveFile(res.name, res.base64, DOCX_MIME);
-        setSaid(res.note || "Готово — документ скачан.");
+        setSaid(res.note || "Готово — документ скачан");
         onDone();
       } else {
         setSaid(res.note || "Собрать не удалось. Попробуйте ещё раз.");
@@ -1161,9 +1168,6 @@ function Assemble({
   return (
     <div className="card-plain mb-4 px-5 py-5">
       <div className="ui-title">Что войдёт в документ</div>
-      <p className="ui-support measure mt-1 mb-3.5 text-muted-foreground">
-        Один файл с оглавлением; разборы и вопросы уйдут приложением в конец.
-      </p>
       <ul className="space-y-1.5">
         {usable.map((p) => {
           const on = picked.includes(p.doc.id);
@@ -1455,9 +1459,7 @@ function Conversation({ window: w, project }: { window: StoredWindow; project: S
                 role ? (
                   <>
                     <p className="ui-body measure text-muted-foreground">
-                      {seen.length
-                        ? `«${role.name}» ещё не читал документ.`
-                        : `Принесите документ в задачу — роль начнёт с него.`}
+                      {seen.length ? `«${role.name}» ещё не читал документ` : `Принесите документ`}
                     </p>
                     <button
                       onClick={() => void send(w.id, "", { roleId: role.id, kind: "open" })}
@@ -1468,13 +1470,11 @@ function Conversation({ window: w, project }: { window: StoredWindow; project: S
                     </button>
                   </>
                 ) : (
-                  <p className="ui-body measure text-muted-foreground">
-                    Выберите роль выше — она прочитает документы и начнёт разговор.
-                  </p>
+                  <p className="ui-body measure text-muted-foreground">Выберите роль</p>
                 )
               ) : (
                 <p className="ui-body measure text-muted-foreground">
-                  {agent ? agent.result : "Опишите задачу своими словами."}
+                  {agent ? agent.result : "Опишите задачу своими словами"}
                 </p>
               )}
             </div>
@@ -1624,7 +1624,7 @@ function Conversation({ window: w, project }: { window: StoredWindow; project: S
             })}
           </ul>
         ) : (
-          <p className="ui-body text-muted-foreground">Пока пусто.</p>
+          <p className="ui-body text-muted-foreground">Пока пусто</p>
         )}
       </section>
 
@@ -1637,7 +1637,6 @@ function Conversation({ window: w, project }: { window: StoredWindow; project: S
               {w.docs.length
                 ? `, ${w.docs.length} ${word(w.docs.length, "готовый документ", "готовых документа", "готовых документов")}`
                 : ""}
-              . Документы задачи останутся на месте.
             </span>
             <button
               onClick={() => {
@@ -1709,9 +1708,6 @@ function FromProject({
   return (
     <section className="mt-10">
       <h2 className="ui-h2 mb-1">Взять из задачи</h2>
-      <p className="ui-support measure mb-4 text-muted-foreground">
-        Агент прочитает разбор целиком.
-      </p>
 
       {offers.length ? (
         <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
@@ -1738,7 +1734,7 @@ function FromProject({
           ))}
         </ul>
       ) : (
-        <p className="ui-body text-muted-foreground">Пока пусто.</p>
+        <p className="ui-body text-muted-foreground">Пока пусто</p>
       )}
 
       {error ? <p className="ui-support mt-2 text-[color:var(--color-error)]">{error}</p> : null}
@@ -1871,7 +1867,7 @@ function Panel({
     setSaid("");
     try {
       const res = await runPanel(w.id);
-      setSaid(res.note || (res.ok ? "Прогон пошёл." : ""));
+      setSaid(res.note || (res.ok ? "Прогон пошёл" : ""));
       if (res.ok)
         setRun({
           running: true,
@@ -1890,10 +1886,6 @@ function Panel({
     return (
       <section className="card-plain mb-4 px-5 py-5">
         <h2 className="ui-title">Кто будет согласовывать</h2>
-        <p className="ui-support measure mt-1 mb-4 text-muted-foreground">
-          Отметьте тех, через кого решение пойдёт на самом деле, — документ прогонится по всем
-          разом.
-        </p>
         <div className="grid gap-2 sm:grid-cols-2">
           {roles.map((r) => {
             const on = draft.includes(r.id);
@@ -2031,8 +2023,7 @@ function Panel({
       <div className="mt-4 flex flex-wrap items-center gap-3">
         {running ? (
           <span className="ui-support text-muted-foreground">
-            Прошли {done.length} из {run?.total ?? inPanel.length}. Страницу можно закрыть — прогон
-            не прервётся.
+            Прошли {done.length} из {run?.total ?? inPanel.length}
           </span>
         ) : (
           <>
@@ -2044,9 +2035,7 @@ function Panel({
               {busy ? "Запускаю" : "Прогнать документ по составу"}
             </button>
             {hasDocs ? null : (
-              <span className="ui-support text-muted-foreground">
-                Сначала принесите документ в задачу.
-              </span>
+              <span className="ui-support text-muted-foreground">Нужен документ</span>
             )}
           </>
         )}
@@ -2104,7 +2093,6 @@ function Waiting({ name, files }: { name: string; files: string[] }) {
       <span className="h-[5px] w-[5px] animate-pulse rounded-full bg-[color:var(--color-accent)]" />
       <span>
         {name} {phase}
-        {sec > 90 ? " — подробный разбор пишется минутами, это нормально" : ""}
       </span>
     </div>
   );
@@ -2454,12 +2442,6 @@ function docKind(w: StoredWindow): string {
  */
 function looksLikeDocument(text: string): boolean {
   return text.trim().length >= 600 || /^#{1,3}\s/m.test(text);
-}
-
-/** Длинное название в кнопку не влезает — режем по словам. */
-function shorten(text: string, max: number): string {
-  const t = text.trim();
-  return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
 }
 
 /** Дата человеческим языком: сегодня, вчера или число. */

@@ -255,7 +255,7 @@ export const tgLinkServer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<TgLinkResult> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me) return { ok: false, url: "", note: "Не узнаю код доступа." };
+    if (!me) return { ok: false, url: "", note: "Не узнаю код доступа" };
 
     const cfg = await settings();
     if (!ready(cfg) || !cfg.botName) return { ok: false, url: "", note: NOT_SET_UP };
@@ -276,11 +276,11 @@ export const tgUnlinkServer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<TgUnlinkResult> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me) return { ok: false, note: "Не узнаю код доступа." };
+    if (!me) return { ok: false, note: "Не узнаю код доступа" };
 
     const chatId = await chatOf(me.id);
     const removed = await unbind(me.id);
-    if (!removed) return { ok: true, note: "Телеграм и так не был связан с кабинетом." };
+    if (!removed) return { ok: true, note: "Телеграм и так не был связан с кабинетом" };
 
     const cfg = await settings();
     if (chatId !== null && ready(cfg)) {
@@ -291,7 +291,7 @@ export const tgUnlinkServer = createServerFn({ method: "POST" })
           "разборы сюда не приходят. Связать заново можно кнопкой в кабинете.",
       });
     }
-    return { ok: true, note: "Телеграм отвязан." };
+    return { ok: true, note: "Телеграм отвязан" };
   });
 
 /** Связан ли кабинет с чатом — чтобы кабинет знал, что писать на кнопке. */
@@ -300,7 +300,7 @@ export const tgStatusServer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<TgStatusResult> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me) return { linked: false, note: "Не узнаю код доступа." };
+    if (!me) return { linked: false, note: "Не узнаю код доступа" };
 
     const cfg = await settings();
     if (!ready(cfg) || !cfg.botName) return { linked: false, note: NOT_SET_UP };
@@ -308,7 +308,7 @@ export const tgStatusServer = createServerFn({ method: "POST" })
     const chatId = await chatOf(me.id);
     return {
       linked: chatId !== null,
-      note: chatId !== null ? "Телеграм связан с кабинетом." : "",
+      note: chatId !== null ? "Телеграм связан с кабинетом" : "",
     };
   });
 

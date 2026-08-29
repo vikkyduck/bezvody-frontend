@@ -18,8 +18,18 @@ import { visaLine, type Visa, type VisaStage } from "@/lib/visa";
 export const Route = createFileRoute("/komanda")({
   head: () => ({
     meta: [
-      { title: "Команда — платформа «Без Воды»" },
-      { name: "description", content: "Над чем работают люди и что прогнали через систему." },
+      { title: "Команда — NOWATER.TECH" },
+      {
+        name: "description",
+        content: "Над чем работает команда и что прошло проверку в NOWATER.TECH.",
+      },
+      { property: "og:title", content: "Команда — NOWATER.TECH" },
+      {
+        property: "og:description",
+        content: "Над чем работает команда и что прошло проверку в NOWATER.TECH.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -60,9 +70,6 @@ function Body() {
     return (
       <div className="card-plain mx-auto mt-10 max-w-[520px] px-6 py-8 text-center">
         <h1 className="ui-h2">Этот раздел вам не открыт</h1>
-        <p className="ui-body measure mx-auto mt-2 text-muted-foreground">
-          Панель видит руководитель. Доступ выдаёт администратор платформы.
-        </p>
       </div>
     );
   }
@@ -72,11 +79,7 @@ function Body() {
 
   return (
     <>
-      <PageHead
-        eyebrow="Команда"
-        title="Кто над чем работает"
-        lead="Только отметки о прогоне — самих документов и переписки здесь нет."
-      />
+      <PageHead eyebrow="Кабинет руководителя" title="Кто над чем работает" />
 
       {!people ? (
         <p className="ui-body text-muted-foreground">Загружаю…</p>
@@ -113,7 +116,7 @@ function Body() {
           ) : null}
 
           {!working.length && !idle.length ? (
-            <p className="ui-body text-muted-foreground">Кабинеты команды ещё не завели.</p>
+            <p className="ui-body text-muted-foreground">Кабинеты команды ещё не завели</p>
           ) : null}
         </>
       )}
@@ -144,9 +147,6 @@ function PersonRow({
             ниже 15rem ряд переносится, а не сжимается. */}
         <div className="min-w-[min(15rem,100%)] flex-1">
           <div className="ui-title leading-snug">{p.name}</div>
-          <p className="ui-support mt-1 text-muted-foreground">
-            {p.position || "должность не указана"}
-          </p>
           <p className="ui-meta mt-1 text-muted-foreground">
             {`в работе ${live.length}`}
             {run + done ? ` · прогнано ${run + done}` : " · ни одной не прогнали"}

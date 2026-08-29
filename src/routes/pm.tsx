@@ -2,15 +2,22 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
-import { AgentAccess, Contacts } from "@/components/AgentAccess";
+import { AgentAccess } from "@/components/AgentAccess";
 import { Chevron, Reveal } from "@/components/bv/Reveal";
 import { useDirectory, type Participant } from "@/lib/directory";
 
 export const Route = createFileRoute("/pm")({
   head: () => ({
     meta: [
-      { title: "Мои клиенты — платформа «Без Воды»" },
-      { name: "description", content: "Кабинет менеджера: клиенты и их агенты." },
+      { title: "Мои клиенты — NOWATER.TECH" },
+      { name: "description", content: "Кабинет менеджера NOWATER.TECH: клиенты и их агенты." },
+      { property: "og:title", content: "Мои клиенты — NOWATER.TECH" },
+      {
+        property: "og:description",
+        content: "Кабинет менеджера NOWATER.TECH: клиенты и их агенты.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -36,13 +43,12 @@ function Body() {
     <>
       <PageHead
         n="01"
-        eyebrow="Кабинет менеджера"
+        eyebrow="Кабинет проджекта"
         title={
           clients.length
             ? `${clients.length} ${declension(clients.length, "клиент", "клиента", "клиентов")} на вас`
             : "Клиентов пока нет"
         }
-        lead="Вы видите, кому что открыто, и можете добавить или убрать агента прямо здесь."
       />
 
       {clients.length ? (
@@ -81,9 +87,7 @@ function Body() {
         </>
       ) : (
         <div className="card-flat px-6 py-10 text-center">
-          <p className="ui-body measure mx-auto text-muted-foreground">
-            Как только администратор заведёт клиентов, они появятся здесь вместе со своими агентами.
-          </p>
+          <p className="ui-body text-muted-foreground">Клиентов пока нет</p>
         </div>
       )}
     </>
@@ -104,12 +108,6 @@ function ClientCard({
       <div className="flex flex-wrap items-start gap-4">
         <div className="min-w-0 flex-1">
           <div className="ui-title">{p.name}</div>
-          <p className="ui-support mt-1 text-muted-foreground">
-            {[p.position, p.company].filter(Boolean).join(" · ") || "должность не указана"}
-          </p>
-          <p className="ui-meta mt-1 text-muted-foreground">
-            <Contacts person={p} />
-          </p>
         </div>
 
         <div className="text-right">

@@ -940,7 +940,6 @@ export const NAV_SECONDARY: [string, string][] = [
 ];
 
 export const CTA_LABEL = "Разбор задачи за 30 минут";
-export const CTA_NOTE = "30 минут онлайн: сверим задачу и определим следующий шаг";
 
 /* Личный кабинет клиента (FinanceDuck). Пока указывает на исторический адрес:
    после активации app.withoutwater.ru скрипт finance-duck-activate на сервере
@@ -1201,9 +1200,6 @@ export function Nav({ path = "/" }: { path?: string }) {
               {CTA_LABEL}
               <ArrowRight data-arrow className="h-4 w-4" />
             </a>
-            <p className="mt-2 text-center t-body text-[color:var(--color-text-secondary)]">
-              {CTA_NOTE}
-            </p>
           </div>
         </div>
       )}
@@ -1605,7 +1601,7 @@ export function CtaBand({
           {note ?? (
             <>
               30 минут онлайн: сверим задачу, доступные источники опыта и возможный результат
-              первого этапа. Презентацию и ТЗ готовить не нужно.
+              первого этапа
             </>
           )}
         </p>

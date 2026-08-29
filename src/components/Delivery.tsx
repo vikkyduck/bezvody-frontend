@@ -42,7 +42,7 @@ export function Delivery() {
       if (res.note) setSaid(res.note);
       refresh();
     } catch {
-      setSaid("Не сохранилось. Проверьте связь и попробуйте ещё раз.");
+      setSaid("Не сохранилось");
     } finally {
       setBusy(false);
     }
@@ -57,12 +57,12 @@ export function Delivery() {
       if (res.ok && res.url) {
         // Ссылка одноразовая и живёт минуты — открываем сразу, а не копируем.
         window.open(res.url, "_blank", "noopener,noreferrer");
-        setSaid("В телеграме нажмите «Начать» — бот привяжется сам.");
+        setSaid("В телеграме нажмите «Начать»");
       } else {
-        setSaid(res.note || "Бот пока не настроен — напишите администратору.");
+        setSaid(res.note || "Бот пока не настроен");
       }
     } catch {
-      setSaid("Не получилось. Проверьте связь и попробуйте ещё раз.");
+      setSaid("Не получилось");
     } finally {
       setBusy(false);
     }
@@ -74,7 +74,7 @@ export function Delivery() {
     setSaid("");
     try {
       const res = await tgUnlinkServer({ data: { code } });
-      setSaid(res.note || "Телеграм отвязан.");
+      setSaid(res.note || "Телеграм отвязан");
       setTgLinked(false);
       if (deliver.telegram) void save({ ...deliver, telegram: false });
     } finally {
@@ -85,9 +85,6 @@ export function Delivery() {
   return (
     <section className="card-plain px-5 py-5">
       <h2 className="ui-title">Куда присылать готовое</h2>
-      <p className="ui-support measure mt-1 mb-4 text-muted-foreground">
-        Готовый документ придёт сам — ждать на странице не нужно.
-      </p>
 
       <div className="space-y-3">
         <label className="flex items-start gap-2.5">
@@ -100,13 +97,9 @@ export function Delivery() {
           />
           <span className="min-w-0">
             <span className="ui-body block">В телеграм — документом в личку</span>
-            <span className="ui-support block text-muted-foreground">
-              {tgLinked === null
-                ? "Проверяю привязку…"
-                : tgLinked
-                  ? "Файлы боту лягут в вашу задачу."
-                  : "Сначала привяжите телеграм — кнопкой ниже."}
-            </span>
+            {tgLinked === null ? (
+              <span className="ui-support block text-muted-foreground">Проверяю привязку…</span>
+            ) : null}
           </span>
         </label>
 
@@ -121,9 +114,7 @@ export function Delivery() {
           <span className="min-w-0">
             <span className="ui-body block">Письмом на почту</span>
             <span className="ui-support block text-muted-foreground">
-              {hasEmail
-                ? `На ${person?.email}.`
-                : "Почта в карточке не записана — попросите менеджера её вписать."}
+              {hasEmail ? `На ${person?.email}` : "Почта в карточке не записана"}
             </span>
           </span>
         </label>

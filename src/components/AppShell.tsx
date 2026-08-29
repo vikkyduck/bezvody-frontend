@@ -2,8 +2,6 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
 import { NavPills, type NavItem } from "@/components/NavPills";
-import { GlassPointer } from "@/components/bv/GlassPointer";
-import { StencilLogo, CatMark, LensFilter, Scene } from "@/components/bv/core";
 import { roleLabel, type Role } from "@/lib/platform-data";
 import { useSession } from "@/lib/session";
 
@@ -16,8 +14,14 @@ const navByRole: Record<Role, NavItem[]> = {
   // У клиента разделов нет вовсе: весь кабинет — один экран. Выбрал агента,
   // открылось окно, работаешь. Три вкладки только заставляли гадать, куда идти.
   client: [],
-  project: [{ to: "/pm", label: "Мои клиенты", short: "Клиенты" }],
-  admin: [{ to: "/admin", label: "Кабинет", short: "Кабинет" }],
+  project: [{ to: "/pm", label: "Мои клиентские группы", short: "Группы" }],
+  admin: [
+    { to: "/admin", label: "Админка", short: "Админка" },
+    { to: "/", label: "Кабинет заказчика", short: "Заказчик" },
+    { to: "/komanda", label: "Кабинет руководителя", short: "Руководитель" },
+    { to: "/pm", label: "Кабинет проджекта", short: "Проджект" },
+    { to: "/platforma", label: "Витрина NOWATER.TECH", short: "Витрина" },
+  ],
 };
 
 /** Куда попадает роль сразу после входа. */
@@ -63,13 +67,8 @@ export function AppShell({
 
   if (!ready || !role || !allow.includes(role)) {
     return (
-      <div className="stage grain theme-paper flex min-h-screen flex-col items-center justify-center gap-4">
-        <CatMark
-          className="h-10 w-12 animate-pulse text-[color:var(--color-text-primary)]/40"
-          strokeWidth={2}
-        />
-        {/* Молчащий кот на медленном 4G читается как зависший экран: человек
-            жмёт перезагрузку и теряет ещё десять секунд. Слово стоит дешевле. */}
+      <div className="stage flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
+        <div className="h-px w-12 animate-pulse bg-foreground" />
         <p className="ui-support text-muted-foreground" role="status" aria-live="polite">
           Открываем ваш кабинет…
         </p>
@@ -84,7 +83,9 @@ export function AppShell({
    */
   const nav: NavItem[] = [
     ...navByRole[role],
-    ...(person?.leads ? [{ to: "/komanda", label: "Команда", short: "Команда" }] : []),
+    ...(person?.leads
+      ? [{ to: "/komanda", label: "Кабинет руководителя", short: "Руководитель" }]
+      : []),
   ];
   const initials = person
     ? person.name
@@ -95,22 +96,11 @@ export function AppShell({
     : "";
 
   return (
-    // theme-paper: внутри кабинетов светлый «Сухой остаток», обложка входа остаётся угольной
-    <div className="stage grain theme-paper min-h-screen">
-      <LensFilter />
-      <GlassPointer />
-      <Scene
-        blobs={[
-          { className: "left-[-14%] top-[-8%] h-[520px] w-[520px]", tone: "rose" },
-          { className: "right-[-10%] top-[38%] h-[460px] w-[460px]", tone: "chrome" },
-        ]}
-      />
-      {/* Фон сплошной, без backdrop-blur: липкая шапка со стеклом внутри
-          обрезанной сцены (.stage) роняет композицию — при прокрутке над
-          шапкой оставалось неотрисованное поле. Сплошной тон заодно держит
-          контраст дорожки на любой картинке под ним. */}
-      <header className="sticky top-0 z-40 border-b border-[color:var(--color-line)] bg-[color:var(--color-bg-primary)]">
-        <div className="mx-auto flex max-w-[1240px] items-center gap-6 px-5 py-3 sm:px-6">
+    <div className="stage min-h-screen bg-background">
+      {/* Шапка стеклянная: содержимое уезжает под неё, а не обрывается по
+          глухой плашке — так видно, что страница продолжается. */}
+      <header className="sticky top-0 z-40 border-b border-[color:var(--color-line)] bg-[color:color-mix(in_oklab,var(--color-bg-primary)_82%,transparent)] backdrop-blur-xl backdrop-saturate-150">
+        <div className="mx-auto flex max-w-[1280px] items-center gap-6 px-6 py-5 sm:px-10 lg:px-[4.1vw]">
           {/* Уровень кабинета живёт в search-параметрах (/?z=…&d=…), поэтому
               логотип обязан их сбрасывать: клиент из разговора должен попадать
               в список задач, а не обратно в тот же разговор. Ссылка без
@@ -118,31 +108,35 @@ export function AppShell({
               набором параметров, а не наследует текущий. */}
           <Link
             to={homeByRole[role]}
-            className="flex items-center gap-2.5"
+            className="flex items-center gap-3 text-[12px] font-extrabold tracking-[0.02em]"
             aria-label={role === "client" ? "К списку задач" : "На главную"}
           >
-            <CatMark
-              className="h-7 w-9 text-[color:var(--color-text-primary)]/70"
-              strokeWidth={2}
-            />
-            <StencilLogo className="logo-sm" />
+            NOWATER.TECH
             {role !== "client" ? (
-              <span className="ui-meta ml-2 hidden border-l border-[color:var(--color-line)] pl-3 font-semibold lg:block">
+              <span className="hidden border-l border-[color:var(--color-line)] pl-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground 2xl:block">
                 {roleLabel[role]}
               </span>
             ) : null}
           </Link>
-          <NavPills items={nav} path={path} className="hidden md:flex" />
 
-          <div className="ml-auto flex items-center gap-3.5 text-right">
-            <div className="hidden text-right sm:block">
-              <div className="ui-meta font-semibold leading-tight">{person?.name}</div>
-              <div className="ui-meta text-muted-foreground">
+          <NavPills
+            items={nav}
+            path={path}
+            short
+            className="hidden min-w-0 overflow-hidden lg:flex"
+          />
+
+          {/* Имя и компания — одна строка каждая: перенос превращал угол шапки
+              в лесенку из трёх обрывков. Не влезло — обрезаем многоточием. */}
+          <div className="ml-auto flex flex-none items-center gap-4 text-right">
+            <div className="hidden max-w-[220px] text-right lg:block">
+              <div className="truncate text-[12px] font-semibold leading-tight">{person?.name}</div>
+              <div className="truncate text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                 {person?.company || person?.position}
               </div>
             </div>
             <div
-              className="ui-meta flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary font-bold text-primary-foreground"
+              className="flex h-9 w-9 flex-none items-center justify-center border border-[color:var(--color-line)] text-[11px] font-bold tracking-[0.08em] text-foreground"
               title={person?.name}
               aria-hidden
             >
@@ -150,7 +144,7 @@ export function AppShell({
             </div>
             <button
               onClick={signOut}
-              className="btn btn-ghost ui-meta"
+              className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
               aria-label="Выйти из кабинета"
             >
               Выйти
@@ -200,39 +194,26 @@ export function AppShell({
             единственный раздел («Команда» у руководителя) на телефоне было
             не достать вовсе: на широком экране он есть, на узком исчезал. */}
         {nav.length > 0 ? (
-          <div className="border-t border-[color:var(--color-line)] md:hidden">
+          <div className="border-t border-[color:var(--color-line)] lg:hidden">
             <NavPills items={nav} path={path} mobile className="flex overflow-x-auto px-4 py-2" />
           </div>
         ) : null}
       </header>
-      <main className="mx-auto max-w-[1240px] px-5 py-8 sm:px-6">{children}</main>
-      <footer className="ui-meta mx-auto flex max-w-[1240px] items-end justify-between gap-4 px-6 pb-10 pt-4 text-muted-foreground">
+      <main className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10 lg:px-[4.1vw] lg:py-24">
+        {children}
+      </main>
+      <footer className="mx-auto max-w-[1280px] border-t border-[color:var(--color-line)] px-6 pb-14 pt-9 text-[12px] leading-relaxed text-muted-foreground sm:px-10 lg:px-[4.1vw]">
         <div className="measure">
-          <div>Платформа «Без Воды»</div>
+          <div className="text-[12px] font-extrabold tracking-[0.02em] text-foreground">
+            NOWATER.TECH
+          </div>
+
           {/* Два вопроса, которые руководитель задаёт кабинету до того, как
               принесёт в него P&L: где это лежит и кто ещё это увидит.
               Отвечаем ровно тем, что правда: хранение — российский контур,
               а переписку клиента администратор действительно открывает
               (Conversations.tsx). */}
-          <p className="mt-1.5">
-            Документы и разговоры хранятся на серверах в России, по требованиям 152-ФЗ.
-            {role === "client" ? " Их видите вы, ваш менеджер и администратор платформы." : ""}
-          </p>
-          {/* С появлением панели команды обещание «код открывает только ваши
-              задачи» перестало быть полной правдой. Говорим об этом сами и
-              ровно в тех пределах, в каких это так: руководителю видны
-              названия задач и отметка о работе, но не переписка и не файлы. */}
-          {person?.watched ? (
-            <p className="mt-1.5">
-              Вашему руководителю видно, над какими задачами вы работаете и доведены ли они до
-              документа. Переписку и сами документы он отсюда не открывает.
-            </p>
-          ) : null}
         </div>
-        <CatMark
-          className="h-10 w-12 flex-none text-[color:var(--color-text-primary)]/50"
-          strokeWidth={2}
-        />
       </footer>
     </div>
   );
@@ -256,11 +237,22 @@ export function PageHead({
   n?: string;
 }) {
   return (
-    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-14 flex flex-wrap items-end justify-between gap-8 border-b border-[color:var(--color-line)] pb-10 lg:mb-20 lg:pb-14">
       <div>
-        <div className="label-caps text-[color:var(--color-text-secondary)]">{eyebrow}</div>
-        <h1 className="t-h1 mt-2">{title}</h1>
-        {lead ? <p className="ui-body measure mt-2.5 text-muted-foreground">{lead}</p> : null}
+        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--color-text-secondary)]">
+          {eyebrow}
+        </div>
+        <h1
+          className="mt-6 max-w-[16ch] font-normal leading-[0.96] tracking-[-0.01em]"
+          style={{ fontSize: "clamp(2.5rem, 6vw, 5.5rem)" }}
+        >
+          {title}
+        </h1>
+        {lead ? (
+          <p className="mt-7 max-w-[46ch] text-base leading-relaxed text-muted-foreground">
+            {lead}
+          </p>
+        ) : null}
       </div>
       {right}
     </div>

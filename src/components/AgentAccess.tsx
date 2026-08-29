@@ -10,12 +10,7 @@ export function AgentAccess({ person }: { person: Participant }) {
   const { toggleAgent } = useDirectory();
 
   if (agents.length === 0) {
-    return (
-      <p className="ui-support">
-        Каталог пуст: агентов ещё не завели. Как только они появятся, вы сможете открывать их
-        отсюда.
-      </p>
-    );
+    return <p className="ui-support">Каталог пуст: агентов ещё не завели</p>;
   }
 
   return (
@@ -39,18 +34,9 @@ export function AgentAccess({ person }: { person: Participant }) {
       </div>
       <p className="ui-support mt-3">
         {person.agentIds.length
-          ? `Открыто ${person.agentIds.length} из ${agents.length} — появятся у человека в кабинете сразу.`
-          : "Пока не открыт ни один агент: человек войдёт и увидит пустой кабинет."}
+          ? `Открыто ${person.agentIds.length} из ${agents.length}`
+          : "Пока не открыт ни один агент"}
       </p>
     </div>
   );
-}
-
-/** Контакты одной строкой — чтобы было видно, куда передавать код. */
-export function Contacts({ person }: { person: Participant }) {
-  const parts: string[] = [];
-  if (person.email) parts.push(person.email);
-  if (person.telegram) parts.push(`@${person.telegram}`);
-  if (!parts.length) return <span className="text-muted-foreground">контакт не записан</span>;
-  return <span>{parts.join(" · ")}</span>;
 }

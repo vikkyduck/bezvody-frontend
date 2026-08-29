@@ -147,7 +147,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
                           </div>
                         ))
                       ) : (
-                        <p className="ui-support">Разговор открыли, но не написали ни слова.</p>
+                        <p className="ui-support">Разговор открыли, но не написали ни слова</p>
                       )}
                     </div>
                   ) : null}
@@ -156,7 +156,7 @@ export function Conversations({ personId, personName }: { personId: string; pers
             })}
           </div>
         ) : (
-          <p className="ui-support mt-3">Разговоров пока нет.</p>
+          <p className="ui-support mt-3">Разговоров пока нет</p>
         )
       ) : null}
     </div>

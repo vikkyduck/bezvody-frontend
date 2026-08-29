@@ -102,8 +102,8 @@ export async function saveFile(
       }
       if (!text) {
         note =
-          "PDF слишком большой, чтобы отдать его модели целиком, а текста внутри не нашлось " +
-          "(обычно так со сканами). Пришлите документ в Word или разбейте PDF на части";
+          "PDF слишком большой, чтобы отдать его модели целиком, а текста внутри не нашлось. " +
+          "Пришлите документ в Word или разбейте PDF на части";
       }
     }
 
@@ -913,7 +913,7 @@ export const toGoogleServer = createServerFn({ method: "POST" })
 
     const settings = await d.readGoogle();
     if (!settings.account && !settings.oauth) {
-      return { ...deny, note: "Google Диск ещё не подключён — это делает администратор" };
+      return { ...deny, note: "Google Диск ещё не подключён" };
     }
 
     let name = "";
@@ -1009,7 +1009,7 @@ export const downloadModelServer = createServerFn({ method: "POST" })
       if (!template) {
         return {
           ...deny,
-          note: "у агента нет шаблона: администратор кладёт его в карточке агента",
+          note: "у агента нет шаблона",
         };
       }
 

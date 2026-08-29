@@ -184,7 +184,7 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
 
   const createProject = useCallback(
     async (title: string) => {
-      if (!code) return { id: null, note: "Кабинет вас не узнал — войдите по коду ещё раз." };
+      if (!code) return { id: null, note: "Кабинет вас не узнал — войдите по коду ещё раз" };
       const res = await createProjectServer({ data: { code, title } });
       setProjects(res.projects);
       setWindows(res.windows);
@@ -227,7 +227,7 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
 
   const open = useCallback(
     async (agentId: string, projectId: string, opts: OpenOpts = {}) => {
-      if (!code) return { id: null, note: "Кабинет вас не узнал — войдите по коду ещё раз." };
+      if (!code) return { id: null, note: "Кабинет вас не узнал — войдите по коду ещё раз" };
       const res = await openWindowServer({
         data: { code, agentId, projectId, title: opts.title ?? "", fresh: Boolean(opts.fresh) },
       });
@@ -306,7 +306,7 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
         // Временную реплику убираем: вызывающий вернёт текст в поле, чтобы
         // человек не потерял вопрос, который печатал.
         setWindows(dropTemp);
-        setNote("Связь прервалась. Ответ дописывается на сервере — вернитесь через минуту.");
+        setNote("Связь прервалась");
         return { ok: false };
       } finally {
         setThinking(null);

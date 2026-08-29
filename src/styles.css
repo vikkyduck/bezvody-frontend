@@ -1,16 +1,13 @@
 @import "tailwindcss" source(none);
 @source "../src";
 
-/* ============================================================================
-   БЕЗ ВОДЫ · дизайн-система 2.4 «Сухой остаток» (июль 2026)
-   Токены из брендбука, раздел 17. Если значения нет здесь — его нет в макете.
-   ========================================================================== */
+/* NOWATER.TECH — единая keynote-система для витрины и рабочих кабинетов. */
 
 @theme inline {
   --radius-xs: 4px;
-  --radius-sm: 10px;
-  --radius-md: 18px;
-  --radius-lg: 28px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-pill: 999px;
 
   --color-background: var(--color-bg-primary);
@@ -24,12 +21,12 @@
   --color-paper: var(--color-bg-primary);
   --color-rose: var(--color-accent);
 
-  /* Новостной строй (решение Виктории 05.08.2026, референс — РБК): заголовки
-     и текст набраны одной гарнитурой, различаются весом. Unbounded ушёл
-     в --font-logo: он остался логотипу и номерам разделов. */
-  --font-display: "Golos Text", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-sans: "Golos Text", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-logo: "Unbounded", "Arial Black", sans-serif;
+  /* Правило NOWATER.TECH от 25.08.2026: типографика повторяет утверждённый
+     keynote-референс — Manrope во всех заголовках, тексте и элементах UI. */
+  --font-display: "Manrope", -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-sans: "Manrope", -apple-system, "Segoe UI", Arial, sans-serif;
+  /* Логотип и нумерация тоже на Manrope: единая гарнитура во всём фронтенде. */
+  --font-logo: "Manrope", -apple-system, "Segoe UI", Arial, sans-serif;
 
   --color-primary: var(--color-text-primary);
   --color-primary-foreground: var(--color-bg-primary);
@@ -127,31 +124,31 @@
    ══════════════════════════════════════════════════════════════════════════ */
 .theme-paper {
   /* --- Фоны и поверхности --- */
-  --color-bg-primary: #F7F5F1;    /* Бумага */
-  --color-bg-secondary: #EDEAE4;  /* Галерея */
-  --color-surface: #FCFBF8;       /* Мел */
+  --color-bg-primary: #131417;
+  --color-bg-secondary: #1A1C21;
+  --color-surface: #22242A;
   /* Уголь остаётся инверсным элементам: графитовая кнопка, плашка на тёмном */
   --color-bg-dark: #1D1F23;
   --color-surface-dark: #22242A;
 
   /* --- Текст: три ступени --- */
-  --color-text-primary: #1D1F23;   /* Графит */
-  --color-text-secondary: #545860; /* Сталь-текст */
-  --color-text-muted: #8B9098;     /* Сталь */
+  --color-text-primary: #EEF2F8;
+  --color-text-secondary: #A7ADB8;
+  --color-text-muted: #7C828C;
   --color-text-inverse: #F1EFEA;   /* Бумага-на-угле */
   --color-text-inverse-2: #A7ADB8;
   --color-text-inverse-3: #F1EFEA;
 
   /* --- Акцент --- */
-  --color-accent: #A3564B;         /* Пыльная роза */
-  --color-accent-hover: #6C60AE;   /* Лаванда */
-  --color-accent-glass: #E9C4BD;   /* Розовое стекло */
-  --color-accent-soft: rgba(163, 86, 75, 0.10);
-  --color-accent-text: #A3564B;
-  --color-chrome: #545860;
-  --color-steel: #8B9098;
-  --color-ink-hover: #31353C;
-  --color-line: #DBD7CF;           /* Штрих */
+  --color-accent: #E4A9CE;
+  --color-accent-hover: #F2CCE6;
+  --color-accent-glass: #E4A9CE;
+  --color-accent-soft: rgba(228, 169, 206, 0.12);
+  --color-accent-text: #E4A9CE;
+  --color-chrome: #A7ADB8;
+  --color-steel: #7C828C;
+  --color-ink-hover: #FFFFFF;
+  --color-line: rgba(232, 238, 247, 0.14);
   --color-line-dark: rgba(29, 31, 35, 0.14);
 
   /* --- Статусы: спокойные, тревога одна на систему --- */
@@ -175,9 +172,8 @@
   --shadow-inner: inset 0 1px 3px rgba(29, 31, 35, 0.10), inset 0 -1px 1px rgba(255, 255, 255, 0.65);
 
   /* Нативные контролы (select, скроллбары) — светлые */
-  color-scheme: light;
-  /* Сцена из брендбука: бумага с лёгким градиентом, стеклу есть что преломлять */
-  background: linear-gradient(140deg, #EFECE6 0%, #E3E0D9 55%, #D6D2CA 100%);
+  color-scheme: dark;
+  background: var(--color-bg-primary);
   color: var(--color-text-primary);
 }
 
@@ -196,7 +192,7 @@
   body {
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
-    font-family: "Golos Text", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    font-family: "Manrope", -apple-system, "Segoe UI", Arial, sans-serif;
     font-size: 16px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
@@ -254,17 +250,17 @@
    но заметно скромнее прежних 60 px, текст 17 px с плотным интерлиньяжем. */
 @utility t-h1 {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(1.75rem, 4.2vw, 2.6rem);
-  line-height: 1.12;
-  letter-spacing: -0.02em;
+  font-weight: 400;
+  font-size: clamp(2.5rem, 5vw, 5rem);
+  line-height: 1.02;
+  letter-spacing: 0;
 }
 @utility t-h2 {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(1.375rem, 2.4vw, 1.85rem);
-  line-height: 1.2;
-  letter-spacing: -0.015em;
+  font-weight: 400;
+  font-size: clamp(1.75rem, 3vw, 2.75rem);
+  line-height: 1.08;
+  letter-spacing: 0;
 }
 @utility t-body {
   font-family: var(--font-sans);
@@ -1325,10 +1321,10 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
    с одного взгляда и не хотелось завести шестой кегль «где-то посередине». */
 @utility ui-h2 {
   font-family: var(--font-sans);
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.015em;
+  font-size: clamp(1.5rem, 2.4vw, 2.25rem);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: 0;
 }
 @utility ui-title {
   font-family: var(--font-sans);
@@ -1365,9 +1361,18 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
   font-weight: 600;
   line-height: 1.5;
   letter-spacing: 0.14em;
+  /* При таком разрядке обычный пробел равен просвету между буквами, и слова
+     слипаются в одно: «ВАШАКОМАНДА». Добавляем пробелу собственный запас. */
+  word-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
 }
+
+/* То же для капительных подписей, набранных инлайновыми классами tracking-* */
+[class*="uppercase"][class*="tracking-["] {
+  word-spacing: 0.2em;
+}
+
 
 /* Карточка прототипа = жидкое стекло брендбука */
 @utility card-flat {
@@ -1889,26 +1894,24 @@ html[data-cookie-open] body { padding-bottom: 4.5rem; }
    у документа-героя. Всё остальное — бумага с линией и мягкой тенью.
    Материал служит содержанию, а не наоборот.
    ══════════════════════════════════════════════════════════════════════════ */
+/* Ревизия 26.08.2026: скруглённая коробка с тенью убрана. Экран держат
+   линии и воздух, а не рамки: карточка теперь — прямоугольная площадка
+   с волосяной линией по кромке и без подложки. */
 @utility card-plain {
   position: relative;
-  border-radius: var(--radius-md);
+  border-radius: 0;
   border: 1px solid var(--color-line);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-hairline);
-  transition:
-    border-color var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-base) var(--ease-out),
-    transform var(--duration-base) var(--ease-out);
+  background: transparent;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 @media (hover: hover) {
   .card-plain:hover {
-    border-color: color-mix(in oklab, var(--color-accent) 22%, var(--color-line));
-    box-shadow: var(--shadow-soft);
+    border-color: color-mix(in oklab, var(--color-text-primary) 22%, var(--color-line));
   }
 }
-/* Кликабельная плоская карточка отзывается тем же движением, что стеклянная */
+/* Кликабельная площадка отзывается тем же — линией, а не тенью */
 .card-plain.card-link:hover {
-  border-color: color-mix(in oklab, var(--color-accent) 34%, var(--color-line));
+  border-color: color-mix(in oklab, var(--color-text-primary) 40%, var(--color-line));
 }
 
 /* Тяжёлое стекло на слабом железе — плоская бумага. Определяет само
@@ -1960,3 +1963,98 @@ html[data-lowpower="true"] .card-flat::after {
   .task-row,
   .task-row:active { cursor: default; }
 }
+
+/* ============================================================================
+   Keynote-проход 26.08.2026 — «убрать всё, что не является содержанием».
+   Ревизия оформления: оптическая типографика, честные линии, тихое движение.
+   ========================================================================== */
+
+/* 1. Оптика набора. Manrope имеет переменную ось: даём ей работать, а крупный
+      кегль слегка поджимаем — так делает любой хороший заголовок в металле. */
+html {
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, .t-h1, .t-h2 { text-wrap: balance; }
+p { text-wrap: pretty; }
+/* Базовое поджатие заголовков живёт в base-слое: иначе оно перебивало
+   утилиты tracking-* и капительные подписи слипались в одно слово. */
+/* Поджатие вешаем на классы заголовков, а не на теги: правило по тегу
+   перебивало утилиты tracking-* и капительные подписи слипались. */
+.t-h1 { letter-spacing: -0.018em; }
+.t-h2, .ui-h2 { letter-spacing: -0.012em; }
+
+/* Цифры в интерфейсе не должны «прыгать» при обновлении */
+.tnum, time, [data-numeric] { font-variant-numeric: tabular-nums; }
+
+/* 2. Фактура. Точечное зерно на всей сцене было слышно громче текста —
+      оставляем след, но на пороге видимости. */
+body::before { opacity: 0.22; }
+
+/* 3. Линия. Одна толщина на всю систему, ровно один тон. */
+:root { --hairline: 1px solid var(--color-line); }
+
+/* 4. Фокус. Кольцо остаётся заметным, но перестаёт быть маркером —
+      тонкое, с воздухом, и следует форме элемента. */
+:focus-visible {
+  outline: 1.5px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* 5. Кнопка. Никакого блика: поверхность либо есть, либо её нет.
+      Отклик — только в яркости и в 120 мс. */
+.btn-primary::after, .btn-secondary::after, .btn-glass::after { content: none; }
+@utility btn { border-radius: 2px; }
+.btn { transition: background 140ms var(--ease-out), color 140ms var(--ease-out),
+                   border-color 140ms var(--ease-out), opacity 140ms var(--ease-out); }
+.btn-primary { background: var(--color-text-primary); color: var(--color-bg-primary); }
+.btn-primary:hover { background: var(--color-ink-hover); color: var(--color-bg-primary); box-shadow: none; }
+.btn-primary:active { opacity: 0.86; }
+
+/* 6. Движение. Одна кривая, одна длительность, и полное молчание для тех,
+      кто просил систему не двигаться. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 7. Вход экрана: содержание проявляется, а не выезжает. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: rise 720ms var(--ease-glass) both; }
+.rise-1 { animation-delay: 60ms; }
+.rise-2 { animation-delay: 150ms; }
+.rise-3 { animation-delay: 240ms; }
+.rise-4 { animation-delay: 330ms; }
+
+/* 8. Ссылка-действие в шапке: рамка вместо плашки, инверсия при наведении. */
+@utility action-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 22px;
+  border: var(--hairline);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-primary);
+  transition: background 160ms var(--ease-out), color 160ms var(--ease-out),
+              border-color 160ms var(--ease-out);
+}
+.action-line:hover {
+  background: var(--color-text-primary);
+  border-color: var(--color-text-primary);
+  color: var(--color-bg-primary);
+}
+
+/* 9. Полосы прокрутки — тонкие, в тон сцене. */
+* { scrollbar-width: thin; scrollbar-color: rgba(232,238,247,0.18) transparent; }

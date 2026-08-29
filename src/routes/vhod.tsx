@@ -1,15 +1,24 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { homeByRole } from "@/components/AppShell";
-import { CatMark, LensFilter, Scene, StencilLogo } from "@/components/bv/core";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/vhod")({
   head: () => ({
     meta: [
-      { title: "Вход — платформа «Без Воды»" },
-      { name: "description", content: "Вход в кабинет по коду доступа." },
+      { title: "Вход в кабинет — NOWATER.TECH" },
+      {
+        name: "description",
+        content: "Безопасный вход в кабинет NOWATER.TECH по персональному коду доступа.",
+      },
+      { property: "og:title", content: "Вход в кабинет — NOWATER.TECH" },
+      {
+        property: "og:description",
+        content: "Безопасный вход в кабинет NOWATER.TECH по персональному коду доступа.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       // Кабинет не для поиска: индексировать вход незачем.
       { name: "robots", content: "noindex" },
     ],
@@ -39,38 +48,41 @@ function SignIn() {
   }
 
   return (
-    <div className="stage grain flex min-h-screen flex-col">
-      <LensFilter />
-      <Scene blobs={[{ className: "left-[-18%] top-[-10%] h-[560px] w-[560px]", tone: "rose" }]} />
+    <main className="stage flex min-h-screen flex-col overflow-hidden">
+      {/* Шапка ровно та же, что на витрине: человек не должен чувствовать,
+          что попал на другой сайт. */}
+      <header className="rise flex flex-none items-center justify-between px-6 pt-7 sm:px-10 md:px-[4.1vw] md:pt-10">
+        <Link to="/" className="text-[12px] font-extrabold tracking-[0.02em]">
+          NOWATER.TECH
+        </Link>
+        <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">
+          Закрытый контур
+        </span>
+      </header>
 
-      <div className="flex flex-1 items-center justify-center px-5 py-12">
-        <div className="w-full max-w-[420px]">
-          <div className="mb-8 flex items-center gap-3">
-            <CatMark
-              className="h-9 w-11 text-[color:var(--color-text-primary)]/70"
-              strokeWidth={2}
-            />
-            <StencilLogo className="logo-sm" />
-          </div>
+      <div className="mx-auto grid w-full max-w-[1600px] flex-1 items-center gap-16 px-6 pb-12 pt-[12vh] sm:px-10 md:px-[4.1vw] lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:pt-[14vh]">
+        <section className="rise rise-1 max-w-[620px]">
+          <h1 className="text-[clamp(2.5rem,6vw,5.25rem)] font-normal leading-[0.94] tracking-[-0.022em]">
+            Вход
+            <br />
+            <span className="text-[color:var(--color-text-muted)]">в кабинет</span>
+          </h1>
+        </section>
 
-          <h1 className="t-h1">Вход в кабинет</h1>
-          {/* Первая строка отвечает на вопрос «что я отсюда унесу», а не предупреждает
-              о слежке: до входа человек ещё не знает, зачем ему этот кабинет. */}
-          <p className="measure ui-support mt-3 text-muted-foreground">
-            Агенты разберут вашу задачу и соберут решение, которое можно нести на защиту.
-          </p>
-
-          <form onSubmit={submit} className="card-flat mt-7 px-6 py-6">
-            <label htmlFor="code" className="label-caps">
-              Код доступа
+        {/* Форма — единственное действие на экране, поэтому она не в карточке:
+            карточка была бы рамкой вокруг очевидного. */}
+        <section className="rise rise-2 w-full">
+          <form onSubmit={submit}>
+            <label
+              htmlFor="code"
+              className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]"
+            >
+              Персональный код
             </label>
             <input
               id="code"
               value={code}
               autoFocus
-              // Код здесь — постоянный логин, а не разовый пароль из СМС. С
-              // one-time-code ни браузер, ни менеджер паролей его не сохраняют,
-              // и человек лезет за кодом в переписку при каждом заходе.
               autoComplete="username"
               spellCheck={false}
               onChange={(e) => {
@@ -80,47 +92,33 @@ function SignIn() {
               placeholder="BV-CLIENT-01"
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? "code-error" : undefined}
-              // 16 px, а не 14: на меньшем кегле iOS Safari зумит страницу при
-              // касании поля, и половина экрана уезжает за край.
-              className="mt-2.5 w-full rounded-[var(--radius-md,10px)] border border-[color:var(--color-line)] bg-transparent px-3.5 py-2.5 text-base tracking-[0.06em] uppercase outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+              className="mt-4 w-full border-0 border-b border-[color:var(--color-line)] bg-transparent px-0 py-4 text-2xl font-normal uppercase tracking-[0.06em] outline-none transition-[border-color,box-shadow] focus-visible:outline-none focus:shadow-[inset_0_-1px_0_0_var(--color-text-primary)] placeholder:normal-case placeholder:tracking-[0.04em] placeholder:text-[color:var(--color-text-muted)]/60 focus:border-[color:var(--color-text-primary)] sm:text-3xl"
+              data-numeric
             />
-            {/* Текст ошибки приходит из session: «код не подходит» и «платформа
-                не отвечает» — разные строки, здесь их только показываем читаемым
-                кеглем, не подменяя одной общей формулировкой. */}
             {error ? (
               <p
                 id="code-error"
                 role="alert"
-                className="ui-support mt-2.5 text-[color:var(--color-accent)]"
+                className="mt-4 text-sm leading-relaxed text-[color:var(--color-accent)]"
               >
                 {error}
               </p>
             ) : null}
 
-            {/* Кегль кнопки задаёт сама утилита btn (15 px); прежний text-[13.5px]
-                уменьшал единственное действие на экране. */}
             <button
               type="submit"
               disabled={busy}
-              className="btn btn-primary mt-5 w-full disabled:opacity-50"
+              className="btn btn-primary mt-10 w-full text-[10px] font-bold uppercase tracking-[0.2em] disabled:opacity-40"
             >
-              {busy ? "Проверяем" : "Войти"}
+              {busy ? "Проверяем" : "Войти в кабинет"}
             </button>
           </form>
-
-          {/* Про именной код — после кнопки: до входа это не условие допуска,
-              а ответ на вопрос «кто ещё увидит мои документы». */}
-          <p className="measure ui-support mt-5 text-muted-foreground">
-            Код именной — открывает только ваши задачи. Потерялся — администратор выдаст новый.
-          </p>
-          {/* Решение о том, нести ли сюда закрытые цифры, человек принимает
-              на этом экране — значит и ответ про хранение нужен здесь, а не
-              в подвале кабинета, куда он попадёт уже после. */}
-          <p className="measure ui-support mt-3 text-muted-foreground">
-            Документы и переписка хранятся на серверах в России, по требованиям 152-ФЗ.
-          </p>
-        </div>
+        </section>
       </div>
-    </div>
+
+      <footer className="rise rise-3 mx-auto w-full max-w-[1600px] border-t border-[color:var(--color-line)] px-6 py-6 text-[12px] leading-relaxed text-[color:var(--color-text-muted)] sm:px-10 md:px-[4.1vw]">
+        Документы и переписка хранятся на серверах в России по требованиям 152-ФЗ
+      </footer>
+    </main>
   );
 }

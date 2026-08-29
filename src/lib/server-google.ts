@@ -162,7 +162,7 @@ export async function uploadToDrive(opts: {
 }): Promise<UploadResult> {
   const { account, oauth, folderId } = opts.settings;
   if (!account && !oauth) {
-    return { ok: false, error: "Google Диск не подключён — администратор задаёт ключ доступа" };
+    return { ok: false, error: "Google Диск не подключён" };
   }
 
   try {

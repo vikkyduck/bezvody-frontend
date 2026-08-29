@@ -29,15 +29,25 @@ echo "==> [1/4] Проверка типов"
 npx tsc --noEmit
 
 echo "==> [2/4] Сборка (nitro, пресет node-server)"
+rm -rf .output dist
 NITRO_PRESET=node-server npm run build
+
+# Nitro 3 кладёт результат либо в .output/, либо в dist/ — берём тот, что есть.
+OUT=""
+for d in .output dist; do [ -f "$d/nitro.json" ] && OUT="$d" && break; done
+[ -n "$OUT" ] || { echo "❌ Сборка не найдена (.output/ или dist/)"; exit 1; }
 
 # Подстраховка: если пресет вдруг не подхватился, на сервер уедет бандл для
 # Cloudflare и сервис не поднимется. Лучше упасть здесь.
-grep -q '"preset": "node-server"' .output/nitro.json \
-  || { echo "❌ .output собран не под node-server, деплой остановлен"; exit 1; }
+grep -q '"preset": *"node-server"' "$OUT/nitro.json" \
+  || { echo "❌ $OUT собран не под node-server, деплой остановлен"; exit 1; }
 
-echo "==> [3/4] Заливка .output/ на $SERVER:/opt/bezvody-front"
-rsync -az --delete ${SSH_OPTS:+-e "ssh $SSH_OPTS"} .output/ "$SERVER:/opt/bezvody-front/"
+# Статику nginx ждёт в public/, а nitro может назвать папку client/.
+[ -d "$OUT/public" ] || { [ -d "$OUT/client" ] && mv "$OUT/client" "$OUT/public"; }
+
+echo "==> [3/4] Заливка $OUT/ на $SERVER:/opt/bezvody-front"
+rsync -az --delete ${SSH_OPTS:+-e "ssh $SSH_OPTS"} "$OUT/" "$SERVER:/opt/bezvody-front/"
+
 
 echo "==> [4/4] Рестарт сервиса и проверка"
 ssh $SSH_OPTS "$SERVER" 'chown -R bezvody:bezvody /opt/bezvody-front && systemctl restart bezvody-front && sleep 2 && systemctl is-active bezvody-front'

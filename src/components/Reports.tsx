@@ -81,10 +81,6 @@ export function Reports() {
         <h2 className="ui-h2 mb-1">
           Что получили клиенты <span className="text-muted-foreground">· {rows.length}</span>
         </h2>
-        <p className="measure ui-support mb-4">
-          Каждый разбор, который агент собрал и отдал человеку. Открыть — прочитать целиком, скачать
-          — получить тот же файл Word, что и у клиента.
-        </p>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -146,7 +142,7 @@ export function Reports() {
         </ul>
       ) : (
         <p className="ui-support">
-          {rows.length ? "По этому запросу ничего нет." : "Пока ни один агент не отдал разбор."}
+          {rows.length ? "По этому запросу ничего нет" : "Пока ни один агент не отдал разбор"}
         </p>
       )}
     </div>

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, type FormEvent, type ReactNode } from "react";
 
 import { AppShell, PageHead } from "@/components/AppShell";
-import { AgentAccess, Contacts } from "@/components/AgentAccess";
+import { AgentAccess } from "@/components/AgentAccess";
 import { AgentSetup } from "@/components/AgentSetup";
 import { Chevron, Reveal } from "@/components/bv/Reveal";
 import { agents } from "@/lib/shtab-data";
@@ -14,8 +14,15 @@ import { roleLabel, type Role } from "@/lib/platform-data";
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
-      { title: "Кабинет администратора — платформа «Без Воды»" },
-      { name: "description", content: "Участники, доступы и агенты платформы." },
+      { title: "Администрирование — NOWATER.TECH" },
+      { name: "description", content: "Участники, доступы и агенты платформы NOWATER.TECH." },
+      { property: "og:title", content: "Администрирование — NOWATER.TECH" },
+      {
+        property: "og:description",
+        content: "Участники, доступы и агенты платформы NOWATER.TECH.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -43,18 +50,15 @@ function Body() {
 
   return (
     <>
-      <PageHead
-        n="01"
-        eyebrow="Кабинет администратора"
-        title="Кто работает на платформе"
-        lead="Заводите личные кабинеты, открывайте каждому своих агентов и передавайте код из рук в руки."
-      />
+      <PageHead n="01" eyebrow="Кабинет администратора" title="Кто работает на платформе" />
 
-      <div className="-mx-1 overflow-x-auto pb-1">
+      {/* Вкладки — строка слов на общей линии, активное подчёркнуто.
+          Обводка вокруг всей ленты рисовала коробку там, где её нет. */}
+      <div className="-mx-1 overflow-x-auto border-b border-[color:var(--color-line)]">
         <div
           role="tablist"
           aria-label="Разделы кабинета"
-          className="flex min-w-max items-center gap-1 rounded-[var(--radius-pill)] border border-[color:var(--color-line)] p-1"
+          className="flex min-w-max items-center gap-8 px-1"
         >
           {tabs.map((t) => (
             <button
@@ -62,9 +66,9 @@ function Body() {
               role="tab"
               aria-selected={tab === t.key}
               onClick={() => setTab(t.key)}
-              className={`ui-meta rounded-[var(--radius-pill)] px-3.5 py-1.5 transition-colors ${
+              className={`relative -mb-px py-3 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors ${
                 tab === t.key
-                  ? "lg lg-strong font-semibold text-foreground"
+                  ? "text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-foreground"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -74,7 +78,7 @@ function Body() {
         </div>
       </div>
 
-      <div className="mt-7">
+      <div className="mt-12">
         {tab === "people" ? <People /> : null}
         {tab === "reports" ? <Reports /> : null}
         {tab === "agents" ? <AgentSetup /> : null}
@@ -150,13 +154,8 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
   }
 
   return (
-    <section className="card-flat px-5 py-5">
+    <section className="border-b border-[color:var(--color-line)] pb-10">
       <h2 className="ui-h2">Новый личный кабинет</h2>
-      <p className="ui-support measure mt-1 text-muted-foreground">
-        Имя обязательно, остальное — по желанию. Контакт нужен вам, чтобы знать, куда передать код:
-        платформа сама никому не пишет.
-      </p>
-
       <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-2">
         <Field label="Имя и фамилия">
           <input
@@ -188,9 +187,9 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
             onChange={(e) => setRole(e.target.value as Role)}
             className={inputCls}
           >
-            <option value="client">Клиент — ведёт свои задачи</option>
-            <option value="project">Менеджер — ведёт клиентов</option>
-            <option value="admin">Администратор — всё</option>
+            <option value="client">Заказчик</option>
+            <option value="project">Проджект-менеджер</option>
+            <option value="admin">Администратор</option>
           </select>
         </Field>
         <Field label="Почта">
@@ -234,13 +233,6 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
               {copied ? "Скопировано" : "Скопировать"}
             </button>
           </div>
-          <p className="ui-support measure mt-2 text-muted-foreground">
-            Открытым код показан здесь один раз: в списке кабинетов он закрыт, и увидеть его снова
-            можно будет только по кнопке «Показать». Скопируйте или запишите сейчас.
-          </p>
-          <p className="ui-support measure mt-1.5 text-muted-foreground">
-            Ниже в карточке откройте этому человеку агентов — без них он войдёт в пустой кабинет.
-          </p>
         </div>
       ) : null}
     </section>
@@ -275,12 +267,6 @@ function PersonCard({
               <span className="ui-meta text-[color:var(--color-accent)]">код отозван</span>
             ) : null}
           </div>
-          <p className="ui-support mt-1 text-muted-foreground">
-            {[p.position, p.company].filter(Boolean).join(" · ") || "должность не указана"}
-          </p>
-          <p className="ui-meta mt-1 text-muted-foreground">
-            <Contacts person={p} />
-          </p>
         </div>
 
         <div className="min-w-0">
@@ -325,11 +311,6 @@ function PersonCard({
             <button onClick={() => setActive(p.id, !p.active)} className="btn btn-ghost">
               {p.active ? "Отозвать код" : "Вернуть доступ"}
             </button>
-            <span className="ui-support measure text-muted-foreground">
-              {p.active
-                ? "Код перестанет пускать в кабинет. Задачи, разговоры и документы останутся на месте, доступ можно вернуть."
-                : "Человек снова войдёт по тому же коду — новый выдавать не нужно."}
-            </span>
           </div>
 
           {/* Подтверждение встаёт на место самой кнопки: ничего не прыгает и не
@@ -338,8 +319,7 @@ function PersonCard({
             {confirmDelete ? (
               <div className="space-y-2.5">
                 <p className="ui-support measure text-muted-foreground">
-                  Удалить кабинет «{p.name}»? Вместе с ним пропадут задачи, разговоры и документы
-                  этого человека. Вернуть их будет нельзя.
+                  Удалить кабинет «{p.name}» со всеми задачами?
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -422,8 +402,8 @@ function EditFields({
           onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}
           className={inputCls}
         >
-          <option value="client">Клиент</option>
-          <option value="project">Менеджер</option>
+          <option value="client">Заказчик</option>
+          <option value="project">Проджект-менеджер</option>
           <option value="admin">Администратор</option>
         </select>
       </Field>
@@ -451,13 +431,7 @@ function EditFields({
           onChange={(e) => setDraft({ ...draft, leads: e.target.checked })}
           className="mt-1 flex-none"
         />
-        <span>
-          <span className="ui-body block">Руководитель команды</span>
-          <span className="ui-support block text-muted-foreground">
-            Видит раздел «Команда»: над какими задачами работают остальные и доведены ли они до
-            документа. Переписку и файлы оттуда не открыть.
-          </span>
-        </span>
+        <span className="ui-body">Руководитель команды</span>
       </label>
       <label className="flex items-start gap-2.5 sm:col-span-2">
         <input
@@ -466,12 +440,7 @@ function EditFields({
           onChange={(e) => setDraft({ ...draft, hidden: e.target.checked })}
           className="mt-1 flex-none"
         />
-        <span>
-          <span className="ui-body block">Служебный кабинет</span>
-          <span className="ui-support block text-muted-foreground">
-            Не показывать руководителю. Для тестовых и внутренних кабинетов.
-          </span>
-        </span>
+        <span className="ui-body">Служебный кабинет</span>
       </label>
       <div className="sm:col-span-2">
         {/* Тёмная заливка на экране одна и она у «Завести кабинет»: правка данных —
@@ -507,8 +476,7 @@ function Overview() {
       {/* Коды и здесь закрыты: обзор чаще всего и показывают с экрана. */}
       <ListSection
         title="Кабинет есть, агентов нет"
-        note="Такой человек войдёт и увидит пустой кабинет. Откройте ему агентов в карточке."
-        empty="У всех клиентов открыт хотя бы один агент."
+        empty="У всех клиентов открыт хотя бы один агент"
         items={clientsWithoutAgents.map((p) => ({
           id: p.id,
           main: p.name,
@@ -518,8 +486,7 @@ function Overview() {
 
       <ListSection
         title="Код выдан, но ни разу не вошли"
-        note="Либо код не дошёл, либо человек не понял, зачем заходить. И то и другое чинится звонком."
-        empty="Все, кому выдали код, уже заходили."
+        empty="Все, кому выдали код, уже заходили"
         items={neverEntered.map((p) => ({ id: p.id, main: p.name, side: maskCode(p.code) }))}
       />
     </div>
@@ -528,19 +495,16 @@ function Overview() {
 
 function ListSection({
   title,
-  note,
   empty,
   items,
 }: {
   title: string;
-  note: string;
   empty: string;
   items: { id: string; main: string; side: string }[];
 }) {
   return (
     <section>
-      <h2 className="ui-h2 mb-1">{title}</h2>
-      <p className="ui-support measure mb-4 text-muted-foreground">{note}</p>
+      <h2 className="ui-h2 mb-4">{title}</h2>
       {items.length ? (
         <ul className="divide-y divide-[color:var(--color-line)] border-y border-[color:var(--color-line)]">
           {items.map((i) => (
@@ -619,7 +583,7 @@ function CodeCell({ code, name }: { code: string; name: string }) {
 }
 
 const inputCls =
-  "ui-body mt-1.5 w-full rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3 py-2 outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40";
+  "ui-body mt-1.5 w-full border-0 border-b border-[color:var(--color-line)] bg-transparent px-0 py-2 outline-none transition-colors focus-visible:outline-none focus:border-[color:var(--color-text-primary)]";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

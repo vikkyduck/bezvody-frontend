@@ -14,26 +14,16 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { WindowsProvider } from "../lib/windows-store";
 import { SessionProvider } from "../lib/session";
 import { DirectoryProvider } from "../lib/directory";
-import { CatMark, LensFilter, Scene, StencilLogo } from "@/components/bv/core";
 
 /* Сбойные экраны собраны на той же обёртке, что и вход: та же сцена, тот же
    логотип. Человек, у которого только что что-то не открылось, должен видеть
    свой кабинет, а не чужую служебную страницу на английском. */
 function FallbackScreen({ children }: { children: ReactNode }) {
   return (
-    <div className="stage grain flex min-h-screen flex-col">
-      <LensFilter />
-      <Scene blobs={[{ className: "left-[-18%] top-[-10%] h-[560px] w-[560px]", tone: "rose" }]} />
-
+    <div className="stage flex min-h-screen flex-col bg-background">
       <div className="flex flex-1 items-center justify-center px-5 py-12">
         <div className="w-full max-w-[420px]">
-          <div className="mb-8 flex items-center gap-3">
-            <CatMark
-              className="h-9 w-11 text-[color:var(--color-text-primary)]/70"
-              strokeWidth={2}
-            />
-            <StencilLogo className="logo-sm" />
-          </div>
+          <div className="mb-8 text-xs font-bold">NOWATER.TECH</div>
           {children}
         </div>
       </div>
@@ -47,10 +37,6 @@ function NotFoundComponent() {
       {/* Крупных цифр «404» здесь нет: код ошибки ничего не говорит
           руководителю и читается как чужой технический экран. */}
       <h1 className="ui-h2">Такой страницы нет</h1>
-      <p className="ui-support measure mt-3 text-muted-foreground">
-        Ссылка устарела или в адресе опечатка. Ваши задачи, документы и разговоры на месте — они в
-        кабинете.
-      </p>
       {/* Выход один: на сбойном экране выбирать не из чего. */}
       <div className="mt-7">
         <Link to="/" className="btn btn-primary w-full">
@@ -75,10 +61,6 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
           Документы и разговоры лежат на сервере, страница их не хранит —
           поэтому это можно обещать честно. Стек и код ошибки не показываем:
           они уходят в reportLovableError, читателю от них толку нет. */}
-      <p className="ui-support measure mt-3 text-muted-foreground">
-        Страница не открылась — это наша ошибка, не ваша. Задачи, документы и разговоры хранятся на
-        сервере, с ними ничего не случилось.
-      </p>
       {/* basis-[12rem] вместо flex-1: с нулевой базой «Попробовать снова»
           на 375 px обрезается (.btn стоит на overflow:hidden), а так кнопки
           просто встают в две строки. */}
@@ -107,7 +89,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Платформа «Без Воды»" },
+      { title: "NOWATER.TECH" },
       {
         name: "description",
         content:

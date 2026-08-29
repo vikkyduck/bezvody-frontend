@@ -63,7 +63,7 @@ export const openWindowServer = createServerFn({ method: "POST" })
       return {
         windows: [] as StoredWindow[],
         opened: null,
-        note: "Кабинет вас не узнал — войдите по коду ещё раз.",
+        note: "Кабинет вас не узнал — войдите по коду ещё раз",
       };
 
     // Агента можно открыть только из тех, что открыты этому человеку.
@@ -71,14 +71,14 @@ export const openWindowServer = createServerFn({ method: "POST" })
       return {
         windows: await d.readWindows(me.id),
         opened: null,
-        note: "Этого агента вам сейчас не открыли — напишите менеджеру.",
+        note: "Этого агента вам сейчас не открыли — напишите менеджеру",
       };
     }
 
     const { projects, windows } = await d.readWorkspace(me.id);
     // Окно живёт в папке: без папки его документы негде взять.
     if (!projects.some((p) => p.id === data.projectId))
-      return { windows, opened: null, note: "Задача не найдена — обновите страницу." };
+      return { windows, opened: null, note: "Задача не найдена — обновите страницу" };
 
     if (!data.fresh) {
       // Ранжируем в два ключа: сначала разговоры, где действительно говорили,
@@ -144,8 +144,8 @@ function inPartsNote(names: string[]): string {
   if (!names.length) return "";
   const list = names.map((n) => `«${n}»`).join(", ");
   return names.length > 1
-    ? `Документы ${list} большие — прочитал их по частям, это заняло дольше обычного.`
-    : `Документ ${list} большой — прочитал его по частям, это заняло дольше обычного.`;
+    ? `Документы ${list} большие — прочитал их по частям`
+    : `Документ ${list} большой — прочитал его по частям`;
 }
 
 /**
@@ -346,11 +346,11 @@ async function askInWindow(opts: {
   const reply = answer.ok
     ? answer.text
     : answer.reason === "no-key"
-      ? `Агент настроен, но ключ модели${answer.detail ? ` ${answer.detail}` : ""} ещё не задан — администратор вписывает его в своей панели. Вопрос сохранён.`
+      ? `Агент настроен, но ключ модели${answer.detail ? ` ${answer.detail}` : ""} ещё не задан. Вопрос сохранён.`
       : answer.reason === "not-configured"
-        ? "Этому агенту ещё не задали инструкцию — администратор вписывает её в своей панели. Вопрос сохранён."
+        ? "Этому агенту ещё не задали инструкцию. Вопрос сохранён."
         : answer.reason === "busy"
-          ? "Сейчас к агенту очередь: слишком много обращений разом. Вопрос сохранён — отправьте его ещё раз через минуту."
+          ? "Сейчас к агенту очередь. Вопрос сохранён — отправьте его ещё раз через минуту."
           : `Не удалось получить ответ: ${answer.detail ?? "ошибка связи с моделью"}. Вопрос сохранён — попробуйте ещё раз.`;
 
   // Id реплики придумываем заранее: по нему потом собирается файл Word.
@@ -497,7 +497,7 @@ export const sendMessageServer = createServerFn({ method: "POST" })
     if (q.isAsking(key)) {
       return {
         windows: await d.readWindows(me.id),
-        note: "Предыдущий вопрос ещё в работе — ответ появится сам, повторять не нужно.",
+        note: "Предыдущий вопрос ещё в работе",
       };
     }
 
@@ -559,12 +559,12 @@ export const setPanelServer = createServerFn({ method: "POST" })
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
     if (!me)
-      return { ok: false, windows: [], note: "Кабинет вас не узнал — войдите по коду ещё раз." };
+      return { ok: false, windows: [], note: "Кабинет вас не узнал — войдите по коду ещё раз" };
 
     const windows = await d.readWindows(me.id);
     // Разговор ищем среди своих: чужой состав не набирают даже случайно.
     const target = windows.find((w) => w.id === data.windowId);
-    if (!target) return { ok: false, windows, note: "Разговор не найден — обновите страницу." };
+    if (!target) return { ok: false, windows, note: "Разговор не найден — обновите страницу" };
 
     const runs = await import("./server-runs");
     // Менять состав посреди прогона нельзя: прогон идёт по списку, снятому на
@@ -573,7 +573,7 @@ export const setPanelServer = createServerFn({ method: "POST" })
       return {
         ok: false,
         windows,
-        note: "Состав сейчас идёт по документу — дождитесь конца, потом меняйте.",
+        note: "Состав сейчас идёт по документу — дождитесь конца, потом меняйте",
       };
     }
 
@@ -601,7 +601,7 @@ export const setPanelServer = createServerFn({ method: "POST" })
     // что состав набран.
     const note =
       wanted.size && !panel.length
-        ? "Этих согласующих у агента больше нет — обновите страницу и наберите состав заново."
+        ? "Этих согласующих у агента больше нет — обновите страницу и наберите состав заново"
         : "";
     return { ok: true, windows: next, note };
   });
@@ -625,7 +625,7 @@ export const runPanelServer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ ok: boolean; note: string }> => {
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
-    if (!me) return { ok: false, note: "Кабинет вас не узнал — войдите по коду ещё раз." };
+    if (!me) return { ok: false, note: "Кабинет вас не узнал — войдите по коду ещё раз" };
 
     const q = await import("./server-queue");
     const runs = await import("./server-runs");
@@ -633,13 +633,13 @@ export const runPanelServer = createServerFn({ method: "POST" })
 
     const { projects, windows } = await d.readWorkspace(me.id);
     const target = windows.find((w) => w.id === data.windowId);
-    if (!target) return { ok: false, note: "Разговор не найден — обновите страницу." };
+    if (!target) return { ok: false, note: "Разговор не найден — обновите страницу" };
 
     const panel = target.panel ?? [];
     if (!panel.length)
       return {
         ok: false,
-        note: "Состав согласующих ещё не набран — отметьте, кому вы понесёте этот документ.",
+        note: "Состав согласующих ещё не набран — отметьте, кому вы понесёте этот документ",
       };
 
     const going = runs.panelRunOf(data.windowId);
@@ -647,7 +647,7 @@ export const runPanelServer = createServerFn({ method: "POST" })
       const mins = runs.minutesSince(going.startedAt);
       return {
         ok: false,
-        note: `Состав уже идёт по документу${mins ? `, ${mins}-я минута` : ""} — ответы появятся сами, запускать второй раз не нужно.`,
+        note: `Состав уже идёт по документу${mins ? `, ${mins}-я минута` : ""}`,
       };
     }
     // В разговоре пишется одиночный ответ. Пустить поверх него прогон — значит
@@ -655,7 +655,7 @@ export const runPanelServer = createServerFn({ method: "POST" })
     if (q.isAsking(key))
       return {
         ok: false,
-        note: "В этом разговоре ещё пишется ответ — дождитесь его и запустите состав.",
+        note: "В этом разговоре ещё пишется ответ — дождитесь его и запустите состав",
       };
 
     // Документа нет — прогон был бы получасом вежливых отказов: по общему
@@ -664,7 +664,7 @@ export const runPanelServer = createServerFn({ method: "POST" })
     if (!(project?.files.length ?? 0) && !target.files.length)
       return {
         ok: false,
-        note: "К задаче не приложен документ — согласующим нечего будет смотреть. Приложите файл и запустите снова.",
+        note: "К задаче не приложен документ. Приложите файл и запустите снова.",
       };
 
     const done = panel.filter((id) => spokeAlready(target, id));
@@ -672,10 +672,10 @@ export const runPanelServer = createServerFn({ method: "POST" })
     // и второе «посмотри материалы» выглядело бы для неё склерозом.
     const pending = panel.filter((id) => !spokeAlready(target, id));
     if (!pending.length)
-      return { ok: false, note: "Весь состав уже посмотрел документ — прогонять заново нечего." };
+      return { ok: false, note: "Весь состав уже посмотрел документ — прогонять заново нечего" };
 
     if (!runs.startPanelRun(data.windowId, { total: panel.length, doneRoleIds: done }))
-      return { ok: false, note: "Состав уже идёт по документу — ответы появятся сами." };
+      return { ok: false, note: "Состав уже идёт по документу" };
     // Ключ занятости держим на весь прогон, а не на каждую роль отдельно:
     // иначе в паузу между двумя ролями успевал бы влезть вопрос от человека,
     // и два ответа легли бы в разговор друг на друга.
@@ -724,7 +724,7 @@ export const runPanelServer = createServerFn({ method: "POST" })
 
     return {
       ok: true,
-      note: `Состав пошёл по документу: ${pending.length} ${roleWord(pending.length)} впереди, каждая отвечает несколько минут. Страницу можно закрыть — ответы сохранятся.`,
+      note: `Состав пошёл по документу: ${pending.length} ${roleWord(pending.length)} впереди`,
     };
   });
 
@@ -850,15 +850,15 @@ export const moveWindowServer = createServerFn({ method: "POST" })
     const d = await import("./server-data");
     const { me } = await d.whoIs(String(data.code ?? ""));
     if (!me) {
-      return { ok: false, windows: [], note: "Кабинет вас не узнал — войдите по коду ещё раз." };
+      return { ok: false, windows: [], note: "Кабинет вас не узнал — войдите по коду ещё раз" };
     }
 
     const { projects, windows } = await d.readWorkspace(me.id);
     const target = projects.find((p) => p.id === data.projectId);
-    if (!target) return { ok: false, windows, note: "Задача не найдена — обновите страницу." };
+    if (!target) return { ok: false, windows, note: "Задача не найдена — обновите страницу" };
 
     const moving = windows.find((w) => w.id === data.windowId);
-    if (!moving) return { ok: false, windows, note: "Разговор не найден — обновите страницу." };
+    if (!moving) return { ok: false, windows, note: "Разговор не найден — обновите страницу" };
     if (moving.projectId === data.projectId) return { ok: true, windows, note: "" };
 
     const next = windows.map((w) =>

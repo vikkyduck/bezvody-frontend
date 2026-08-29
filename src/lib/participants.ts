@@ -12,8 +12,8 @@
 export type Role = "client" | "project" | "admin";
 
 export const roleLabel: Record<Role, string> = {
-  client: "Клиент",
-  project: "Менеджер",
+  client: "Заказчик",
+  project: "Проджект-менеджер",
   admin: "Администратор",
 };
 

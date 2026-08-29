@@ -68,10 +68,6 @@ export function AgentSetup() {
 
       <section>
         <h2 className="mb-1 text-[15px] font-semibold">Инструкции агентов</h2>
-        <p className="measure mb-5 text-[12.5px] text-muted-foreground">
-          Инструкция — это то, кем агент себя считает и как работает. Вставьте её текстом: пока поле
-          пустое, агент честно скажет клиенту, что не настроен.
-        </p>
         <div className="space-y-3">
           {agents.map((a) => (
             <AgentCard
@@ -100,12 +96,6 @@ function ApiKey({
   return (
     <section className="card-flat px-5 py-5">
       <h2 className="text-[15px] font-semibold">Ключи моделей</h2>
-      <p className="measure mt-1 text-[12.5px] text-muted-foreground">
-        Свой ключ на каждого провайдера: так видно расход по каждому отдельно, и отзыв одного не
-        роняет остальных. Ключи хранятся на сервере в РФ и в браузер не возвращаются — поэтому ниже
-        видно только последние знаки. Ключ создаётся в консоли самого провайдера и вставляется сюда;
-        в переписку его не пересылайте.
-      </p>
 
       <div className="mt-4 space-y-3">
         {PROVIDERS.map((p) => (
@@ -113,7 +103,6 @@ function ApiKey({
             key={p.id}
             provider={p.id}
             label={p.label}
-            hint={p.hint}
             settings={settings}
             onSaved={onSaved}
           />
@@ -126,13 +115,11 @@ function ApiKey({
 function ProviderKey({
   provider,
   label,
-  hint,
   settings,
   onSaved,
 }: {
   provider: Provider;
   label: string;
-  hint: string;
   settings: AgentSettings;
   onSaved: (s: AgentSettings) => void;
 }) {
@@ -162,11 +149,10 @@ function ProviderKey({
               ключ задан <span className="t-number tracking-[0.08em]">••••{state.tail}</span>
             </>
           ) : (
-            "ключа нет — агенты на этой модели отвечать не смогут"
+            "ключа нет"
           )}
         </span>
       </div>
-      <p className="mt-1 text-[11.5px] text-muted-foreground">{hint}</p>
       <div className="mt-2.5 flex flex-wrap items-end gap-2.5">
         <input
           type="password"
@@ -410,21 +396,17 @@ function AgentCard({
       if (badRoles) {
         setError(
           `Сохранено в ${at}, но ${badRoles === 1 ? "одна роль не записана" : `${badRoles} рол(и) не записаны`}: ` +
-            "у роли обязательны имя и инструкция.",
+            "у роли обязательны имя и инструкция",
         );
       } else if (lostRoles > 0) {
-        setError(
-          `Сохранено в ${at}, но ролей записалось меньше, чем отправлено. Проверьте список.`,
-        );
+        setError(`Сохранено в ${at}, но ролей записалось меньше, чем отправлено`);
       } else {
         setDone(`Сохранено в ${at}`);
       }
     } catch (err) {
       const long = err instanceof Error && err.message === "долго";
       setError(
-        long
-          ? "Сервер не ответил за полторы минуты. Текст никуда не делся — он в поле и в черновике; нажмите «Сохранить» ещё раз."
-          : "Не удалось сохранить: связь оборвалась. Текст остался в поле и в черновике — попробуйте ещё раз.",
+        long ? "Сервер не ответил за полторы минуты" : "Не удалось сохранить: связь оборвалась",
       );
     } finally {
       setBusy(false);
@@ -465,17 +447,17 @@ function AgentCard({
               {saved.enabled || savedRoles.length ? "настроен" : "не настроен"}
             </span>
           </div>
-          <p className="mt-1 text-[12px] text-muted-foreground">
-            {saved.enabled || savedRoles.length
-              ? saved.transport === "http"
+          {saved.enabled || savedRoles.length ? (
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              {saved.transport === "http"
                 ? `${where} · ${saved.endpoint}`
                 : saved.prompt.length
                   ? `${where} · инструкция ${saved.prompt.length} знаков`
-                  : where
-              : "клиент увидит, что агент не настроен"}
-            {savedRoles.length ? ` · ролей ${savedRoles.length}` : ""}
-            {files.length ? ` · документов ${files.length}` : ""}
-          </p>
+                  : where}
+              {savedRoles.length ? ` · ролей ${savedRoles.length}` : ""}
+              {files.length ? ` · документов ${files.length}` : ""}
+            </p>
+          ) : null}
         </div>
         <button onClick={() => setOpen((v) => !v)} className="btn btn-glass text-[12.5px]">
           {open ? "Свернуть" : "Настроить"}
@@ -488,7 +470,7 @@ function AgentCard({
           {draftAt ? (
             <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-[color:var(--color-accent)] px-4 py-2.5">
               <span className="flex-1 text-[12.5px]">
-                Остался несохранённый черновик от {draftAt} — правки, которые не доехали до сервера.
+                Остался несохранённый черновик от {draftAt}
               </span>
               <button onClick={restoreDraft} className="btn btn-glass text-[12px]">
                 Вернуть в поля
@@ -537,12 +519,6 @@ function AgentCard({
                   </button>
                 ))}
               </div>
-              <p className="measure mt-2 text-[11.5px] text-muted-foreground">
-                {PROVIDERS.find((pr) => pr.id === provider)?.hint}
-                {provider !== "anthropic"
-                  ? ". Роли и инструкции остаются те же — меняется только тот, кто их отыгрывает."
-                  : ""}
-              </p>
             </div>
           ) : null}
 
@@ -603,20 +579,11 @@ function AgentCard({
                   </option>
                 </select>
               </label>
-
-              <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-                Не знаете формат — сохраните и нажмите «Проверить связь»: платформа покажет, что
-                ответил сервис, и по этому ответу разбор допишется точно.
-              </p>
             </div>
           ) : null}
 
           <label className="block">
-            <span className="label-caps">
-              {transport === "http"
-                ? "Инструкция (уйдёт в сервис как системная, если он её принимает)"
-                : "Инструкция агента"}
-            </span>
+            <span className="label-caps">Инструкция агента</span>
             <textarea
               value={prompt}
               onChange={(e) => {
@@ -641,12 +608,6 @@ function AgentCard({
                 </button>
               ) : null}
             </div>
-            <p className="measure mt-1 text-[12px] text-muted-foreground">
-              Дописывается к инструкции последним абзацем. Нужно ради одного: агент доходил до
-              рекомендаций и останавливался — уточнял, предлагал собрать документ «если нужно», — и
-              человек оставался с перепиской. Неполный документ можно дополнить, отсутствующий —
-              нет. Очистите поле, если этому агенту правило мешает.
-            </p>
             <textarea
               value={finishRule}
               onChange={(e) => {
@@ -723,11 +684,6 @@ function AgentCard({
               </button>
             ) : null}
             {done ? <span className="text-[12px] text-muted-foreground">{done}</span> : null}
-            {transport === "model" ? (
-              <span className="text-[11.5px] text-muted-foreground">
-                Проверка идёт по сохранённой настройке — сначала «Сохранить»
-              </span>
-            ) : null}
           </div>
 
           {error ? (
@@ -738,11 +694,6 @@ function AgentCard({
 
           <div className="border-t border-[color:var(--color-line)] pt-4">
             <div className="label-caps">Документы агента</div>
-            <p className="measure mt-1 mb-3 text-[12.5px] text-muted-foreground">
-              Методика, стандарт, шаблон — то, что агент должен знать всегда. Уходят к нему при
-              каждом вопросе любого клиента. Сохранять отдельно не нужно: файл встаёт на место
-              сразу.
-            </p>
             <Attachments
               files={files}
               max={MAX_AGENT_FILES}
@@ -760,7 +711,7 @@ function AgentCard({
                     })
                   : Promise.resolve({ ok: false, name: "", mime: "", base64: "" })
               }
-              empty="Документов нет — агент работает по одной инструкции."
+              empty="Документов нет"
             />
           </div>
 
@@ -826,11 +777,6 @@ function Roles({
           </button>
         ) : null}
       </div>
-      <p className="measure mt-1 mb-3 text-[12.5px] text-muted-foreground">
-        {roles.length
-          ? "Клиент видит их кнопками в разговоре и прогоняет документ по одной роли за раз. Инструкция роли самодостаточна: общую инструкцию агента можно оставить пустой. Фамилий в ролях не пишем — роль переиспользуется, а человек в ней меняется."
-          : "У этого агента ролей нет — он отвечает сам от себя. Добавьте роль, если нужен разговор от лица согласующих."}
-      </p>
 
       <div className="space-y-2.5">
         {roles.map((r, i) => (
@@ -856,7 +802,7 @@ function Roles({
                   />
                 </label>
                 <label className="block">
-                  <span className="label-caps">Группа — для порядка, клиенту не видна</span>
+                  <span className="label-caps">Группа</span>
                   <input
                     value={r.group}
                     onChange={(e) => patch(i, "group", e.target.value)}
@@ -911,11 +857,6 @@ function Roles({
       >
         Добавить роль
       </button>
-      <p className="mt-2 text-[11.5px] text-muted-foreground">
-        Роль без имени или без инструкции не сохраняется. Правила разговора — короткие ответы,
-        два-три вопроса за заход и прямой отказ, если документ роль не касается, — платформа
-        дописывает сама, повторять их в каждой роли не нужно.
-      </p>
     </div>
   );
 }

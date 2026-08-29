@@ -24,6 +24,22 @@ import { meServer, signInServer } from "./server-directory";
 
 const KEY = "bv-session";
 
+/** Код остаётся рабочим, даже если его набрали в русской раскладке. */
+const normalizeAccessCode = (raw: string) => {
+  const ru = "йцукенгшщзхъфывапролджэячсмитьбю";
+  const en = "qwertyuiop[]asdfghjkl;'zxcvbnm,.";
+  return raw
+    .trim()
+    .toLowerCase()
+    .split("")
+    .map((char) => {
+      const index = ru.indexOf(char);
+      return index >= 0 ? en[index] : char;
+    })
+    .join("")
+    .toUpperCase();
+};
+
 type Session = {
   person: Participant | null;
   role: Role | null;
@@ -77,7 +93,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (raw: string) => {
-    const clean = raw.trim().toUpperCase();
+    const clean = normalizeAccessCode(raw);
     if (!clean) return { ok: false as const, error: "Введите код доступа" };
 
     try {

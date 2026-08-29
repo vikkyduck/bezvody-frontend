@@ -125,7 +125,7 @@ export const assembleServer = createServerFn({ method: "POST" })
 
     const note = [
       `Собрано частей: ${parts.length}.`,
-      lost ? `Не нашлось: ${lost} — этих ответов в задаче уже нет.` : "",
+      lost ? `Не нашлось: ${lost}.` : "",
       asked.length > taken.length ? `Взяли первые ${MAX_PARTS}.` : "",
     ]
       .filter(Boolean)

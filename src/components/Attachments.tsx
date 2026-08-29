@@ -51,7 +51,6 @@ function Uploading({ name, size }: { name: string; size: number }) {
   return (
     <>
       {name} · {humanSize(size)} · {sec} с
-      {size > 20 * 1024 * 1024 ? " — большой файл, это займёт время" : ""}
     </>
   );
 }
@@ -201,7 +200,7 @@ export function Attachments({
       {fit.fits ? null : (
         <p className="ui-support mb-3 text-[color:var(--color-error)]">
           Здесь больше {overWhat}, чем агент читает за один вопрос: часть документов он увидит не
-          целиком. Уберите лишние — иначе разбор будет сделан по неполным данным.
+          целиком
         </p>
       )}
 
@@ -358,14 +357,13 @@ export function Attachments({
               {busy ? (
                 <Uploading name={busy.name} size={busy.size} />
               ) : full ? (
-                `Больше ${max} документов сюда не поместится — уберите лишние`
+                `Больше ${max} документов сюда не поместится`
               ) : (
                 <>
                   {/* Пределы человеку до дела нет, пока он в них не упёрся:
                       о превышении скажет сама загрузка. В покое — только виды
                       файлов, всё остальное было шумом в три строки. */}
                   {SUPPORTED_HINT}
-                  <span className="hidden md:inline"> · или перетащите мышью</span>
                 </>
               )}
             </span>
