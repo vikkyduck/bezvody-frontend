@@ -97,6 +97,8 @@ type Store = {
   setPanel: (windowId: string, roleIds: string[]) => Promise<{ ok: boolean }>;
   /** Прогнать документ по всему составу разом. Уходит в фон, возвращается сразу */
   runPanel: (windowId: string) => Promise<{ ok: boolean; note: string }>;
+  /** Собрать документ конвейером прогонов. Тоже уходит в фон */
+  runBuild: (windowId: string) => Promise<{ ok: boolean; note: string }>;
   /** Взять разбор другого агента этой же папки в своё окно */
   takeIntoWindow: (windowId: string, messageId: string) => Promise<string>;
   detach: (windowId: string, fileId: string) => Promise<void>;
@@ -358,6 +360,17 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
     [code],
   );
 
+  const runBuild = useCallback(
+    async (windowId: string) => {
+      if (!code) return { ok: false, note: "" };
+      const { runBuildServer } = await import("./server-pipeline");
+      const res = await runBuildServer({ data: { code, windowId } });
+      setNote(res.note);
+      return res;
+    },
+    [code],
+  );
+
   const runPanel = useCallback(
     async (windowId: string) => {
       if (!code) return { ok: false, note: "" };
@@ -453,6 +466,7 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
       mergeProject,
       setPanel,
       runPanel,
+      runBuild,
       takeIntoWindow,
       detach,
       download,
@@ -480,6 +494,7 @@ export function WindowsProvider({ children }: { children: ReactNode }) {
       mergeProject,
       setPanel,
       runPanel,
+      runBuild,
       takeIntoWindow,
       detach,
       download,

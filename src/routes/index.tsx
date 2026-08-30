@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell, PageHead, type Crumb } from "@/components/AppShell";
 import { Landing } from "@/components/Landing";
 import { Attachments } from "@/components/Attachments";
+import { Build } from "@/components/Build";
 import { Checklist } from "@/components/Checklist";
 import { Markdown } from "@/components/Markdown";
 import { Chevron } from "@/components/bv/Reveal";
@@ -1586,7 +1587,13 @@ function Conversation({ window: w, project }: { window: StoredWindow; project: S
         </form>
       </div>
 
-      {w.agentId === "architect" ? <Checklist /> : null}
+      {/* Сборка документа и шпаргалка методики — только там, где они про дело */}
+      {w.agentId === "architect" ? (
+        <>
+          <Build windowId={w.id} />
+          <Checklist />
+        </>
+      ) : null}
 
       <FromProject
         window={w}

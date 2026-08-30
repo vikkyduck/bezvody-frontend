@@ -97,3 +97,71 @@ export function minutesSince(startedAt: string): number {
   if (!Number.isFinite(started)) return 0;
   return Math.max(0, Math.round((Date.now() - started) / 60_000));
 }
+
+// ── Сборка документа в четыре прогона ────────────────────────────────────────
+/**
+ * То же, что и прогон по составу, но для конвейера сборки: четыре модели
+ * подряд — это десять-пятнадцать минут, столько браузер запрос не держит.
+ * Работа живёт на сервере, браузер спрашивает «на каком шаге».
+ */
+
+export type BuildStep = {
+  passId: string;
+  name: string;
+  /** ждёт · идёт · готово · сорвалось · пропущен */
+  state: "waiting" | "running" | "done" | "failed" | "skipped";
+  /** Сколько шёл шаг, секунды */
+  seconds: number;
+  /** Почему сорвался — человеку словами */
+  note: string;
+};
+
+export type BuildRun = {
+  buildId: string;
+  steps: BuildStep[];
+  startedAt: string;
+};
+
+const builds = new Map<string, BuildRun>();
+
+export function buildRunOf(windowId: string): BuildRun | null {
+  const run = builds.get(windowId);
+  return run ? { ...run, steps: run.steps.map((s) => ({ ...s })) } : null;
+}
+
+export const isBuildRunning = (windowId: string): boolean => builds.has(windowId);
+
+export function startBuildRun(
+  windowId: string,
+  init: { buildId: string; steps: { passId: string; name: string }[] },
+): BuildRun | null {
+  if (builds.has(windowId)) return null;
+  const run: BuildRun = {
+    buildId: init.buildId,
+    steps: init.steps.map((s) => ({ ...s, state: "waiting", seconds: 0, note: "" })),
+    startedAt: new Date().toISOString(),
+  };
+  builds.set(windowId, run);
+  return run;
+}
+
+export function buildStepStarted(windowId: string, passId: string): void {
+  const run = builds.get(windowId);
+  const step = run?.steps.find((s) => s.passId === passId);
+  if (step) step.state = "running";
+}
+
+export function buildStepFinished(
+  windowId: string,
+  passId: string,
+  outcome: { state: BuildStep["state"]; seconds: number; note?: string },
+): void {
+  const run = builds.get(windowId);
+  const step = run?.steps.find((s) => s.passId === passId);
+  if (!step) return;
+  step.state = outcome.state;
+  step.seconds = outcome.seconds;
+  step.note = outcome.note ?? "";
+}
+
+export const finishBuildRun = (windowId: string): void => void builds.delete(windowId);

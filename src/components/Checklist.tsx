@@ -56,6 +56,19 @@ export function Checklist() {
     [sections, done],
   );
 
+  // Счётчик публикуем наружу: блок сборки показывает его рядом с кнопкой и по
+  // нему решает, предупреждать ли о пустых разделах. Считать методику второй
+  // раз в другом месте незачем — она живёт на сервере.
+  useEffect(() => {
+    if (!total) return;
+    try {
+      localStorage.setItem("bv-6pager-progress", JSON.stringify({ closed, total }));
+    } catch {
+      /* приватный режим браузера — сборка обойдётся без счётчика */
+    }
+    window.dispatchEvent(new Event("bv-checklist"));
+  }, [closed, total]);
+
   function mark(key: string) {
     setDone((prev) => {
       const next = { ...prev };

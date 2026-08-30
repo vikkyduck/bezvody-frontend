@@ -11,6 +11,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 
+import { DEFAULT_MENTOR_RULE, DEFAULT_PASSES, cleanPass, passesOf, type AgentPass } from "./passes";
 import { DEFAULT_ROLES, ROLE_RULES, type AgentRole } from "./roles";
 import { DEFAULT_MODEL_OF, PROVIDERS, isProvider, type Provider } from "./providers";
 
@@ -42,6 +43,18 @@ export type AgentConfig = {
    * (см. rolesOf); пустой список означает «ролей нет», и это разные вещи.
    */
   roles?: AgentRole[];
+  /**
+   * Прогоны сборки документа. Есть не у всех: обычный агент отвечает одним
+   * заходом. Не задано — прогоны по умолчанию из кода; пустой список означает
+   * «конвейера нет», и это разные вещи.
+   */
+  passes?: AgentPass[];
+  /**
+   * Правило разговора у агента с конвейером: он ведёт разбор, а не пишет
+   * документ. Заменяет правило завершения — там на выходе документ, здесь
+   * доведённая фактура.
+   */
+  mentorRule: string;
 };
 
 export type AgentConfigMap = Record<string, AgentConfig>;
@@ -59,6 +72,8 @@ export type AgentSettings = {
    * попадают в бандл браузера, а это методология, за которую платит заказчик.
    */
   defaultRoles: Record<string, AgentRole[]>;
+  /** Прогоны по умолчанию — чтобы админка показала «вернуть как было» */
+  defaultPasses: Record<string, AgentPass[]>;
 };
 
 export const emptyKeys = (): Record<Provider, KeyState> => ({
@@ -67,7 +82,12 @@ export const emptyKeys = (): Record<Provider, KeyState> => ({
   gemini: { set: false, tail: "" },
 });
 
-const emptySettings = (): AgentSettings => ({ agents: {}, keys: emptyKeys(), defaultRoles: {} });
+const emptySettings = (): AgentSettings => ({
+  agents: {},
+  keys: emptyKeys(),
+  defaultRoles: {},
+  defaultPasses: {},
+});
 
 export const MODELS = [
   { id: "claude-opus-5", label: "Opus 5 — самый сильный" },
@@ -119,6 +139,7 @@ export const emptyConfig = (agentId?: string): AgentConfig => ({
   provider: "anthropic",
   model: DEFAULT_MODEL,
   finishRule: DEFAULT_FINISH_RULE,
+  mentorRule: DEFAULT_MENTOR_RULE,
   enabled: false,
   updatedAt: null,
   transport: "model",
@@ -139,6 +160,7 @@ export function normalizeConfig(
   return {
     ...base,
     finishRule: c && "finishRule" in c ? (c.finishRule ?? "") : DEFAULT_FINISH_RULE,
+    mentorRule: c && "mentorRule" in c ? (c.mentorRule ?? "") : DEFAULT_MENTOR_RULE,
     provider: isProvider(base.provider) ? base.provider : "anthropic",
     authSet: Boolean(base.authSet),
   };
@@ -148,6 +170,7 @@ export function normalizeConfig(
 export function systemPromptOf(
   cfg: Partial<AgentConfig> | undefined,
   role?: AgentRole | null,
+  agentId?: string,
 ): string {
   const c = normalizeConfig(cfg);
   const prompt = c.prompt.trim();
@@ -160,9 +183,12 @@ export function systemPromptOf(
     return [prompt, role.prompt.trim(), ROLE_RULES.trim()].filter(Boolean).join("\n\n---\n\n");
   }
 
-  const rule = c.finishRule.trim();
-  if (!prompt) return "";
-  return rule ? `${prompt}\n\n---\n\n${rule}` : prompt;
+  // У агента с конвейером разговор — это разбор, а не сборка документа:
+  // документ соберут прогоны по кнопке. Поэтому правило другое.
+  const hasPipeline = passesOf(agentId ?? "", c.passes).some((p) => p.enabled && p.prompt);
+  const rule = (hasPipeline ? c.mentorRule : c.finishRule).trim();
+  if (!prompt && !rule) return "";
+  return prompt && rule ? `${prompt}\n\n---\n\n${rule}` : prompt || rule;
 }
 
 /**
@@ -192,7 +218,7 @@ export const getAgentSettingsServer = createServerFn({ method: "POST" })
       d,
       await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {}),
     );
-    return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES };
+    return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES, defaultPasses: DEFAULT_PASSES };
   });
 
 /** По каждому провайдеру: задан ли ключ и его хвост — сверить, тот ли это ключ. */
@@ -224,6 +250,9 @@ export const saveAgentServer = createServerFn({ method: "POST" })
       agentId: string;
       prompt: string;
       finishRule?: string;
+      mentorRule?: string;
+      /** Прогоны сборки целиком: правка одного — это новый список */
+      passes?: AgentPass[];
       provider?: Provider;
       model: string;
       transport?: Transport;
@@ -263,6 +292,10 @@ export const saveAgentServer = createServerFn({ method: "POST" })
       provider,
       ...(roles ? { roles } : {}),
       finishRule: data.finishRule ?? prev.finishRule,
+      mentorRule: data.mentorRule ?? prev.mentorRule,
+      ...(Array.isArray(data.passes)
+        ? { passes: data.passes.map(cleanPass).filter((p) => p.name && p.prompt) }
+        : {}),
       // У Claude модель выбирается из нашего списка, у чужих провайдеров имя
       // вписывается руками: их линейки меняются чаще, чем мы правим код.
       model:
@@ -292,6 +325,7 @@ export const saveAgentServer = createServerFn({ method: "POST" })
       agents: await withAuthFlags(d, agents),
       keys: await keysSummary(d),
       defaultRoles: DEFAULT_ROLES,
+      defaultPasses: DEFAULT_PASSES,
     };
   });
 
@@ -305,7 +339,7 @@ export const saveApiKeyServer = createServerFn({ method: "POST" })
     const provider: Provider = isProvider(data.provider) ? data.provider : "anthropic";
     await d.writeApiKey(provider, String(data.key ?? "").trim());
     const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
-    return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES };
+    return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES, defaultPasses: DEFAULT_PASSES };
   });
 
 /**

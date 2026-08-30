@@ -7,6 +7,7 @@ import {
   providerLabel,
   type Provider,
 } from "@/lib/providers";
+import type { AgentPass } from "@/lib/passes";
 import type { AgentRole } from "@/lib/roles";
 
 import { Attachments } from "@/components/Attachments";
@@ -54,7 +55,9 @@ export function AgentSetup() {
     if (!code) return;
     getAgentSettingsServer({ data: { code } })
       .then(setSettings)
-      .catch(() => setSettings({ agents: {}, keys: emptyKeys(), defaultRoles: {} }));
+      .catch(() =>
+        setSettings({ agents: {}, keys: emptyKeys(), defaultRoles: {}, defaultPasses: {} }),
+      );
     listAgentFilesServer({ data: { code } })
       .then(setFiles)
       .catch(() => setFiles({}));
@@ -209,6 +212,15 @@ function AgentCard({
     ? configuredRoles
     : (settings.defaultRoles[id] ?? []);
   const [roles, setRoles] = useState<AgentRole[]>(savedRoles);
+
+  // Прогоны сборки: та же логика, что у ролей — не задано означает «по
+  // умолчанию из кода», пустой список означает «конвейера нет».
+  const configuredPasses = settings.agents[id]?.passes;
+  const savedPasses = Array.isArray(configuredPasses)
+    ? configuredPasses
+    : (settings.defaultPasses[id] ?? []);
+  const [passes, setPasses] = useState<AgentPass[]>(savedPasses);
+  const [mentorRule, setMentorRule] = useState(saved.mentorRule);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState("");
   const [error, setError] = useState("");
@@ -324,6 +336,8 @@ function AgentCard({
     setAuthHeader(saved.authHeader);
     setFormat(saved.format);
     setRoles(savedRoles);
+    setPasses(savedPasses);
+    setMentorRule(saved.mentorRule);
     // savedRoles — новый массив на каждый рендер, поэтому в зависимостях он
     // строкой: иначе эффект переустанавливал бы состояние без конца.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -338,6 +352,8 @@ function AgentCard({
     saved.authHeader,
     saved.format,
     JSON.stringify(savedRoles),
+    JSON.stringify(savedPasses),
+    saved.mentorRule,
   ]);
 
   /**
@@ -368,6 +384,8 @@ function AgentCard({
             agentId: id,
             prompt,
             finishRule,
+            mentorRule,
+            passes,
             provider,
             model,
             transport,
@@ -620,6 +638,36 @@ function AgentCard({
             />
           </div>
 
+          {transport === "model" && savedPasses.length ? (
+            <div className="border-t border-[color:var(--color-line)] pt-4">
+              <span className="label-caps">Разговор: как ведёт разбор</span>
+              <p className="measure mt-1 mb-2 text-[12.5px] text-muted-foreground">
+                У агента с конвейером разговор — это разбор, а не сборка: он доводит фактуру, а
+                документ собирается кнопкой. Это правило заменяет «чем заканчивать работу».
+              </p>
+              <textarea
+                value={mentorRule}
+                onChange={(e) => {
+                  setMentorRule(e.target.value);
+                  setDone("");
+                }}
+                rows={8}
+                className="w-full resize-y rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-3 text-[12.5px] leading-relaxed outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+              />
+            </div>
+          ) : null}
+
+          {transport === "model" && savedPasses.length ? (
+            <Passes
+              defaults={settings.defaultPasses[id] ?? []}
+              passes={passes}
+              onChange={(next) => {
+                setPasses(next);
+                setDone("");
+              }}
+            />
+          ) : null}
+
           {transport === "model" ? (
             <Roles
               defaults={settings.defaultRoles[id] ?? []}
@@ -750,6 +798,134 @@ function AgentCard({
  * Имён и фамилий в ролях быть не должно: роль переиспользуется, а человек
  * в ней меняется — и персональные данные в настройках платформы нам не нужны.
  */
+/**
+ * Прогоны сборки документа.
+ *
+ * Каждый прогон — своя работа и своя модель: сборке нужна самая сильная,
+ * правке языка — та, что иначе слышит русскую фразу, усушке — та, что склонна
+ * резать. Выключенный прогон пропускается, текст идёт дальше как есть.
+ */
+function Passes({
+  defaults,
+  passes,
+  onChange,
+}: {
+  defaults: AgentPass[];
+  passes: AgentPass[];
+  onChange: (next: AgentPass[]) => void;
+}) {
+  const changed = JSON.stringify(defaults) !== JSON.stringify(passes);
+
+  const patch = (i: number, field: keyof AgentPass, value: string | boolean) =>
+    onChange(passes.map((p, n) => (n === i ? { ...p, [field]: value } : p)));
+
+  return (
+    <div className="border-t border-[color:var(--color-line)] pt-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <span className="label-caps">Прогоны сборки</span>
+        {defaults.length && changed ? (
+          <button
+            onClick={() => onChange(defaults)}
+            className="text-[11.5px] text-muted-foreground underline underline-offset-4"
+          >
+            вернуть прогоны по умолчанию
+          </button>
+        ) : null}
+      </div>
+      <p className="measure mt-1 mb-3 text-[12.5px] text-muted-foreground">
+        Идут по очереди, каждый получает текст предыдущего. Первый видит разбор с человеком и
+        документы задачи, остальные работают только с текстом.
+      </p>
+
+      <div className="space-y-2.5">
+        {passes.map((p, i) => (
+          <details
+            key={p.id}
+            className="rounded-[12px] border border-[color:var(--color-line)] px-4 py-3"
+          >
+            <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 text-[13px]">
+              <span className="font-medium">
+                {i + 1}. {p.name || "Прогон без имени"}
+                {p.enabled ? "" : " · выключен"}
+              </span>
+              <span className="text-[11.5px] text-muted-foreground">
+                {providerLabel(p.provider)} · {p.model} · инструкция {p.prompt.length} знаков
+              </span>
+            </summary>
+
+            <div className="mt-3 space-y-2.5">
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <label className="block">
+                  <span className="label-caps">Имя шага — его видит человек</span>
+                  <input
+                    value={p.name}
+                    onChange={(e) => patch(i, "name", e.target.value)}
+                    className={inputCls}
+                  />
+                </label>
+                <label className="block">
+                  <span className="label-caps">Модель</span>
+                  <input
+                    value={p.model}
+                    onChange={(e) => patch(i, "model", e.target.value)}
+                    spellCheck={false}
+                    className={inputCls}
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="label-caps">Одна строка: что делает прогон</span>
+                <input
+                  value={p.hint}
+                  onChange={(e) => patch(i, "hint", e.target.value)}
+                  className={inputCls}
+                />
+              </label>
+
+              <div>
+                <span className="label-caps">Чем думает</span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {PROVIDERS.map((pr) => (
+                    <button
+                      key={pr.id}
+                      onClick={() => patch(i, "provider", pr.id)}
+                      className={`btn text-[12px] ${p.provider === pr.id ? "btn-primary" : "btn-glass"}`}
+                    >
+                      {pr.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="label-caps">Инструкция прогона</span>
+                <textarea
+                  value={p.prompt}
+                  onChange={(e) => patch(i, "prompt", e.target.value)}
+                  rows={12}
+                  className="mt-1.5 w-full resize-y rounded-[10px] border border-[color:var(--color-line)] bg-transparent px-3.5 py-3 text-[12.5px] leading-relaxed outline-none transition-colors focus:border-[color:var(--color-text-primary)]/40"
+                />
+              </label>
+
+              <button
+                onClick={() => patch(i, "enabled", !p.enabled)}
+                className="btn btn-ghost text-[12px]"
+              >
+                {p.enabled ? "Выключить прогон" : "Включить прогон"}
+              </button>
+            </div>
+          </details>
+        ))}
+      </div>
+      <p className="mt-2 text-[11.5px] text-muted-foreground">
+        Выключенный прогон пропускается: текст идёт дальше как есть. Прогон без имени или без
+        инструкции не сохраняется.
+      </p>
+    </div>
+  );
+}
+
 function Roles({
   defaults,
   roles,

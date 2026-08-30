@@ -168,7 +168,7 @@ type Asker = { id: string; name: string };
  * ключи хоть на двоеточие — защита от двойного вопроса перестанет работать
  * молча, и человек получит два ответа поверх друг друга.
  */
-const askKey = (personId: string, windowId: string) => `${personId}:${windowId}`;
+export const askKey = (personId: string, windowId: string) => `${personId}:${windowId}`;
 
 /**
  * Один заход к агенту в одном разговоре: вопрос уходит, ответ ложится в окно.
@@ -244,7 +244,7 @@ async function askInWindow(opts: {
   const role = opts.roleId ? roleById(rolesOf(target.agentId, cfg), opts.roleId) : null;
   // Инструкция агента плюс правило завершения: команда должна получить
   // документ, а не переписку с уточнениями. У роли правило своё — разговор.
-  const systemPrompt = systemPromptOf(cfg, role);
+  const systemPrompt = systemPromptOf(cfg, role, target.agentId);
 
   // История — только та, что шла с этой же ролью. Разговоры с разными
   // ролями в одном окне не смешиваются: каждая читает документ своими глазами.
@@ -806,7 +806,12 @@ export const workingServer = createServerFn({ method: "POST" })
     const windows = await d.readWindows(me.id);
     return {
       windowIds: windows
-        .filter((w) => q.isAsking(askKey(me.id, w.id)) || runs.isPanelRunning(w.id))
+        .filter(
+          (w) =>
+            q.isAsking(askKey(me.id, w.id)) ||
+            runs.isPanelRunning(w.id) ||
+            runs.isBuildRunning(w.id),
+        )
         .map((w) => w.id),
     };
   });
