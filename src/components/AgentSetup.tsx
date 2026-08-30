@@ -31,6 +31,7 @@ import {
   saveApiKeyServer,
   testAgentServer,
   type AgentSettings,
+  type KeyState,
   type Transport,
 } from "@/lib/server-agents";
 import { agents } from "@/lib/shtab-data";
@@ -482,6 +483,15 @@ function AgentCard({
         </button>
       </div>
 
+      {/* Провайдер выбран, а ключа к нему нет — агент промолчит, и понять это
+          по карточке было нельзя: ключи живут в другом разделе. */}
+      {saved.transport === "model" && !settings.keys[saved.provider]?.set ? (
+        <p className="mt-2 text-[12px] text-[color:var(--color-error)]">
+          Ключ {providerLabel(saved.provider)} не задан — в разговоре агент отвечать не сможет.
+          Впишите его выше, в «Ключах моделей».
+        </p>
+      ) : null}
+
       {open ? (
         <div className="mt-5 space-y-4 border-t border-[color:var(--color-line)] pt-5">
           {/* Незаписанная работа с прошлого захода: сорвался запрос, закрылась вкладка */}
@@ -661,6 +671,7 @@ function AgentCard({
             <Passes
               defaults={settings.defaultPasses[id] ?? []}
               passes={passes}
+              keys={settings.keys}
               onChange={(next) => {
                 setPasses(next);
                 setDone("");
@@ -808,10 +819,12 @@ function AgentCard({
 function Passes({
   defaults,
   passes,
+  keys,
   onChange,
 }: {
   defaults: AgentPass[];
   passes: AgentPass[];
+  keys: Record<Provider, KeyState>;
   onChange: (next: AgentPass[]) => void;
 }) {
   const changed = JSON.stringify(defaults) !== JSON.stringify(passes);
@@ -848,8 +861,17 @@ function Passes({
                 {i + 1}. {p.name || "Прогон без имени"}
                 {p.enabled ? "" : " · выключен"}
               </span>
-              <span className="text-[11.5px] text-muted-foreground">
-                {providerLabel(p.provider)} · {p.model} · инструкция {p.prompt.length} знаков
+              <span
+                className={`text-[11.5px] ${
+                  p.enabled && !keys[p.provider]?.set
+                    ? "text-[color:var(--color-error)]"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {providerLabel(p.provider)} · {p.model}
+                {p.enabled && !keys[p.provider]?.set
+                  ? " · ключа нет, прогон не пройдёт"
+                  : ` · инструкция ${p.prompt.length} знаков`}
               </span>
             </summary>
 
