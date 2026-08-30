@@ -365,6 +365,7 @@ export const testAgentServer = createServerFn({ method: "POST" })
       if (cfg.transport === "model") {
         const { askAgent } = await import("./server-llm");
         const res = await askAgent({
+          who: { personId: me.id, personName: me.name, agentId: data.agentId, passId: "проверка" },
           systemPrompt: "Отвечай кратко и по-русски.",
           model: cfg.model,
           provider: cfg.provider,

@@ -203,6 +203,12 @@ async function runPasses(opts: {
       askAgent({
         systemPrompt,
         model: pass.model,
+        who: {
+          personId: opts.personId,
+          personName: opts.personName,
+          agentId: target.agentId,
+          passId: pass.id,
+        },
         provider: pass.provider,
         agentId: target.agentId,
         history,

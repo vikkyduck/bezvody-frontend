@@ -283,6 +283,12 @@ async function askInWindow(opts: {
     try {
       const { fitForModel } = await import("./server-llm");
       const fitted = await fitForModel({
+        who: {
+          personId: me.id,
+          personName: me.name,
+          agentId: target.agentId,
+          ...(role ? { roleId: role.id } : {}),
+        },
         systemPrompt,
         model,
         history,
@@ -334,6 +340,12 @@ async function askInWindow(opts: {
       return askAgent({
         systemPrompt,
         model,
+        who: {
+          personId: me.id,
+          personName: me.name,
+          agentId: target.agentId,
+          ...(role ? { roleId: role.id } : {}),
+        },
         ...(cfg?.provider ? { provider: cfg.provider } : {}),
         agentId: target.agentId,
         history,

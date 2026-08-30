@@ -41,14 +41,14 @@ export const providerLabel = (p: Provider) => PROVIDERS.find((x) => x.id === p)?
  */
 export const MODEL_HINTS: Record<Provider, string[]> = {
   anthropic: [],
-  openai: ["gpt-5", "gpt-5-mini"],
-  gemini: ["gemini-2.5-pro", "gemini-2.5-flash"],
+  openai: ["gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5-mini"],
+  gemini: ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-2.5-pro"],
 };
 
 export const DEFAULT_MODEL_OF: Record<Provider, string> = {
   anthropic: "claude-opus-5",
   openai: "gpt-5",
-  gemini: "gemini-2.5-pro",
+  gemini: "gemini-3.7-flash",
 };
 
 export const isProvider = (v: unknown): v is Provider =>

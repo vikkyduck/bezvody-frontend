@@ -8,6 +8,7 @@ import { Chevron, Reveal } from "@/components/bv/Reveal";
 import { agents } from "@/lib/shtab-data";
 import { Conversations } from "@/components/Conversations";
 import { Reports } from "@/components/Reports";
+import { Spend } from "@/components/Spend";
 import { cleanTelegram, useDirectory, type Participant } from "@/lib/directory";
 import { roleLabel, type Role } from "@/lib/platform-data";
 
@@ -33,6 +34,7 @@ const tabs = [
   { key: "people", label: "Участники" },
   { key: "reports", label: "Отчёты" },
   { key: "agents", label: "Агенты" },
+  { key: "spend", label: "Расходы" },
   { key: "overview", label: "Обзор" },
 ] as const;
 type TabKey = (typeof tabs)[number]["key"];
@@ -81,6 +83,7 @@ function Body() {
       <div className="mt-12">
         {tab === "people" ? <People /> : null}
         {tab === "reports" ? <Reports /> : null}
+        {tab === "spend" ? <Spend /> : null}
         {tab === "agents" ? <AgentSetup /> : null}
         {tab === "overview" ? <Overview /> : null}
       </div>

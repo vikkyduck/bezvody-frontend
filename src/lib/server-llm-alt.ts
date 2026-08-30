@@ -39,6 +39,8 @@ export type AskOpts = {
   question: string;
   attachments?: Attachment[];
   label?: string;
+  /** Кто спрашивает — по этому пишется расход в деньгах */
+  who?: import("./server-usage").Who;
 };
 
 const imageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -125,10 +127,20 @@ async function askOpenAI(opts: AskOpts, apiKey: string, started: number): Promis
 
   const data = JSON.parse(raw) as {
     choices?: Array<{ message?: { content?: string | null } }>;
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      // Часть входа, прочитанная из кеша: она входит в prompt_tokens, но
+      // стоит вдесятеро дешевле. Без этого расход завышался бы.
+      prompt_tokens_details?: { cached_tokens?: number };
+    };
   };
   const text = (data.choices?.[0]?.message?.content ?? "").trim();
-  log(opts, started, data.usage?.prompt_tokens ?? 0, data.usage?.completion_tokens ?? 0);
+  const inTotal = data.usage?.prompt_tokens ?? 0;
+  const cached = data.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+  const out = data.usage?.completion_tokens ?? 0;
+  log(opts, started, inTotal, out);
+  await spend("openai", opts, started, inTotal, out, cached);
   return text
     ? { ok: true, text }
     : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
@@ -186,18 +198,28 @@ async function askGemini(opts: AskOpts, apiKey: string, started: number): Promis
 
   const data = JSON.parse(raw) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
-    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      // Токены рассуждения оплачиваются как выход, но в candidatesTokenCount
+      // не входят: без них расход занижается, и заметно.
+      thoughtsTokenCount?: number;
+      // Часть входа из кеша — считается по своей цене
+      cachedContentTokenCount?: number;
+    };
   };
   const text = (data.candidates?.[0]?.content?.parts ?? [])
     .map((p) => p.text ?? "")
     .join("\n")
     .trim();
-  log(
-    opts,
-    started,
-    data.usageMetadata?.promptTokenCount ?? 0,
-    data.usageMetadata?.candidatesTokenCount ?? 0,
-  );
+  const inTotal = data.usageMetadata?.promptTokenCount ?? 0;
+  const cached = data.usageMetadata?.cachedContentTokenCount ?? 0;
+  // Выход = ответ плюс «мысли»: платим за оба, а приходят они порознь.
+  const out =
+    (data.usageMetadata?.candidatesTokenCount ?? 0) +
+    (data.usageMetadata?.thoughtsTokenCount ?? 0);
+  log(opts, started, inTotal, out);
+  await spend("gemini", opts, started, inTotal, out, cached);
 
   if (!text && data.candidates?.[0]?.finishReason === "SAFETY") {
     return { ok: false, reason: "failed", detail: "модель отказалась отвечать на этот запрос" };
@@ -215,6 +237,25 @@ function log(opts: AskOpts, started: number, input: number, output: number) {
   console.log(
     `[агент] ${opts.label ?? opts.model} · ${secs(started)}с · вход ${input} · выход ${output}`,
   );
+}
+
+/** Расход в деньгах — тем же способом, что и у Claude. */
+async function spend(
+  provider: "openai" | "gemini",
+  opts: AskOpts,
+  started: number,
+  input: number,
+  output: number,
+  cacheRead = 0,
+): Promise<void> {
+  const { noteSpend } = await import("./server-llm");
+  await noteSpend({
+    ...(opts.who ? { who: opts.who } : {}),
+    provider,
+    model: opts.model,
+    seconds: Math.round((Date.now() - started) / 1000),
+    tokens: { input: Math.max(0, input - cacheRead), cacheRead, cacheWrite: 0, output },
+  });
 }
 
 /**

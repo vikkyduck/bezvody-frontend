@@ -199,6 +199,8 @@ async function readInParts(opts: {
   text: string;
   question: string;
   label: string;
+  /** Чтение по частям — отдельные платные вызовы, их расход тоже чей-то */
+  who?: import("./server-usage").Who;
 }): Promise<{ text: string; whole: boolean }> {
   const chunks = chunksOf(opts.text);
   const read = chunks.reduce((n, c) => n + c.length, 0);
@@ -245,6 +247,22 @@ async function readInParts(opts: {
           ],
         });
         const final = await stream.finalMessage();
+        // Каждая часть — отдельный оплаченный запрос. Раньше они не попадали
+        // ни в один счёт: тяжёлый отчёт мог стоить дороже самого вопроса,
+        // и этого не было видно нигде.
+        const u = final.usage;
+        await noteSpend({
+          ...(opts.who ? { who: { ...opts.who, passId: "чтение по частям" } } : {}),
+          provider: "anthropic",
+          model: opts.model,
+          seconds: 0,
+          tokens: {
+            input: u.input_tokens ?? 0,
+            cacheRead: u.cache_read_input_tokens ?? 0,
+            cacheWrite: u.cache_creation_input_tokens ?? 0,
+            output: u.output_tokens ?? 0,
+          },
+        });
         return final.content
           .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
           .map((b) => b.text)
@@ -312,6 +330,8 @@ async function readInParts(opts: {
  * его никогда.
  */
 export async function fitForModel(opts: {
+  /** Кто спрашивает — чтение по частям тоже стоит денег */
+  who?: import("./server-usage").Who;
   systemPrompt: string;
   model: string;
   history: StoredMessage[];
@@ -412,6 +432,7 @@ export async function fitForModel(opts: {
       text: a.text,
       question: opts.question,
       label,
+      ...(opts.who ? { who: opts.who } : {}),
     });
 
     // Выжимка должна быть короче исходника — иначе она не выжимка, и менять
@@ -448,6 +469,50 @@ export async function fitForModel(opts: {
   return { attachments, inParts, trimmed };
 }
 
+/**
+ * Записать расход одного вызова.
+ *
+ * Считаем деньги здесь же, по цене на момент вызова: цены и курс меняются, и
+ * пересчитывать прошлое по сегодняшнему курсу — значит каждый месяц видеть
+ * новые цифры за один и тот же март.
+ */
+export async function noteSpend(opts: {
+  who?: import("./server-usage").Who;
+  provider: Provider;
+  model: string;
+  seconds: number;
+  tokens: import("./prices").Tokens;
+}): Promise<void> {
+  // Без «кто» строка бесполезна: расход не к кому отнести. Так бывает у
+  // проверки связи из админки — её в счёт клиенту не пишем.
+  if (!opts.who) return;
+  const { recordUsage } = await import("./server-usage");
+  const { costOf } = await import("./prices");
+  const { readPriceBook } = await import("./server-prices");
+  const book = await readPriceBook();
+  const money = costOf(opts.model, opts.tokens, book);
+
+  await recordUsage({
+    at: new Date().toISOString(),
+    personId: opts.who.personId,
+    personName: opts.who.personName,
+    agentId: opts.who.agentId,
+    passId: opts.who.passId ?? "",
+    roleId: opts.who.roleId ?? "",
+    provider: opts.provider,
+    model: opts.model,
+    input: opts.tokens.input,
+    cacheRead: opts.tokens.cacheRead,
+    cacheWrite: opts.tokens.cacheWrite,
+    output: opts.tokens.output,
+    seconds: opts.seconds,
+    rub: money?.rub ?? 0,
+    usd: money?.usd ?? 0,
+    rate: money?.rate ?? book.usdRub,
+    unpriced: money === null,
+  });
+}
+
 export async function askAgent(opts: {
   systemPrompt: string;
   model: string;
@@ -460,6 +525,8 @@ export async function askAgent(opts: {
   agentId?: string;
   /** Для журнала: кто и с каким агентом говорит */
   label?: string;
+  /** Кто спрашивает — по этому пишется расход в деньгах */
+  who?: import("./server-usage").Who;
 }): Promise<AskResult> {
   const provider: Provider = opts.provider ?? "anthropic";
   const { readApiKey } = await import("./server-data");
@@ -506,6 +573,20 @@ export async function askAgent(opts: {
     // Строка в журнал сервера: видно, сколько шёл ответ, сколько стоил
     // и сработал ли кеш инструкции.
     const u = final.usage;
+    // Расход в деньгах — строкой в журнал на диске: по нему потом видно, во
+    // что обошёлся каждый участник и каждый агент.
+    await noteSpend({
+      ...(opts.who ? { who: opts.who } : {}),
+      provider: "anthropic",
+      model: opts.model,
+      seconds: Math.round((Date.now() - started) / 1000),
+      tokens: {
+        input: u.input_tokens ?? 0,
+        cacheRead: u.cache_read_input_tokens ?? 0,
+        cacheWrite: u.cache_creation_input_tokens ?? 0,
+        output: u.output_tokens ?? 0,
+      },
+    });
     console.log(
       `[агент] ${opts.label ?? opts.model} · ${Math.round((Date.now() - started) / 1000)}с · ` +
         `вход ${u.input_tokens} · из кеша ${u.cache_read_input_tokens ?? 0} · записано в кеш ${u.cache_creation_input_tokens ?? 0} · выход ${u.output_tokens}`,

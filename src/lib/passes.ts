@@ -220,7 +220,7 @@ export const DEFAULT_PASSES: Record<string, AgentPass[]> = {
       hint: "Деловой русский, без ИИ-штампов. Факты не трогает",
       prompt: LANGUAGE,
       provider: "gemini",
-      model: "gemini-2.5-pro",
+      model: "gemini-3.7-flash",
       enabled: true,
     },
     {
