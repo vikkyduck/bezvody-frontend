@@ -216,8 +216,7 @@ async function askGemini(opts: AskOpts, apiKey: string, started: number): Promis
   const cached = data.usageMetadata?.cachedContentTokenCount ?? 0;
   // Выход = ответ плюс «мысли»: платим за оба, а приходят они порознь.
   const out =
-    (data.usageMetadata?.candidatesTokenCount ?? 0) +
-    (data.usageMetadata?.thoughtsTokenCount ?? 0);
+    (data.usageMetadata?.candidatesTokenCount ?? 0) + (data.usageMetadata?.thoughtsTokenCount ?? 0);
   log(opts, started, inTotal, out);
   await spend("gemini", opts, started, inTotal, out, cached);
 

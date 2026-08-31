@@ -18,6 +18,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import {
   cleanTelegram,
+  looksLikeAccessCode,
   normalize,
   uniqueCode,
   withoutCode,
@@ -47,10 +48,10 @@ export const signInServer = createServerFn({ method: "POST" })
     const { list, me } = await d.whoIs(code);
     if (!me) return { ok: false as const };
 
-    // Отмечаем вход: в админке видно, кому код выдали, а он им ни разу не воспользовался.
-    await d.writeParticipants(
-      list.map((p) => (p.id === me.id ? { ...p, lastUsedAt: d.today() } : p)),
-    );
+    // Отмечаем вход: в админке видно, кому код выдали, а он им ни разу не
+    // воспользовался. Пишем ровно одну запись и только если справочник
+    // действительно прочитан с диска — см. touchParticipant.
+    await d.touchParticipant(me.id, d.today());
     return { ok: true as const, me: withWatched({ ...me, lastUsedAt: d.today() }, list) };
   });
 
@@ -153,6 +154,13 @@ export const mutateServer = createServerFn({ method: "POST" })
     switch (m.kind) {
       case "add": {
         const draft = m.draft;
+        // Имя, которое на самом деле код доступа: так браузер подставлял в
+        // форму запомненный код и заводил кабинеты-двойники. Отказываем молча
+        // для сервера и с явной строкой на экране — форма проверяет то же.
+        const wanted = draft.name.trim();
+        if (looksLikeAccessCode(wanted) || list.some((p) => p.code === wanted.toUpperCase())) {
+          return { ok: false as const, participants: visibleTo(me, list), created: null };
+        }
         created = normalize({
           id: `p-${Math.random().toString(36).slice(2, 9)}`,
           name: draft.name.trim(),

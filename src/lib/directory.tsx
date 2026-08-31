@@ -97,4 +97,4 @@ export function useDirectory() {
 }
 
 export type { Participant } from "./participants";
-export { cleanTelegram } from "./participants";
+export { cleanTelegram, looksLikeAccessCode } from "./participants";

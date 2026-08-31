@@ -9,7 +9,12 @@ import { agents } from "@/lib/shtab-data";
 import { Conversations } from "@/components/Conversations";
 import { Reports } from "@/components/Reports";
 import { Spend } from "@/components/Spend";
-import { cleanTelegram, useDirectory, type Participant } from "@/lib/directory";
+import {
+  cleanTelegram,
+  looksLikeAccessCode,
+  useDirectory,
+  type Participant,
+} from "@/lib/directory";
 import { roleLabel, type Role } from "@/lib/platform-data";
 
 export const Route = createFileRoute("/admin")({
@@ -138,14 +143,23 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
   const [copied, setCopied] = useState(false);
 
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
+    if (looksLikeAccessCode(name)) {
+      setError("Это код доступа, а не имя");
+      return;
+    }
+    setError(null);
     setBusy(true);
     const created = await add({ name, position, company, email, telegram, role });
     setBusy(false);
-    if (!created) return;
+    if (!created) {
+      setError("Кабинет не заведён");
+      return;
+    }
     setIssued(created);
     setCopied(false);
     onCreated(created);
@@ -159,11 +173,13 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
   return (
     <section className="border-b border-[color:var(--color-line)] pb-10">
       <h2 className="ui-h2">Новый личный кабинет</h2>
-      <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-2">
+      <form onSubmit={submit} autoComplete="off" className="mt-5 grid gap-3 sm:grid-cols-2">
         <Field label="Имя и фамилия">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
+            autoComplete="off"
+            name="participant-name"
             placeholder="Имя Фамилия"
             className={inputCls}
           />
@@ -219,6 +235,7 @@ function NewParticipant({ onCreated }: { onCreated: (p: Participant) => void }) 
         </div>
       </form>
 
+      {error ? <p className="mt-3 text-[13px] text-[color:var(--color-error)]">{error}</p> : null}
       {issued ? (
         <div className="mt-5 border-t border-[color:var(--color-line)] pt-4">
           <div className="label-caps">Код для {issued.name} — передайте лично</div>

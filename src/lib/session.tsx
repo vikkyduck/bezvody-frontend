@@ -5,9 +5,15 @@
  * Проверяет код сервер: в браузере списка людей больше нет, и подобрать
  * чужой доступ, читая бандл, невозможно.
  *
- * Код хранится в sessionStorage и уходит с каждым запросом — на этом шаге
- * он работает как ключ. Настоящая сессия (httpOnly-cookie, срок жизни,
- * защита от подбора) приедет вместе с бэкендом платформы.
+ * Код хранится в браузере и уходит с каждым запросом — на этом шаге он
+ * работает как ключ. Настоящая сессия (httpOnly-cookie, срок жизни, защита
+ * от подбора) приедет вместе с бэкендом платформы.
+ *
+ * Хранилище — localStorage, а не localStorage: в localStorage вход жил
+ * ровно одну вкладку, и человек вводил код заново при каждом заходе, каждый
+ * раз доставая его из переписки. Код и так лежит у него в мессенджере —
+ * лишние копии оттуда безопаснее не делают, а работу ломают. Выход из
+ * кабинета стирает запись, как и раньше.
  */
 import {
   createContext,
@@ -60,11 +66,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [person, setPerson] = useState<Participant | null>(null);
   const [ready, setReady] = useState(false);
 
-  // Восстанавливаем вход уже на клиенте: на сервере sessionStorage нет.
+  // Восстанавливаем вход уже на клиенте: на сервере хранилища нет.
   useEffect(() => {
     let saved: string | null = null;
     try {
-      saved = sessionStorage.getItem(KEY);
+      saved = localStorage.getItem(KEY);
     } catch {
       /* приватный режим браузера — работаем без запоминания */
     }
@@ -80,7 +86,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         } else {
           // Код отозвали, пока вкладка была открыта — выходим молча.
           try {
-            sessionStorage.removeItem(KEY);
+            localStorage.removeItem(KEY);
           } catch {
             /* см. выше */
           }
@@ -109,7 +115,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setCode(clean);
       setPerson(res.me);
       try {
-        sessionStorage.setItem(KEY, clean);
+        localStorage.setItem(KEY, clean);
       } catch {
         /* см. выше */
       }
@@ -123,7 +129,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setCode(null);
     setPerson(null);
     try {
-      sessionStorage.removeItem(KEY);
+      localStorage.removeItem(KEY);
     } catch {
       /* см. выше */
     }

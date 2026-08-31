@@ -218,7 +218,12 @@ export const getAgentSettingsServer = createServerFn({ method: "POST" })
       d,
       await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {}),
     );
-    return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES, defaultPasses: DEFAULT_PASSES };
+    return {
+      agents,
+      keys: await keysSummary(d),
+      defaultRoles: DEFAULT_ROLES,
+      defaultPasses: DEFAULT_PASSES,
+    };
   });
 
 /** По каждому провайдеру: задан ли ключ и его хвост — сверить, тот ли это ключ. */
@@ -339,7 +344,12 @@ export const saveApiKeyServer = createServerFn({ method: "POST" })
     const provider: Provider = isProvider(data.provider) ? data.provider : "anthropic";
     await d.writeApiKey(provider, String(data.key ?? "").trim());
     const agents = await d.readJson<AgentConfigMap>(`${d.dataDir()}/agents.json`, {});
-    return { agents, keys: await keysSummary(d), defaultRoles: DEFAULT_ROLES, defaultPasses: DEFAULT_PASSES };
+    return {
+      agents,
+      keys: await keysSummary(d),
+      defaultRoles: DEFAULT_ROLES,
+      defaultPasses: DEFAULT_PASSES,
+    };
   });
 
 /**

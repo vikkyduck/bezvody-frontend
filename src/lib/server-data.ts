@@ -33,9 +33,58 @@ export async function writeJson(file: string, value: unknown): Promise<void> {
 
 const participantsFile = () => `${dataDir()}/directory.json`;
 
+/**
+ * Откуда взялся справочник. Три состояния, и путать их нельзя.
+ *
+ * «file» — прочитан с диска. «empty» — файла ещё нет, это законный первый
+ * запуск. «broken» — файл есть, но не читается: битый JSON, права, сбой диска.
+ * Раньше все три сливались в один фолбэк на сид, и любая неудача чтения
+ * выглядела как «на платформе один администратор». Пока это касалось только
+ * чтения, оно было терпимо; беда в том, что вход писал прочитанный список
+ * обратно целиком — и одно неудачное чтение стирало весь справочник.
+ */
+type DirectorySource = "file" | "empty" | "broken";
+
+async function readParticipantsRaw(): Promise<{ list: Participant[]; source: DirectorySource }> {
+  const { readFile } = await import("node:fs/promises");
+  let text: string;
+  try {
+    text = await readFile(participantsFile(), "utf8");
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    return { list: [], source: code === "ENOENT" ? "empty" : "broken" };
+  }
+  try {
+    const raw = JSON.parse(text) as unknown;
+    if (!Array.isArray(raw)) return { list: [], source: "broken" };
+    if (!raw.length) return { list: [], source: "empty" };
+    return { list: (raw as Participant[]).map(normalize), source: "file" };
+  } catch {
+    return { list: [], source: "broken" };
+  }
+}
+
 export async function readParticipants(): Promise<Participant[]> {
-  const raw = await readJson<Participant[]>(participantsFile(), []);
-  return Array.isArray(raw) && raw.length ? raw.map(normalize) : seedParticipants;
+  const { list, source } = await readParticipantsRaw();
+  return source === "file" ? list : seedParticipants;
+}
+
+/**
+ * Отметить, что человек заходил.
+ *
+ * Отдельная функция, а не строчка внутри входа, ровно по одной причине: вход
+ * не должен уметь переписывать справочник целиком. Здесь список перечитывается
+ * заново, меняется одна запись, и запись не происходит вовсе, если справочник
+ * приехал из сида или не прочитался.
+ */
+export async function touchParticipant(id: string, when: string): Promise<void> {
+  const { list, source } = await readParticipantsRaw();
+  if (source !== "file") return;
+  const i = list.findIndex((p) => p.id === id);
+  if (i < 0) return;
+  const next = list.slice();
+  next[i] = { ...next[i]!, lastUsedAt: when };
+  await writeParticipants(next);
 }
 
 export const writeParticipants = (list: Participant[]) => writeJson(participantsFile(), list);

@@ -167,6 +167,17 @@ const translit = (s: string) =>
 
 const rolePrefix: Record<Role, string> = { admin: "BV", project: "BV-PM", client: "BV" };
 
+/**
+ * Имя, которое на самом деле код доступа.
+ *
+ * На входе поле кода помечено username, чтобы браузер его запомнил и человек
+ * не лез за кодом в переписку. Тот же браузер подставлял запомненное в первое
+ * текстовое поле админки — и в справочнике заводились кабинеты с именем
+ * «BV-ADMIN-01», а из имени выходил код «BV-BVADMIN01». Автозаполнение в форме
+ * мы выключили, но полагаться на это нельзя: проверка стоит и на сервере.
+ */
+export const looksLikeAccessCode = (name: string): boolean => /^bv-/i.test(name.trim());
+
 /** Код читается вслух и не повторяется: префикс, фамилия, при совпадении — номер. */
 export function uniqueCode(name: string, role: Role, existing: Participant[]): string {
   const surname = translit(name.trim().split(/\s+/).pop() ?? "").toUpperCase() || "USER";
