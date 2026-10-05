@@ -13,6 +13,10 @@ import { DEFAULT_PROJECT_TITLE, type StoredProject } from "./projects";
 export const dataDir = () => process.env["BV_DATA_DIR"]?.trim() || ".data";
 
 export async function readJson<T>(file: string, fallback: T): Promise<T> {
+  const db = await import("./server-postgres");
+  const key = db.documentKey(file);
+  // A database outage must never fall back to stale JSON or an embedded admin.
+  if (key) return (await db.readDocument<T>(key)) ?? fallback;
   const { readFile } = await import("node:fs/promises");
   try {
     return JSON.parse(await readFile(file, "utf8")) as T;
@@ -22,11 +26,14 @@ export async function readJson<T>(file: string, fallback: T): Promise<T> {
 }
 
 export async function writeJson(file: string, value: unknown): Promise<void> {
+  const db = await import("./server-postgres");
+  const key = db.documentKey(file);
+  if (key) return db.writeDocument(key, value);
   const { mkdir, writeFile, rename } = await import("node:fs/promises");
   const { dirname } = await import("node:path");
   await mkdir(dirname(file), { recursive: true });
   // Пишем через временный файл: обрыв на середине не оставит битые данные.
-  const tmp = `${file}.tmp`;
+  const tmp = `${file}.${crypto.randomUUID()}.tmp`;
   await writeFile(tmp, JSON.stringify(value, null, 2), "utf8");
   await rename(tmp, file);
 }
@@ -46,6 +53,12 @@ const participantsFile = () => `${dataDir()}/directory.json`;
 type DirectorySource = "file" | "empty" | "broken";
 
 async function readParticipantsRaw(): Promise<{ list: Participant[]; source: DirectorySource }> {
+  const db = await import("./server-postgres");
+  if (db.databaseEnabled()) {
+    const raw = await db.readDocument<Participant[]>("directory.json");
+    if (!Array.isArray(raw)) throw new Error("Participant directory is missing from PostgreSQL");
+    return { list: raw.map(normalize), source: "file" };
+  }
   const { readFile } = await import("node:fs/promises");
   let text: string;
   try {

@@ -7,12 +7,15 @@ import { Attachments } from "@/components/Attachments";
 import { Build } from "@/components/Build";
 import { Checklist } from "@/components/Checklist";
 import { Markdown } from "@/components/Markdown";
+import { BosForm } from "@/components/BosForm";
+import { StrategyCanvas } from "@/components/StrategyCanvas";
+import { isBosAgent } from "@/lib/bos";
 import { Chevron } from "@/components/bv/Reveal";
 import { Delivery } from "@/components/Delivery";
 import type { StoredWindow } from "@/lib/conversations";
 import { MAX_WINDOW_FILES, type StoredFile } from "@/lib/documents";
 import { isProjectOpen, type StoredProject } from "@/lib/projects";
-import { DOCX_MIME, XLSX_MIME, saveFile } from "@/lib/download";
+import { DOCX_MIME, XLSX_MIME, saveFile, saveMarkdown } from "@/lib/download";
 import type { AgentRole } from "@/lib/roles";
 import { getAgentRolesServer } from "@/lib/server-agents";
 import { panelStateServer, type PanelState } from "@/lib/server-windows";
@@ -1415,6 +1418,24 @@ function Conversation({ window: w, project }: { window: StoredWindow; project: S
 
   return (
     <>
+      {isBosAgent(w.agentId) && (
+        <BosForm
+          key={w.id}
+          agentId={w.agentId}
+          disabled={thinking || uploading}
+          started={w.messages.length > 0}
+          onPrepare={(text) => {
+            void send(w.id, text).then((res) => {
+              if (!res.ok) setDraft(text);
+            });
+          }}
+        />
+      )}
+      {w.agentId === "stirlitz" && (
+        <StrategyCanvas
+          text={[...w.messages].reverse().find((m) => m.from === "agent")?.text ?? ""}
+        />
+      )}
       {hasRoles ? (
         <Panel
           window={w}
@@ -1625,7 +1646,24 @@ function Conversation({ window: w, project }: { window: StoredWindow; project: S
                       {when(doc.at)}
                     </span>
                   </span>
-                  {messageId ? <SaveWord windowId={w.id} messageId={messageId} /> : null}
+                  {messageId ? (
+                    <div className="flex gap-2">
+                      {isBosAgent(w.agentId) && (
+                        <button
+                          className="btn btn-glass"
+                          onClick={() =>
+                            saveMarkdown(
+                              `${w.agentId}-${messageId}.md`,
+                              w.messages.find((m) => m.id === messageId)?.text ?? "",
+                            )
+                          }
+                        >
+                          Скачать .md
+                        </button>
+                      )}
+                      <SaveWord windowId={w.id} messageId={messageId} />
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
@@ -2436,6 +2474,10 @@ function docKind(w: StoredWindow): string {
       return "Расчёт и записка";
     case "neurocouncil":
       return "Позиции совета";
+    case "kat":
+      return "Факторы конкуренции";
+    case "stirlitz":
+      return "Стратегическая канва";
     default:
       return "Документ";
   }

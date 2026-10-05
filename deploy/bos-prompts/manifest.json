@@ -1,0 +1,26 @@
+{
+  "kat-main.txt": {
+    "source": "radistkaCat-BOS/kat/system_prompt.txt",
+    "sha256": "770cab03ff1ecff1a5cc5241c43ec9369febeb9977a541510fda32f3dcc9e658"
+  },
+  "stirlitz-main.txt": {
+    "source": "shtirlits-BOS/stirlitz/system_prompt.txt",
+    "sha256": "bf950da85e77bc23003222d9b69388037e3dee7143980234c32e27b5b7688d77"
+  },
+  "stirlitz-chain-reference.txt": {
+    "source": "radistkaCat-BOS/stirlitz/system_prompt.txt",
+    "sha256": "6389ce05ef3559fceb191029829e21ec094bdf74268b047cb53c88e8ceaa906a"
+  },
+  "kat-mode-1.txt": {
+    "source": "radistkaCat-BOS/kat/main.py:SYSTEM_PROMPT_MODE_1",
+    "sha256": "2c3e55ba9442b31b1c7d45c21382cbfcc17c72ca2518e1f1f647cda0115b55c2"
+  },
+  "kat-mode-2.txt": {
+    "source": "radistkaCat-BOS/kat/main.py:SYSTEM_PROMPT_MODE_2",
+    "sha256": "f146702fe9061159ad267ce5eee45c8df8c17bd3a0041a813cdb151dd6298567"
+  },
+  "kat-mode-3.txt": {
+    "source": "radistkaCat-BOS/kat/main.py:SYSTEM_PROMPT_MODE_3",
+    "sha256": "268239ae8d337dc45d090f9a42d7cf5eac46c9b47d7f9b959f79beca82c2d1b2"
+  }
+}

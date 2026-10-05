@@ -16,6 +16,7 @@
 import type { StoredMessage } from "./conversations";
 import type { Attachment } from "./documents";
 import type { AskResult } from "./server-llm";
+import { sourceLink } from "./research-sources";
 
 /** Корень транзита. По умолчанию — тот же, через который ходит Claude. */
 const TRANSIT =
@@ -33,6 +34,8 @@ const GEMINI_URL = process.env["GEMINI_BASE_URL"]?.trim() || `${TRANSIT}/gemini/
 const TIMEOUT_MS = 600_000;
 
 export type AskOpts = {
+  webSearch?: boolean;
+  maxSearches?: number;
   systemPrompt: string;
   model: string;
   history: StoredMessage[];
@@ -104,6 +107,7 @@ async function openaiContent(
 }
 
 async function askOpenAI(opts: AskOpts, apiKey: string, started: number): Promise<AskResult> {
+  if (opts.webSearch) return askOpenAIResearch(opts, apiKey, started);
   const messages: Array<{ role: string; content: unknown }> = [
     { role: "system", content: opts.systemPrompt },
     ...opts.history.map((m) => ({
@@ -141,6 +145,100 @@ async function askOpenAI(opts: AskOpts, apiKey: string, started: number): Promis
   const out = data.usage?.completion_tokens ?? 0;
   log(opts, started, inTotal, out);
   await spend("openai", opts, started, inTotal, out, cached);
+  return text
+    ? { ok: true, text }
+    : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
+}
+
+async function askOpenAIResearch(
+  opts: AskOpts,
+  apiKey: string,
+  started: number,
+): Promise<AskResult> {
+  const content = await openaiContent(opts.question, opts.attachments ?? []);
+  const input = [
+    ...opts.history.map((m) => ({
+      role: m.from === "user" ? "user" : "assistant",
+      content: m.text,
+    })),
+    {
+      role: "user",
+      content:
+        typeof content === "string"
+          ? content
+          : content.map((p) =>
+              p.type === "text"
+                ? { type: "input_text", text: p.text }
+                : { type: "input_image", image_url: p.image_url.url, detail: "auto" },
+            ),
+    },
+  ];
+  const res = await fetch(`${OPENAI_URL}/responses`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: opts.model,
+      instructions: opts.systemPrompt,
+      input,
+      tools: [{ type: "web_search" }],
+      max_tool_calls: opts.maxSearches ?? 30,
+      store: false,
+    }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  const raw = await res.text();
+  if (!res.ok) return httpFail(res.status, raw, opts, started);
+  const data = JSON.parse(raw) as {
+    status?: string;
+    output?: Array<{
+      type: string;
+      content?: Array<{
+        type: string;
+        text?: string;
+        annotations?: Array<{ type: string; title?: string; url?: string; end_index?: number }>;
+      }>;
+    }>;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      input_tokens_details?: { cached_tokens?: number };
+    };
+  };
+  const blocks = (data.output ?? []).flatMap((o) =>
+    o.type === "message" ? (o.content ?? []) : [],
+  );
+  const text = blocks
+    .filter((b) => b.type === "output_text")
+    .map((b) => {
+      let text = b.text ?? "";
+      for (const c of [...(b.annotations ?? [])].sort(
+        (a, b) => (b.end_index ?? 0) - (a.end_index ?? 0),
+      )) {
+        if (c.type !== "url_citation" || !c.url) continue;
+        // Some Responses models already render this citation as a Markdown link.
+        if ((b.text ?? "").includes(c.url)) continue;
+        const link = sourceLink(c.title ?? "Источник", c.url);
+        const at = c.end_index ?? text.length;
+        if (link) text = text.slice(0, at) + ` ${link}` + text.slice(at);
+      }
+      return text;
+    })
+    .join("\n")
+    .trim();
+  await spend(
+    "openai",
+    opts,
+    started,
+    data.usage?.input_tokens ?? 0,
+    data.usage?.output_tokens ?? 0,
+    data.usage?.input_tokens_details?.cached_tokens ?? 0,
+  );
+  if (data.status !== "completed")
+    return {
+      ok: false,
+      reason: "failed",
+      detail: "Исследование не завершено. Уменьшите число факторов или игроков и повторите запрос.",
+    };
   return text
     ? { ok: true, text }
     : { ok: false, reason: "failed", detail: "модель вернула пустой ответ" };
@@ -188,6 +286,7 @@ async function askGemini(opts: AskOpts, apiKey: string, started: number): Promis
       body: JSON.stringify({
         system_instruction: { parts: [{ text: opts.systemPrompt }] },
         contents,
+        ...(opts.webSearch ? { tools: [{ google_search: {} }] } : {}),
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     },
@@ -197,7 +296,11 @@ async function askGemini(opts: AskOpts, apiKey: string, started: number): Promis
   if (!res.ok) return httpFail(res.status, raw, opts, started);
 
   const data = JSON.parse(raw) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }> };
+      finishReason?: string;
+      groundingMetadata?: { groundingChunks?: Array<{ web?: { uri?: string; title?: string } }> };
+    }>;
     usageMetadata?: {
       promptTokenCount?: number;
       candidatesTokenCount?: number;
@@ -208,10 +311,14 @@ async function askGemini(opts: AskOpts, apiKey: string, started: number): Promis
       cachedContentTokenCount?: number;
     };
   };
-  const text = (data.candidates?.[0]?.content?.parts ?? [])
-    .map((p) => p.text ?? "")
-    .join("\n")
-    .trim();
+  const sources = (data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [])
+    .flatMap((c) => (c.web?.uri ? [sourceLink(c.web.title ?? "Источник", c.web.uri)] : []))
+    .filter(Boolean);
+  const text =
+    (data.candidates?.[0]?.content?.parts ?? [])
+      .map((p) => p.text ?? "")
+      .join("\n")
+      .trim() + (sources.length ? `\n\nИсточники: ${[...new Set(sources)].join(" · ")}` : "");
   const inTotal = data.usageMetadata?.promptTokenCount ?? 0;
   const cached = data.usageMetadata?.cachedContentTokenCount ?? 0;
   // Выход = ответ плюс «мысли»: платим за оба, а приходят они порознь.

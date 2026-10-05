@@ -66,6 +66,16 @@ const fileFor = async (month: string) =>
  */
 export async function recordUsage(event: UsageEvent): Promise<void> {
   try {
+    const db = await import("./server-postgres");
+    if (db.databaseEnabled()) {
+      await db
+        .database()
+        .query("INSERT INTO platform_usage(month, event) VALUES ($1, $2::jsonb)", [
+          monthOf(event.at),
+          JSON.stringify(event),
+        ]);
+      return;
+    }
     const { appendFile, mkdir } = await import("node:fs/promises");
     const { dirname } = await import("node:path");
     const file = await fileFor(monthOf(event.at));
@@ -81,6 +91,13 @@ export async function recordUsage(event: UsageEvent): Promise<void> {
 
 /** Все строки месяца. Битую строку пропускаем — журнал важнее одной записи. */
 export async function readMonth(month: string): Promise<UsageEvent[]> {
+  const db = await import("./server-postgres");
+  if (db.databaseEnabled()) {
+    const rows = await db
+      .database()
+      .query("SELECT event FROM platform_usage WHERE month=$1 ORDER BY id", [month]);
+    return rows.rows.map((r) => r.event as UsageEvent);
+  }
   try {
     const { readFile } = await import("node:fs/promises");
     const raw = await readFile(await fileFor(month), "utf8");
@@ -101,6 +118,13 @@ export async function readMonth(month: string): Promise<UsageEvent[]> {
 
 /** Какие месяцы вообще есть — для переключателя в отчёте. */
 export async function knownMonths(): Promise<string[]> {
+  const db = await import("./server-postgres");
+  if (db.databaseEnabled()) {
+    const rows = await db
+      .database()
+      .query("SELECT DISTINCT month FROM platform_usage ORDER BY month DESC");
+    return rows.rows.map((r) => String(r.month));
+  }
   try {
     const { readdir } = await import("node:fs/promises");
     const d = await import("./server-data");

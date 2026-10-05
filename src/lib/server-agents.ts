@@ -19,6 +19,8 @@ import { DEFAULT_MODEL_OF, PROVIDERS, isProvider, type Provider } from "./provid
 export type Transport = "model" | "http";
 
 export type AgentConfig = {
+  /** Additional original Kat modes, stored on the server with the main prompt. */
+  bosModes?: Record<string, string>;
   /** Системный промпт: кто агент и как работает */
   prompt: string;
   /** Чем думает агент: Claude, GPT или Gemini. Ключ у каждого свой */

@@ -1,0 +1,8 @@
+[Unit]
+Description=NOWATER PostgreSQL and private files backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nowater-postgres-backup
+UMask=0077

@@ -8,6 +8,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { shortTitle, type StoredWindow } from "./conversations";
+import { bosTitle } from "./bos";
 import type { StoredProject } from "./projects";
 import { ROLE_OPENING, ROLE_VERDICT } from "./roles";
 import { roleById, rolesOf, systemPromptOf, type AgentConfig } from "./server-agents";
@@ -244,7 +245,10 @@ async function askInWindow(opts: {
   const role = opts.roleId ? roleById(rolesOf(target.agentId, cfg), opts.roleId) : null;
   // Инструкция агента плюс правило завершения: команда должна получить
   // документ, а не переписку с уточнениями. У роли правило своё — разговор.
-  const systemPrompt = systemPromptOf(cfg, role, target.agentId);
+  const { bosSystemPrompt } = await import("./server-bos");
+  const systemPrompt =
+    bosSystemPrompt(target.agentId, cfg, target.messages, text) ??
+    systemPromptOf(cfg, role, target.agentId);
 
   // История — только та, что шла с этой же ролью. Разговоры с разными
   // ролями в одном окне не смешиваются: каждая читает документ своими глазами.
@@ -387,7 +391,7 @@ async function askInWindow(opts: {
             title: role
               ? `${role.name} — ${opts.kind === "verdict" ? "вердикт" : "разбор"}`
               : w.messages.length === 0
-                ? shortTitle(text)
+                ? shortTitle(bosTitle(w.agentId, text))
                 : `Ответ от ${new Date().toLocaleDateString("ru-RU")}`,
             kind: role ? "Разговор с ролью" : "Разбор агента",
             at: stamp(),
@@ -404,7 +408,7 @@ async function askInWindow(opts: {
           ? shortTitle(projectFiles[0]?.name ?? target.files[0]?.name ?? w.title)
           : w.title
         : w.messages.length === 0
-          ? shortTitle(text)
+          ? shortTitle(bosTitle(w.agentId, text))
           : w.title,
       updatedAt: stamp(),
       docs,

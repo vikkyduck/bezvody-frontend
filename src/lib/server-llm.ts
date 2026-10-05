@@ -18,6 +18,8 @@ import {
 } from "./documents";
 import type { StoredMessage } from "./conversations";
 import { providerLabel, type Provider } from "./providers";
+import { isBosAgent } from "./bos";
+import { anthropicText } from "./research-sources";
 
 /** Локальный вход в транзит — тот же, через который ходит Kotu. */
 const BASE_URL = process.env["ANTHROPIC_BASE_URL"]?.trim() || "http://127.0.0.1:8444/anthropic";
@@ -540,7 +542,15 @@ export async function askAgent(opts: {
   if (provider !== "anthropic") {
     const { askAlt } = await import("./server-llm-alt");
     const { agentId: _agentId, provider: _provider, ...rest } = opts;
-    return askAlt(provider, rest, apiKey);
+    return askAlt(
+      provider,
+      {
+        ...rest,
+        webSearch: isBosAgent(opts.agentId ?? ""),
+        maxSearches: opts.agentId === "kat" ? 5 : 30,
+      },
+      apiKey,
+    );
   }
 
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
@@ -551,11 +561,16 @@ export async function askAgent(opts: {
 
   // История разговора: платформа не помнит контекст за модель — он передаётся
   // целиком каждый раз, иначе агент забудет, о чём шла речь двумя репликами выше.
-  const messages = messagesFor(opts.history, opts.question, opts.attachments ?? []);
+  const messages: Anthropic.MessageParam[] = messagesFor(
+    opts.history,
+    opts.question,
+    opts.attachments ?? [],
+  );
 
   const started = Date.now();
   try {
-    const stream = client.messages.stream({
+    const research = isBosAgent(opts.agentId ?? "");
+    const request = {
       model: opts.model,
       max_tokens: 32000,
       // Инструкция агента — двадцать пять тысяч знаков, и она одна и та же у
@@ -567,12 +582,37 @@ export async function askAgent(opts: {
       thinking: { type: "adaptive" },
       output_config: { effort: "high" },
       messages,
-    });
-    const final = await stream.finalMessage();
+      ...(research
+        ? {
+            tools: [
+              {
+                type: "web_search_20250305" as const,
+                name: "web_search" as const,
+                max_uses: opts.agentId === "kat" ? 5 : 30,
+              },
+            ],
+          }
+        : {}),
+    } satisfies Omit<Anthropic.MessageCreateParamsStreaming, "stream">;
+    let final = await client.messages.stream(request).finalMessage();
+    const outputs = [...final.content];
+    const totals = { ...final.usage };
+    // Server tools can pause after several searches. Resume the same turn, retaining all tool blocks.
+    for (let turn = 0; final.stop_reason === "pause_turn" && turn < 5; turn++) {
+      messages.push({ role: "assistant", content: final.content });
+      final = await client.messages.stream({ ...request, messages }).finalMessage();
+      outputs.push(...final.content);
+      totals.input_tokens += final.usage.input_tokens;
+      totals.output_tokens += final.usage.output_tokens;
+      totals.cache_read_input_tokens =
+        (totals.cache_read_input_tokens ?? 0) + (final.usage.cache_read_input_tokens ?? 0);
+      totals.cache_creation_input_tokens =
+        (totals.cache_creation_input_tokens ?? 0) + (final.usage.cache_creation_input_tokens ?? 0);
+    }
 
     // Строка в журнал сервера: видно, сколько шёл ответ, сколько стоил
     // и сработал ли кеш инструкции.
-    const u = final.usage;
+    const u = totals;
     // Расход в деньгах — строкой в журнал на диске: по нему потом видно, во
     // что обошёлся каждый участник и каждый агент.
     await noteSpend({
@@ -596,11 +636,15 @@ export async function askAgent(opts: {
       return { ok: false, reason: "failed", detail: "модель отказалась отвечать на этот запрос" };
     }
 
-    const text = final.content
-      .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
+    if (research && (final.stop_reason === "pause_turn" || final.stop_reason === "max_tokens")) {
+      return {
+        ok: false,
+        reason: "failed",
+        detail:
+          "Исследование не завершено: уменьшите число факторов или игроков и повторите запрос",
+      };
+    }
+    const text = anthropicText(outputs);
 
     return text
       ? { ok: true, text }
