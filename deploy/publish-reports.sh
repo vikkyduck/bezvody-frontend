@@ -36,7 +36,7 @@ set -Eeuo pipefail
 stage=${1:?Stage required}
 [[ "$stage" =~ ^/var/tmp/nowater-brand\.[a-zA-Z0-9]+$ ]] || exit 2
 # A parent deployment passes the same open lock descriptor to this child.
-if [[ "$(readlink /proc/self/fd/9 2>/dev/null || true)" != /var/lock/nowater-branding-maintenance.lock ]]; then
+if ! [[ /proc/self/fd/9 -ef /var/lock/nowater-branding-maintenance.lock ]]; then
   exec 9>/var/lock/nowater-branding-maintenance.lock
 fi
 flock -n 9 || { echo 'Another NOWATER deployment is running' >&2; exit 1; }
