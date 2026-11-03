@@ -116,7 +116,11 @@ REMOTE
 mkdir -p "$local_stage/public/brand" "$local_stage/reports"
 cp -a public/brand/. "$local_stage/public/brand/"
 cp public/favicon.ico public/favicon.svg public/apple-touch-icon.png public/site.webmanifest "$local_stage/public/"
-cp deploy/nginx-nowater-branding.conf deploy/nginx-nowater-ai-radar.conf "$local_stage/"
+cp deploy/nginx-nowater-branding.conf "$local_stage/nowater-branding.conf"
+cp deploy/nginx-nowater-ai-radar.conf "$local_stage/nowater-ai-radar.conf"
+for required in nowater-branding.conf nowater-ai-radar.conf apply.sh publications.tsv; do
+  [[ -f "$local_stage/$required" ]] || { echo "Missing publication input: $required" >&2; exit 1; }
+done
 while IFS=$'\t' read -r source remote_file; do
   cp "$source" "$local_stage/reports/$(basename "$remote_file")"
 done < "$local_stage/publications.tsv"
