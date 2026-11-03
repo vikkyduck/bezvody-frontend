@@ -1,0 +1,26 @@
+{
+  "reports": [
+    {
+      "source": "reports/seller-signals-2026-10-26.html",
+      "url": "https://nowater.tech/AI-radar/Avito/Goods/19-26.10.26",
+      "remote_file": "/var/www/nowater-reports/avito-goods-19-26.10.26.html",
+      "nginx_snippet": "/etc/nginx/snippets/nowater-ai-radar.conf",
+      "sha256": "69a9077cf690cb8950313fbe76128cd4f0c662f4c2d8523d7b663c7c25c0d1f0",
+      "published_at": "2026-10-26T19:45:29Z",
+      "config_backup": "/var/backups/nowater-ai-radar/20261026T194529Z",
+      "drive_file_id": "16sp9tkkOlLLA1MeWrncfKHiJFFJ-JbK9",
+      "branding_version": "20261103-97c91f04"
+    },
+    {
+      "source": "reports/avito-goods-2026-11-03/report.html",
+      "url": "https://nowater.tech/AI-radar/Avito/Goods/27.10-02.11.26",
+      "remote_file": "/var/www/nowater-reports/avito-goods-27.10-02.11.26.html",
+      "nginx_snippet": "/etc/nginx/snippets/nowater-ai-radar.conf",
+      "sha256": "b5408a994d7075bbe6f91df1cd276eac4094dbb1767c9902629639f4cbc5a69e",
+      "published_at": "2026-11-03T07:08:50Z",
+      "config_backup": "/var/backups/nowater-ai-radar/20261103T070850Z",
+      "drive_file_id": "1XQqATYvXRN1deqRViYr89tFVTxKhOvL0",
+      "branding_version": "20261103-97c91f04"
+    }
+  ]
+}

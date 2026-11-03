@@ -9,7 +9,11 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "prepare:branding": "node scripts/brand-publications.mjs --write",
+    "check:branding": "node scripts/check-branding.mjs",
+    "prebuild": "npm run prepare:branding && npm run check:branding",
+    "prebuild:dev": "npm run prepare:branding && npm run check:branding"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

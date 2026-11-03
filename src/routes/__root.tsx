@@ -14,6 +14,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { WindowsProvider } from "../lib/windows-store";
 import { SessionProvider } from "../lib/session";
 import { DirectoryProvider } from "../lib/directory";
+import { brandLinks, brandMeta } from "../lib/brand-head";
 
 /* Сбойные экраны собраны на той же обёртке, что и вход: та же сцена, тот же
    логотип. Человек, у которого только что что-то не открылось, должен видеть
@@ -98,7 +99,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // Кабинет — не витрина: в поиске ему делать нечего.
       { name: "robots", content: "noindex" },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      ...brandMeta,
     ],
     links: [
       {
@@ -107,7 +108,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       // Шрифты «Без Воды» хостим локально (public/fonts) — внешние CDN исключены.
       { rel: "stylesheet", href: "/fonts/fonts.css" },
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      ...brandLinks,
     ],
   }),
 
