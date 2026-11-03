@@ -1,7 +1,7 @@
 {
   "url": "https://nowater.tech/AI-radar/Avito/Goods/27.10-02.11.26",
   "source_sha256": "91424d1fb9f83aff698a03ea42e3c40029a8a8da447a7ec88457d14812ffe372",
-  "report_sha256": "b5408a994d7075bbe6f91df1cd276eac4094dbb1767c9902629639f4cbc5a69e",
+  "report_sha256": "01024aaecd831d0333ace657a9efb9503b861c6e5ee37a6290569c05ced9987f",
   "source_preserved": true,
   "sources_checked": "2026-11-03",
   "signal_count": 6,
@@ -14,5 +14,5 @@
   "remote_file": "/var/www/nowater-reports/avito-goods-27.10-02.11.26.html",
   "config_backup": "/var/backups/nowater-ai-radar/20261103T070850Z",
   "email_drive_file_id": "1QXGEOiUeFSrKiptcZZKkadONtNMBiLPU",
-  "branding_version": "20261103-97c91f04"
+  "branding_version": "20261103-bv-v2"
 }

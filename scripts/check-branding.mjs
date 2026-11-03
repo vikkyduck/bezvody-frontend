@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises"
-import { resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import { createHash } from "node:crypto"
 import { readBranding, readPublications, readPublicationSidecar, readPublicHtmlFiles, brandElements, brandPublication, headParts, headTags, projectRoot } from "./brand-publications.mjs"
 
@@ -19,7 +19,11 @@ function assetFile(href) {
   return resolve(projectRoot, "public", "." + url.pathname)
 }
 
-const keys = ["sourceLogo", "faviconSvg", "faviconIco", "icon32", "appleTouchIcon", "manifest", "shareImage"]
+const keys = ["sourceLogo", "iconSource", "faviconSvg", "faviconIco", "icon32", "appleTouchIcon", "manifest", "shareImage"]
+const compactKeys = ["iconSource", "faviconSvg", "faviconIco", "icon32", "appleTouchIcon", "manifest"]
+for (const key of compactKeys) {
+  check(typeof brand[key] === "string" && new URL(brand[key], brand.origin).pathname.startsWith(`/brand/${brand.version}/`), `${key} must select the current compact icon version`)
+}
 for (const key of keys) {
   try {
     check((await stat(assetFile(brand[key]))).size > 0, `Brand asset is empty: ${key}`)
@@ -31,9 +35,41 @@ for (const key of keys) {
 const sourceFile = assetFile(brand.sourceLogo)
 const approvedSourceSha256 = "97c91f044a1045eab29748426af2a2f6c00d5ac96836a90d02c4b678a316e586"
 check(sha256(await readFile(sourceFile)) === approvedSourceSha256, "Source logo differs from the user-approved original")
+check(typeof brand.iconSourceSha256 === "string" && /^[\da-f]{64}$/.test(brand.iconSourceSha256), "Compact icon master must declare its SHA-256")
+check(sha256(await readFile(assetFile(brand.iconSource))) === brand.iconSourceSha256, "Compact icon master differs from its approved SHA-256")
 
 const ico = await readFile(assetFile(brand.faviconIco))
-check(ico.readUInt16LE(0) === 0 && ico.readUInt16LE(2) === 1 && ico.readUInt16LE(4) > 0, "Fallback favicon must be a valid ICO container")
+const icoHeaderValid = ico.length >= 6 && ico.readUInt16LE(0) === 0 && ico.readUInt16LE(2) === 1
+check(icoHeaderValid, "Fallback favicon must be a valid ICO container")
+if (icoHeaderValid) {
+  const count = ico.readUInt16LE(4)
+  check(count === 3, "Current ICO must contain exactly the approved 16, 32 and 48 pixel frames")
+  const sizes = []
+  for (let index = 0; index < count; index++) {
+    const entry = 6 + index * 16
+    if (entry + 16 > ico.length) {
+      check(false, "ICO frame directory is truncated")
+      break
+    }
+    const width = ico[entry] || 256
+    const height = ico[entry + 1] || 256
+    const bytes = ico.readUInt32LE(entry + 8)
+    const offset = ico.readUInt32LE(entry + 12)
+    const inBounds = bytes > 0 && offset >= 6 + count * 16 && offset + bytes <= ico.length
+    check(inBounds, "ICO frame bytes must stay within the container")
+    check(width === height && [16, 32, 48].includes(width), "ICO contains an unexpected frame dimension")
+    if (inBounds) {
+      const frame = ico.subarray(offset, offset + bytes)
+      check(pngDimensions(frame) === `${width}x${height}`, "ICO frame bytes do not match their declared PNG dimensions")
+      if ([16, 32, 48].includes(width)) {
+        const png = await readFile(resolve(dirname(assetFile(brand.faviconIco)), `icon-${width}.png`))
+        check(frame.equals(png), `ICO ${width}px frame must match the current canonical PNG`)
+      }
+    }
+    sizes.push(width)
+  }
+  check(sizes.slice().sort((a, b) => a - b).join(",") === "16,32,48", "ICO must have one frame of each approved size")
+}
 check(sha256(ico) !== "dd821076a9b03adc2173c93956226aea3d92482d7578fc4339c5d3a2e9c24586", "Fallback favicon must not be the legacy Lovable asset")
 check((await readFile(resolve(projectRoot, "public/favicon.ico"))).equals(ico), "Root fallback favicon.ico must match the canonical ICO")
 const svg = await readFile(assetFile(brand.faviconSvg), "utf8")
@@ -41,10 +77,14 @@ check(svg.includes("<svg") && !/lovable|талисман|mascot|Кот-росч�
 check((await readFile(resolve(projectRoot, "public/favicon.svg"), "utf8")) === svg, "Root fallback favicon.svg must match the canonical SVG")
 
 const webmanifest = JSON.parse(await readFile(assetFile(brand.manifest), "utf8"))
+for (const [name, key] of [["apple-touch-icon.png", "appleTouchIcon"], ["site.webmanifest", "manifest"]]) {
+  check((await readFile(resolve(projectRoot, "public", name))).equals(await readFile(assetFile(brand[key]))), `Root fallback ${name} must match the current canonical asset`)
+}
 check(!/lovable/i.test(JSON.stringify(webmanifest)), "Web manifest must not contain provider branding")
 check(Array.isArray(webmanifest.icons) && webmanifest.icons.length >= 2, "Web manifest must supply phone/bookmark icons")
 for (const icon of webmanifest.icons ?? []) {
   check(typeof icon.src === "string" && !/lovable/i.test(icon.src), "Manifest contains a legacy provider icon")
+  check(typeof icon.src === "string" && new URL(icon.src, brand.origin).pathname.startsWith(`/brand/${brand.version}/`), "Manifest must select the current compact icon version")
   check(icon.type === "image/png" && ["192x192", "512x512"].includes(icon.sizes), "Manifest icons must declare the supported PNG dimensions")
   try { check((await stat(assetFile(icon.src))).size > 0, `Manifest icon missing: ${icon.src}`) }
   catch { check(false, `Manifest icon missing: ${icon.src}`) }
