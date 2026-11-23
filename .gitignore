@@ -33,3 +33,6 @@ dist-ssr
 
 # Локальная песочница: данные участников и переписка при npm run dev
 .data/
+
+# Python
+__pycache__/

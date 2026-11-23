@@ -144,12 +144,18 @@ const publicPages = await readPublicHtmlFiles(projectRoot, brand.origin)
 for (const page of publicPages) checkPageHead(await readFile(page.file, "utf8"), page.source, page.url)
 
 const nginx = await readFile(resolve(projectRoot, "deploy/nginx-nowater-ai-radar.conf"), "utf8")
-const aliases = [...nginx.matchAll(/\balias\s+([^;\s]+\.html)\s*;/g)].map(match => match[1])
+const allAliases = [...nginx.matchAll(/\balias\s+([^;\s]+\.html)\s*;/g)].map(match => match[1])
+// Еженедельный AI-радар: один адрес по шаблону, страницы кладет шлюз nowater-radar (radar/README.md).
+const weekly = allAliases.filter(alias => alias.includes("$"))
+const aliases = allAliases.filter(alias => !alias.includes("$"))
+for (const alias of weekly) check(alias === "/var/www/nowater-reports/radar/avito-goods-$1.html", `Unexpected template report alias: ${alias}`)
 for (const alias of aliases) check(publications.some(report => report.remote_file === alias), `Published nginx report alias is not registered: ${alias}`)
 for (const report of publications) check(aliases.includes(report.remote_file), `Report has no corresponding nginx alias: ${report.source}`)
 
 const generator = await readFile(resolve(projectRoot, "reports/avito-goods-2026-11-03/build-web.py"), "utf8")
 check(generator.includes("brand-publications.mjs") && generator.includes("--stdin"), "Report generator must pass new HTML through shared branding")
+const weeklyGenerator = await readFile(resolve(projectRoot, "radar/render.py"), "utf8")
+check(weeklyGenerator.includes("brand-publications.mjs") && weeklyGenerator.includes("--stdin"), "Weekly radar generator must pass new HTML through shared branding")
 
 if (failures.length) {
   console.error(failures.map(message => `Branding check failed: ${message}`).join("\n"))
