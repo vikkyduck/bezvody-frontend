@@ -551,9 +551,13 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
         last = len(facts) - 1
 
         def fact(i: int, x: str) -> str:
-            width = "" if i in (0, last) else ' width="100%"'
+            width = ' width="100%"'
             side = "left" if i == 0 else "right" if i == last else "center"
-            return f'<td{width} align="{side}" valign="top" style="white-space:nowrap;{_font(13, 18)}">{H(x).replace(" ", NBSP)}</td>'
+            if i in (0, last):
+                return f'<td align="{side}" valign="top" style="white-space:nowrap;{_font(13, 18)}">{H(x).replace(" ", NBSP)}</td>'
+            # Среднее сведение может перенестись на вторую строку: длинный период ("30 ноября - 6 декабря")
+            # иначе выталкивает строку за край телефона шириной 320 px.
+            return f'<td{width} align="{side}" valign="top" style="padding:0 8px;{_font(13, 18)}">{_typo(x)}</td>'
 
         cells = "".join(fact(i, x) for i, x in enumerate(facts))
         return _zone(
