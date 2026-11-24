@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import copy
+import html
 import importlib.util
 import io
 import json
@@ -33,6 +34,26 @@ EXAMPLE = json.loads((ROOT / "radar" / "example-issue.json").read_text(encoding=
 URL = "https://nowater.tech/AI-radar/Avito/Goods/17.11-23.11.26"
 
 
+def visible(markup: str) -> str:
+    """Текст, который видит читатель: без тегов, с раскрытыми сущностями, пробелы схлопнуты."""
+    inline = re.sub(r"</?(?:a|strong|span)\b[^>]*>", "", markup)  # ссылка и выделение не рвут фразу
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", inline)))
+
+
+def fields(issue: dict) -> list[str]:
+    """Все тексты выпуска по абзацам, как их видит читатель."""
+    main = issue["main_signal"]
+    texts = [issue["subject"], issue["summary"], issue.get("limits", ""), main["title"]]
+    texts += [main[key] for key in ("what", "why", "product", "question")]
+    for signal in issue["signals"]:
+        texts += [signal[key] for key in ("title", "text", "contour", "feature") if signal.get(key)]
+    for row in issue["table"]:
+        texts += list(row.values())
+    for item in issue["noise"]:
+        texts += [item] if isinstance(item, str) else list(item.values())
+    return [part.strip() for text in texts for part in render._visible(text).split("\n") if part.strip()]
+
+
 class RenderTest(unittest.TestCase):
     def test_example_gives_period_url_and_letter(self):
         issue = render.check(EXAMPLE)
@@ -43,37 +64,101 @@ class RenderTest(unittest.TestCase):
         self.assertIn(URL, letter["text"])
         self.assertTrue(letter["text"].rstrip().endswith("Виктория Уткина"))
 
-    def test_letter_is_a_cover_in_nowater_style(self):
+    def test_text_goes_word_for_word(self):
+        # Главное правило: сборщик не сокращает и не пересказывает. Каждый абзац выпуска
+        # целиком есть и в письме, и в его текстовой версии, и на странице.
         issue = render.check(EXAMPLE)
-        html = render.mail(issue)["html"]
+        letter = render.mail(issue)
+        in_mail, in_page = visible(letter["html"]), visible(render.page(issue))
+        in_text = re.sub(r"\s+", " ", re.sub(r" \(https?://[^\s()]+\)", "", letter["text"]))
+        for part in fields(EXAMPLE):
+            part = re.sub(r"\s+", " ", part)
+            self.assertIn(part, in_mail)
+            self.assertIn(part, in_page)
+            self.assertIn(part, in_text)
+
+    def test_letter_is_the_whole_issue_in_nowater_style(self):
+        issue = render.check(EXAMPLE)
+        markup = render.mail(issue)["html"]
         for expected in ("NOWATER.TECH", render.BG, render.ACCENT, 'lang="ru"', "Открыть выпуск на сайте"):
-            self.assertIn(expected, html)
-        # Сводная таблица и шум остаются на странице: в письме на них только ссылки.
-        self.assertNotIn("<th", html)
-        self.assertNotIn(EXAMPLE["noise"][0]["topic"], html)
-        self.assertNotIn(EXAMPLE["table"][0]["segment"], html)
+            self.assertIn(expected, markup)
+        # Сводная таблица в письме - плашки с подписями колонок, не таблица данных.
+        self.assertNotIn("<th", markup)
+        for label in ("col_segment", "col_question", "table", "noise", "product", "question"):
+            self.assertIn(html.escape(render.LABELS[label].upper()), markup)
         # Почта: только таблицы разметки, без картинок, скриптов и современной сетки.
-        tables = re.findall(r"<table\b[^>]*>", html)
+        tables = re.findall(r"<table\b[^>]*>", markup)
         self.assertTrue(tables)
         self.assertTrue(all('role="presentation"' in tag for tag in tables))
         for forbidden in ("<img", "<script", "display:flex", "display:grid", "var(--"):
-            self.assertNotIn(forbidden, html)
-        self.assertLess(len(html.encode("utf-8")), 80 * 1024)
+            self.assertNotIn(forbidden, markup)
+        self.assertLess(len(markup.encode("utf-8")), 80 * 1024)
 
     def test_letter_links_lead_to_existing_page_sections(self):
         issue = render.check(EXAMPLE)
         page = render.page(issue)
         anchors = set(re.findall(re.escape(URL) + r"#([a-z0-9-]+)", render.mail(issue)["html"]))
-        self.assertTrue({"main", "signal-2", "product"} <= anchors)
-        for anchor in anchors:
+        self.assertEqual(anchors, {"main", "signals", "product", "noise"})
+        for anchor in anchors | {"signal-2", "signal-3"}:
             self.assertIn(f'id="{anchor}"', page)
+
+    def test_links_inside_text_stay_in_place(self):
+        issue = render.check(EXAMPLE)
+        letter = render.mail(issue)
+        link = '<a href="https://example.com/second" target="_blank" rel="noopener noreferrer"'
+        self.assertIn(link, letter["html"])
+        self.assertIn(link + ">Пример второго источника, 20.11.2026</a>)", render.page(issue))
+        self.assertIn("(Пример второго источника, 20.11.2026 (https://example.com/second)).", letter["text"])
+        # Правила текста не касаются адреса ссылки.
+        changed = copy.deepcopy(EXAMPLE)
+        changed["signals"][0]["text"] = "Суть ([источник](https://example.com/a;b?x=1—2))."
+        render.check(changed)
+        # Ссылка с ошибкой не превращается в текст молча.
+        changed["signals"][0]["text"] = "Суть ([источник](https://example.com/a b))."
+        with self.assertRaisesRegex(render.IssueError, "ссылка записана с ошибкой"):
+            render.check(changed)
+
+    def test_signal_needs_a_source_in_list_or_in_text(self):
+        issue = copy.deepcopy(EXAMPLE)
+        issue["signals"][0]["text"] = "Суть практики без единой ссылки."
+        with self.assertRaisesRegex(render.IssueError, r"signals\[1\]\.sources: нужен хотя бы один источник"):
+            render.check(issue)
+        issue["signals"][0]["sources"] = [{"title": "Источник списком", "url": "https://example.com/list", "date": "2026-11-19"}]
+        self.assertIn("Источник списком", render.mail(render.check(issue))["html"])
+
+    def test_contour_and_feature_are_not_repeated_when_they_are_in_text(self):
+        issue = render.check(EXAMPLE)
+        page, markup = render.page(issue), render.mail(issue)["html"]
+        # У первого сигнала контур и идея стоят в самом абзаце, у второго - отдельными полями.
+        self.assertEqual(page.count("<strong>Контур Авито:</strong>"), 1)
+        self.assertEqual(visible(markup).count("Идея фичи одной строкой"), 1)
+
+    def test_edition_labels_and_badges_come_from_the_issue(self):
+        issue = copy.deepcopy(EXAMPLE)
+        issue.update(name="Слабые сигналы селлеров", number=6, labels={"product": "Что предложить Продукту"})
+        clean = render.check(issue)
+        letter, page = render.mail(clean), render.page(clean)
+        for where in (visible(letter["html"]), letter["text"]):
+            self.assertIn("Слабые сигналы селлеров. Выпуск 6", where)
+            self.assertIn("Еще 2 сигнала недели".upper() if where != letter["text"] else "Еще 2 сигнала недели", where)
+        self.assertIn("ЧТО ПРЕДЛОЖИТЬ ПРОДУКТУ", visible(letter["html"]))
+        self.assertIn("<h3>Что предложить Продукту</h3>", page)
+        self.assertNotIn(render.LABELS["product"], page)
+        self.assertIn(EXAMPLE["main_signal"]["badge"].upper(), visible(letter["html"]))
+        self.assertIn(EXAMPLE["main_signal"]["badge"].upper(), visible(page))
+        issue["labels"] = {"unknown": "Подпись"}
+        with self.assertRaisesRegex(render.IssueError, "labels.unknown"):
+            render.check(issue)
+        issue["labels"], issue["number"] = {}, "шесть"
+        with self.assertRaisesRegex(render.IssueError, "number"):
+            render.check(issue)
 
     def test_letter_is_escaped(self):
         issue = copy.deepcopy(EXAMPLE)
-        issue["main_signal"]["what"] = "Продавец пишет <script>alert(1)</script> в описании"
-        html = render.mail(render.check(issue))["html"]
-        self.assertNotIn("<script", html)
-        self.assertIn("&lt;script&gt;", html)
+        issue["main_signal"]["why"] = "Продавец пишет <script>alert(1)</script> в описании"
+        markup = render.mail(render.check(issue))["html"]
+        self.assertNotIn("<script", markup)
+        self.assertIn("&lt;script&gt;", markup)
 
     def test_line_break_starts_a_paragraph(self):
         issue = copy.deepcopy(EXAMPLE)
@@ -88,13 +173,13 @@ class RenderTest(unittest.TestCase):
     def test_preheader_is_optional(self):
         issue = copy.deepcopy(EXAMPLE)
         issue.pop("preheader", None)
-        self.assertIn("Главный сигнал: " + EXAMPLE["main_signal"]["title"], render.mail(render.check(issue))["html"])
+        self.assertIn("Главный сигнал недели: " + EXAMPLE["main_signal"]["title"], render.mail(render.check(issue))["html"])
         issue["preheader"] = "Своя строка превью для списка писем"
         self.assertIn("Своя строка превью для списка писем", render.mail(render.check(issue))["html"])
 
     def test_page_is_escaped_and_hidden_from_search(self):
         issue = copy.deepcopy(EXAMPLE)
-        issue["main_signal"]["what"] = "Продавец пишет <script>alert(1)</script> в описании"
+        issue["main_signal"]["why"] = "Продавец пишет <script>alert(1)</script> в описании"
         page = render.page(render.check(issue))
         self.assertNotIn("<script>alert(1)", page)
         self.assertIn("&lt;script&gt;", page)
