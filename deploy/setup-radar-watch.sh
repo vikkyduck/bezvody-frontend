@@ -94,6 +94,8 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now nowater-radar-watch.timer >/dev/null
 
+# Установку обычно повторяют после исправления почты: отметки о неудачных попытках снимаются, повтор идет сразу.
+rm -f /var/lib/nowater-radar/state/*.failed
 # Первый запуск сразу: видно, достает ли сервер до GitHub и может ли наблюдатель вызвать шлюз.
 if systemctl start nowater-radar-watch.service; then
   echo 'первый запуск: без ошибок'

@@ -38,6 +38,7 @@ REPO = Path(os.environ.get("RADAR_REPO", "/var/lib/nowater-radar/repo"))
 STATE = Path(os.environ.get("RADAR_STATE", "/var/lib/nowater-radar/state"))
 GATEWAY = os.environ.get("RADAR_GATEWAY", "/usr/local/sbin/nowater-radar")
 FRESH_DAYS = 10
+RETRY_AFTER = 30 * 60  # секунд до повтора после отказа шлюза: неверный пароль почты не должен стучаться в сервер каждые 5 минут
 
 
 def git(*args: str, binary: bool = False):
@@ -106,23 +107,34 @@ def control_copy(period: str, page: bytes, mail: bytes, kind: str) -> bool:
         ok, answer = gateway(command, data)
         note(f"{period}: {command.split()[0]} - {answer}")
         if not ok:
+            mark(period, "failed").write_text("copy:" + fingerprint(page, mail))
             return False
     mark(period, kind).write_text(fingerprint(page, mail))
     return True
+
+
+def waiting(period: str, what: str) -> bool:
+    """Это действие недавно не удалось: повтор не раньше чем через RETRY_AFTER. Отметку снимает повторная установка."""
+    failed = mark(period, "failed")
+    return failed.exists() and failed.read_text().strip() == what and time.time() - failed.stat().st_mtime < RETRY_AFTER
 
 
 def handle(period: str, approved: tuple[bytes, bytes] | None, draft: tuple[bytes, bytes] | None) -> None:
     read = lambda kind: mark(period, kind).read_text().strip() if mark(period, kind).exists() else ""
     seen = read("draft")  # последняя версия, которую Виктория получила контрольной копией из ветки
     if approved and fingerprint(*approved) == seen:
-        ok, answer = gateway(f"send {period}", approved[1])
-        note(f"{period}: send - {answer}")
+        if not waiting(period, "send:" + seen):
+            ok, answer = gateway(f"send {period}", approved[1])
+            note(f"{period}: send - {answer}")
+            if not ok:
+                mark(period, "failed").write_text("send:" + seen)
         return
     # Версия из ветки показывается, только если она отличается от main: выпуск, влитый раньше, чем его
     # увидел наблюдатель, не должен уйти адресатам через ветку с тем же содержанием.
     if draft and fingerprint(*draft) != seen and (not approved or fingerprint(*draft) != fingerprint(*approved)):
-        control_copy(period, *draft, "draft")
-    elif approved and read("mismatch") != fingerprint(*approved):
+        if not waiting(period, "copy:" + fingerprint(*draft)):
+            control_copy(period, *draft, "draft")
+    elif approved and read("mismatch") != fingerprint(*approved) and not waiting(period, "copy:" + fingerprint(*approved)):
         note(f"{period}: в main выпуск, который не уходил контрольной копией из ветки. Адресатам не отправляю, отправляю контрольную копию. "
              "Чтобы отправить адресатам, нужна правка в ветке radar-issue и новое слияние")
         control_copy(period, *approved, "mismatch")

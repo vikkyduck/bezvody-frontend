@@ -5,7 +5,10 @@
 # deploy/radar_gateway.py (пользователь radar, команды только publish/test/send/status),
 # адрес /AI-radar/Avito/Goods/<период> по шаблону и подключает к шлюзу ключ Евы.
 #
-#   deploy/setup-radar.sh     - поставить или обновить; повторный запуск меняет почту и адресатов
+#   deploy/setup-radar.sh            - поставить или обновить; повторный запуск меняет почту и адресатов
+#   deploy/setup-radar.sh --no-eva   - то же без Евы: ключ Евы не нужен и не подключается, шлюзом управляет
+#                                      наблюдатель согласования через GitHub (deploy/setup-radar-watch.sh),
+#                                      он ставится следом этим же запуском
 #
 # Пароль почты и список адресатов остаются на сервере nowater.tech: Ева их не видит и
 # отправить письмо на другой адрес не может. Пароль вводится вслепую и идет потоком ввода,
@@ -22,6 +25,13 @@
 
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
+
+NO_EVA=0
+case "${1:-}" in
+  '') ;;
+  --no-eva) NO_EVA=1 ;;
+  *) echo 'Запуск: deploy/setup-radar.sh [--no-eva]' >&2; exit 2 ;;
+esac
 
 SERVER="${BV_SERVER:-root@5.129.198.180}"
 EVA="${EVA_HOST:-eva}"
@@ -47,13 +57,19 @@ if ! git diff --quiet HEAD -- deploy/radar_gateway.py deploy/nginx-nowater-ai-ra
 fi
 
 echo '==> [2/5] Беру ключ Евы'
-key=$(ssh -o BatchMode=yes "$EVA" "runuser -u agent -- cat $EVA_HOME/.ssh/nowater_radar.pub" 2>/dev/null || true)
-if ! [[ "$key" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+(\ [A-Za-z0-9._@-]+)?$ ]]; then
-  echo "У Евы нет ключа $EVA_HOME/.ssh/nowater_radar.pub. Попросите ее выполнить:" >&2
-  echo "  ssh-keygen -t ed25519 -f ~/.ssh/nowater_radar -N '' -C eva-radar" >&2
-  exit 1
+if (( NO_EVA )); then
+  key=''
+  echo '    без Евы: вход по ключу не настраиваю, шлюзом будет управлять наблюдатель'
+else
+  key=$(ssh -o BatchMode=yes "$EVA" "runuser -u agent -- cat $EVA_HOME/.ssh/nowater_radar.pub" 2>/dev/null || true)
+  if ! [[ "$key" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+(\ [A-Za-z0-9._@-]+)?$ ]]; then
+    echo "У Евы нет ключа $EVA_HOME/.ssh/nowater_radar.pub. Попросите ее выполнить:" >&2
+    echo "  ssh-keygen -t ed25519 -f ~/.ssh/nowater_radar -N '' -C eva-radar" >&2
+    echo 'Или поставьте шлюз без Евы: deploy/setup-radar.sh --no-eva' >&2
+    exit 1
+  fi
+  echo "    ключ: ${key:0:40}..."
 fi
-echo "    ключ: ${key:0:40}..."
 
 echo '==> [3/5] Почта и адресаты'
 echo 'Пустой пароль - оставить прежние настройки почты (при повторном запуске).'
@@ -97,6 +113,7 @@ cat > "$local_stage/apply.sh" <<'REMOTE'
 set -Eeuo pipefail
 cd /
 stage=${1:?}
+mode=${2:-eva}
 [[ "$stage" =~ ^/var/tmp/nowater-radar\.[a-zA-Z0-9]+$ ]] || exit 2
 exec 9>/var/lock/nowater-branding-maintenance.lock
 flock -n 9 || { echo 'Идет другая выкладка NOWATER, повторите позже' >&2; exit 1; }
@@ -124,8 +141,9 @@ def write(path, text, mode, group=0):
     os.chown(temporary, 0, group)
     os.chmod(temporary, mode)
     os.replace(temporary, path)
-write("/var/lib/nowater-radar/.ssh/authorized_keys",
-      "restrict,command=\"/usr/local/sbin/nowater-radar\" " + data["key"].strip() + "\n", 0o644)
+if data["key"]:
+    write("/var/lib/nowater-radar/.ssh/authorized_keys",
+          "restrict,command=\"/usr/local/sbin/nowater-radar\" " + data["key"].strip() + "\n", 0o644)
 if data["mail"]:
     write("/etc/nowater-radar/mail.json", json.dumps(data["mail"], ensure_ascii=False, indent=1) + "\n", 0o640, gid)
     print("почта: " + data["mail"]["from"] + " через " + data["mail"]["host"])
@@ -138,7 +156,7 @@ for name in ("mail.json", "recipients.txt"):
 '
 
 # Вход по ключу для radar: если sshd пускает только перечисленных пользователей, сами его не правим.
-if sshd -T -C user=radar,host=eva,addr=127.0.0.1 2>/dev/null | grep -qiE '^(allowusers|allowgroups) '; then
+if [[ "$mode" == eva ]] && sshd -T -C user=radar,host=eva,addr=127.0.0.1 2>/dev/null | grep -qiE '^(allowusers|allowgroups) '; then
   if ! sshd -T -C user=radar,host=eva,addr=127.0.0.1 | grep -iE '^allowusers ' | grep -qw radar; then
     echo 'sshd пускает только перечисленных пользователей (AllowUsers). Добавьте radar и повторите.' >&2
     exit 1
@@ -171,16 +189,22 @@ if ! grep -q 'radar-probe' <<<"$answer" || ! grep -qi '^x-robots-tag: noindex' <
   restore
 fi
 echo "адрес по шаблону работает, копия прежней настройки nginx: $backup"
-cat /etc/ssh/ssh_host_ed25519_key.pub
+# Ключ сервера нужен только Еве: по нему она проверяет, что говорит с этим сервером.
+if [[ "$mode" == eva ]]; then cat /etc/ssh/ssh_host_ed25519_key.pub; fi
 rm -rf "$stage"
 REMOTE
 
 stage=$("${SSH[@]}" "$SERVER" 'mktemp -d /var/tmp/nowater-radar.XXXXXXXX')
 [[ "$stage" =~ ^/var/tmp/nowater-radar\.[a-zA-Z0-9]+$ ]] || exit 2
 "${SCP[@]}" "$local_stage/radar_gateway.py" "$local_stage/nginx-nowater-ai-radar.conf" "$local_stage/apply.sh" "$SERVER:$stage/"
-result=$(printf '%s\n' "$payload" | "${SSH[@]}" "$SERVER" bash "$stage/apply.sh" "$stage")
+mode=eva; (( NO_EVA )) && mode=no-eva
+result=$(printf '%s\n' "$payload" | "${SSH[@]}" "$SERVER" bash "$stage/apply.sh" "$stage" "$mode")
 unset payload
 printf '%s\n' "$result" | grep -v '^ssh-ed25519 '
+if (( NO_EVA )); then
+  echo '==> [5/5] Ставлю наблюдателя согласования через GitHub'
+  exec deploy/setup-radar-watch.sh
+fi
 host_key=$(printf '%s\n' "$result" | grep -m1 '^ssh-ed25519 ' | cut -d' ' -f1-2)
 [[ -n "$host_key" ]] || { echo 'Сервер не прислал свой ключ, Еву не подключаю' >&2; exit 1; }
 
