@@ -64,6 +64,28 @@ class FromDocxTest(unittest.TestCase):
         self.assertEqual(issue["main_signal"]["why"], "Выигрывает малый бизнес.\nГипотеза для проверки: агент удерживает продавца.")
         self.assertEqual(issue["signals"][0]["title"], "Возврат решает алгоритм")
         self.assertEqual(issue["table"][1]["question"], "Как прошел возврат?")
+        # Подписи колонок таблицы идут на страницу словами автора.
+        self.assertEqual(issue["labels"]["col_segment"], "Сегмент")
+        self.assertIn("<th>Сегмент</th>", render.page(render.check(issue)))
+
+    def test_line_breaks_tabs_and_brackets_in_links_survive(self):
+        tmp = Path(tempfile.mkdtemp())
+        extra = ('<w:p><w:r><w:t>Вторая</w:t><w:tab/><w:t>новость</w:t><w:br/><w:t>без влияния (</w:t></w:r>'
+                 '<w:hyperlink r:id="rId2"><w:r><w:t>Статья</w:t></w:r></w:hyperlink><w:r><w:t>).</w:t></w:r></w:p>')
+        docx(tmp / "issue.docx", extra)
+        # ссылка со скобками в адресе
+        src = tmp / "issue.docx"; dst = tmp / "issue2.docx"
+        with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w") as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename.endswith(".rels"):
+                    data = data.replace(b"</Relationships>", b'<Relationship Id="rId2" Type="hyperlink" Target="https://example.com/a_(b)" TargetMode="External"/></Relationships>')
+                zout.writestr(item.filename, data)
+        out = tmp / "issue.json"
+        self.assertEqual(from_docx.main([str(dst), "--start", "2026-11-24", "--out", str(out)]), 0)
+        issue = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(issue["noise"][1], "Вторая новость\nбез влияния ([Статья](https://example.com/a_%28b%29)).")
+        render.check(issue)
         letter = render.mail(render.check(issue))  # сборщик принимает файл без правок
         self.assertIn("Торг становится настройкой", letter["text"])
 

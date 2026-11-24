@@ -56,15 +56,24 @@ def read(path: Path) -> list[dict]:
         body = ET.fromstring(z.read("word/document.xml")).find(W + "body")
         rels = {r.get("Id"): r.get("Target") for r in ET.fromstring(z.read("word/_rels/document.xml.rels")).iter(REL + "Relationship")}
 
+    def words_of(el: ET.Element) -> str:
+        # Разрыв строки и табуляция внутри абзаца разделяют слова: без них соседние слова склеились бы.
+        marks = {W + "t": None, W + "br": "\n", W + "cr": "\n", W + "tab": " "}
+        return "".join((x.text or "") if marks[x.tag] is None else marks[x.tag] for x in el.iter() if x.tag in marks)
+
+    def address(url: str) -> str:
+        # Сборщик не принимает в адресе ссылки скобки, пробелы и кавычки: они кодируются, готовые %XX не трогаются.
+        return "".join(f"%{ord(c):02X}" if c in "()<>\"' " else c for c in url)
+
     def text(p: ET.Element) -> str:
         parts = []
         for child in p:
-            words = "".join(t.text or "" for t in child.iter(W + "t"))
+            words = words_of(child)
             if child.tag == W + "hyperlink" and rels.get(child.get(R + "id")):
-                parts.append(f"[{words}]({rels[child.get(R + 'id')]})")
+                parts.append(f"[{words}]({address(rels[child.get(R + 'id')])})")
             elif child.tag in (W + "r", W + "hyperlink", W + "ins", W + "smartTag"):
                 parts.append(words)
-        return "".join(parts).strip()
+        return re.sub(r"[ \t]*\n[ \t]*", "\n", "".join(parts)).strip()
 
     blocks = []
     for el in body:
@@ -101,6 +110,8 @@ def build(blocks: list[dict], start: dt.date, audience: str) -> dict:
                 problems.append("Сводная таблица: нужны строка подписей и пять колонок в каждой строке")
             else:
                 table = [dict(zip(TABLE_KEYS, row)) for row in b["rows"][1:]]
+                # Подписи колонок тоже слова автора: они идут на страницу вместо подписей по умолчанию.
+                issue["labels"] = {"col_" + key: name for key, name in zip(TABLE_KEYS, b["rows"][0]) if name}
             continue
         t = b["text"]
         if b["style"].lower().startswith("heading"):
@@ -185,7 +196,7 @@ def verify(blocks: list[dict], issue: dict) -> list[str]:
     have = squeeze(" \n ".join(_flat(issue)))
     lost = []
     for b in blocks:
-        cells = [b["text"]] if b["kind"] == "p" else [c for row in b["rows"][1:] for c in row]
+        cells = [b["text"]] if b["kind"] == "p" else [c for row in b["rows"] for c in row]
         if b["kind"] == "p" and b["style"].lower().startswith("heading"):
             cells = [b["text"].split(":", 1)[1]] if b["text"].lower().startswith("главный сигнал") and ":" in b["text"] else []
         for cell in cells:
