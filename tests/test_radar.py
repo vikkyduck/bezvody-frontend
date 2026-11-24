@@ -9,6 +9,7 @@ import copy
 import importlib.util
 import io
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -41,6 +42,55 @@ class RenderTest(unittest.TestCase):
         self.assertIn(URL, letter["html"])
         self.assertIn(URL, letter["text"])
         self.assertTrue(letter["text"].rstrip().endswith("Виктория Уткина"))
+
+    def test_letter_is_a_cover_in_nowater_style(self):
+        issue = render.check(EXAMPLE)
+        html = render.mail(issue)["html"]
+        for expected in ("NOWATER.TECH", render.BG, render.ACCENT, 'lang="ru"', "Открыть выпуск на сайте"):
+            self.assertIn(expected, html)
+        # Сводная таблица и шум остаются на странице: в письме на них только ссылки.
+        self.assertNotIn("<th", html)
+        self.assertNotIn(EXAMPLE["noise"][0]["topic"], html)
+        self.assertNotIn(EXAMPLE["table"][0]["segment"], html)
+        # Почта: только таблицы разметки, без картинок, скриптов и современной сетки.
+        tables = re.findall(r"<table\b[^>]*>", html)
+        self.assertTrue(tables)
+        self.assertTrue(all('role="presentation"' in tag for tag in tables))
+        for forbidden in ("<img", "<script", "display:flex", "display:grid", "var(--"):
+            self.assertNotIn(forbidden, html)
+        self.assertLess(len(html.encode("utf-8")), 80 * 1024)
+
+    def test_letter_links_lead_to_existing_page_sections(self):
+        issue = render.check(EXAMPLE)
+        page = render.page(issue)
+        anchors = set(re.findall(re.escape(URL) + r"#([a-z0-9-]+)", render.mail(issue)["html"]))
+        self.assertTrue({"main", "signal-2", "product"} <= anchors)
+        for anchor in anchors:
+            self.assertIn(f'id="{anchor}"', page)
+
+    def test_letter_is_escaped(self):
+        issue = copy.deepcopy(EXAMPLE)
+        issue["main_signal"]["what"] = "Продавец пишет <script>alert(1)</script> в описании"
+        html = render.mail(render.check(issue))["html"]
+        self.assertNotIn("<script", html)
+        self.assertIn("&lt;script&gt;", html)
+
+    def test_line_break_starts_a_paragraph(self):
+        issue = copy.deepcopy(EXAMPLE)
+        issue["main_signal"]["why"] = "Первый абзац о сегменте.\nВторой абзац о гипотезе."
+        clean = render.check(issue)
+        self.assertIn("<p>Первый абзац о сегменте.</p><p>Второй абзац о гипотезе.</p>", render.page(clean))
+        letter = render.mail(clean)
+        self.assertEqual(letter["html"].count("абзац о"), 2)
+        self.assertNotIn("сегменте.\nВторой", letter["html"])
+        self.assertIn("Первый абзац о сегменте.\n\nВторой абзац о гипотезе.", letter["text"])
+
+    def test_preheader_is_optional(self):
+        issue = copy.deepcopy(EXAMPLE)
+        issue.pop("preheader", None)
+        self.assertIn("Главный сигнал: " + EXAMPLE["main_signal"]["title"], render.mail(render.check(issue))["html"])
+        issue["preheader"] = "Своя строка превью для списка писем"
+        self.assertIn("Своя строка превью для списка писем", render.mail(render.check(issue))["html"])
 
     def test_page_is_escaped_and_hidden_from_search(self):
         issue = copy.deepcopy(EXAMPLE)
