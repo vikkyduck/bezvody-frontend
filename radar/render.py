@@ -405,7 +405,7 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
 
     # --- переход на страницу ---
     on_page = ([f"{len(signals)} {_count(len(signals), 'сигнал', 'сигнала', 'сигналов')} с источниками"] if signals else [])
-    on_page.append(f"сводная таблица для Продукта: {ideas} {_count(ideas, 'идея', 'идеи', 'идей')} фич")
+    on_page.append(f"сводная таблица для Продукта на {ideas} {_count(ideas, 'идею', 'идеи', 'идей')} фич")
     if skipped:
         on_page.append(f"{skipped} {_count(skipped, 'тема', 'темы', 'тем')}, которые отсеяли как шум")
     on_page_text = "На странице выпуска: " + ", ".join(on_page) + "."
