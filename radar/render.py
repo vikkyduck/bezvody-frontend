@@ -296,15 +296,45 @@ def _lines(text: str) -> list[str]:
     return [part.strip() for part in text.split("\n") if part.strip()]
 
 
+# Типограф. Слова не меняются: меняются только пробелы и то, где строке можно переноситься.
+#   короткий предлог или союз не остается в конце строки;
+#   число не отрывается от слова после него, разряды числа и год после месяца не разрываются;
+#   короткое слово с дефисом ("ИИ-агент", "API-ключ") не переносится по дефису.
+NBSP = "&nbsp;"
+HANGING = re.compile(r"(?<![\w&-])(в|во|и|к|ко|у|о|об|с|со|на|по|за|из|от|до|не|ни|а|но|для|при|без|под|над|про|или)\s+(?=\S)", re.I)
+DIGIT_GROUPS = re.compile(r"(?<=\d)\s+(?=\d{3}(?!\d))")
+NUMBER_WORD = re.compile(r"(\d+)\s+(?=[а-яА-Яa-zA-Z])")
+MONTH_YEAR = re.compile(r"((?:январ|феврал|март|апрел|ма|июн|июл|август|сентябр|октябр|ноябр|декабр)[а-я]{1,2})\s+(?=\d{4}\b)")
+SHORT_COMPOUND = re.compile(r"(?<![\w-])([^\W\d_]{1,3}-[^\W\d_]{2,})(?![\w-])")
+LAST_WORDS = re.compile(r"(\S+)\s+(\S+)$")
+TAIL_LIMIT = 16  # знаков в связке двух последних слов: длиннее не поместится в строку заголовка на телефоне 320 px
+
+
+def _typo(text: str, *, tail: bool = False) -> str:
+    """Экранированный текст с неразрывными пробелами. tail - связать два последних слова строки."""
+    out = H(text)
+    out = DIGIT_GROUPS.sub(NBSP, out)
+    # Год к следующему слову не привязывается: "с мая 2026 обратная доставка".
+    out = NUMBER_WORD.sub(lambda m: m.group(1) + (" " if re.fullmatch(r"(?:19|20)\d\d", m.group(1)) else NBSP), out)
+    out = MONTH_YEAR.sub(r"\1" + NBSP, out)
+    out = HANGING.sub(r"\1" + NBSP, out)
+    if tail:
+        def bind(found: re.Match) -> str:
+            pair = html.unescape(found.group(1) + " " + found.group(2))
+            return found.group(1) + (NBSP if len(pair) <= TAIL_LIMIT else " ") + found.group(2)
+        out = LAST_WORDS.sub(bind, out)
+    return SHORT_COMPOUND.sub(r'<span style="white-space:nowrap;">\1</span>', out)
+
+
 def _rich(text: str, link_style: str = "") -> str:
     """Текст выпуска в HTML: все экранировано, ссылки [текст](адрес) остаются на своем месте."""
     out, last = [], 0
     style = f' style="{link_style}"' if link_style else ""
     for found in LINK.finditer(text):
-        out.append(H(text[last:found.start()]))
-        out.append(f'<a href="{H(found.group(2), quote=True)}" target="_blank" rel="noopener noreferrer"{style}>{H(found.group(1))}</a>')
+        out.append(_typo(text[last:found.start()]))
+        out.append(f'<a href="{H(found.group(2), quote=True)}" target="_blank" rel="noopener noreferrer"{style}>{_typo(found.group(1))}</a>')
         last = found.end()
-    out.append(H(text[last:]))
+    out.append(_typo(text[last:]))
     return "".join(out)
 
 
@@ -409,6 +439,8 @@ def brand(page_html: str, url: str) -> str:
 #   вокруг вопроса, точка в конце сути и заголовков в письмо не идут.
 # Верстка только на таблицах со стилями на самих элементах, без картинок.
 # В письмо идет первый абзац каждого поля без ссылок на источники. Слова выпуска не меняются.
+# Строка превью идет без хвоста невидимых символов: проверочное письмо с таким хвостом 24.11.2026
+# не дошло до ящика на Яндексе, а то же письмо без него дошло. Причина не доказана, риск снят.
 
 BG, PANEL, INK, ACCENT = "#131417", "#1A1C21", "#EEF2F8", "#E4A9CE"
 FONT = "Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif"
@@ -417,7 +449,7 @@ MAIL_WIDTH, MAIL_PAD = 600, 24
 SOURCE_BRACKETS = re.compile(r"\s*\((?:\s*\[[^\[\]\n]+\]\(https?://[^\s()<>\"']+\)\s*(?:,|и)?)+\s*\)")
 SOURCES_SENTENCE = re.compile(r"(?:^|(?<=[.!?])\s+)Источники?:\s[^\n]*$")
 SENTENCE_END = re.compile(r"(?<=[^\s.]{4})[.!?](?=\s+[А-ЯA-Z\"])")
-QUOTED = re.compile(r"&quot;([^&<]{2,60}?)&quot;")
+QUOTED = re.compile(r"&quot;((?:[^&<]|&nbsp;|</?span[^>]*>){2,60}?)&quot;")
 LETTER_LIMIT = 260  # абзац длиннее этого упаковщик не разбил: в письмо идет его первая фраза
 READING_SPEED = 170  # слов в минуту
 
@@ -441,9 +473,9 @@ def _display(text: str) -> str:
     return text[:-1] if text.endswith(".") and not text.endswith("..") else text
 
 
-def _soft(text: str) -> str:
-    """Текст письма в HTML. Слова в кавычках внутри фразы выделяются жирностью вместо кавычек."""
-    return QUOTED.sub(r'<strong style="font-weight:700;">\1</strong>', H(text))
+def _soft(text: str, *, tail: bool = False) -> str:
+    """Текст письма в HTML: с типографом, слова в кавычках внутри фразы выделены жирностью вместо кавычек."""
+    return QUOTED.sub(r'<strong style="font-weight:700;">\1</strong>', _typo(text, tail=tail))
 
 
 def _short_period(start: dt.date, end: dt.date) -> str:
@@ -463,7 +495,7 @@ def _label(text: str, *, top: int = 0, color: str = ACCENT) -> str:
 
 
 def _body(text: str, *, top: int = 12) -> str:
-    return "".join(f'<p style="margin:{top if i == 0 else 12}px 0 0 0;{_font(17, 27)}">{_soft(part)}</p>'
+    return "".join(f'<p style="margin:{top if i == 0 else 12}px 0 0 0;{_font(17, 27)}">{_soft(part, tail=True)}</p>'
                    for i, part in enumerate(_lines(text)))
 
 
@@ -479,7 +511,7 @@ def _ask(label: str, question: str, *, top: int, size: int = 17, line: int = 25)
             f'<td width="3" bgcolor="{ACCENT}" style="background-color:{ACCENT};width:3px;font-size:0;line-height:0;">&nbsp;</td>'
             f'<td bgcolor="{PANEL}" style="background-color:{PANEL};padding:20px 22px 22px 22px;">'
             + _label(label)
-            + f'<p style="margin:8px 0 0 0;{_font(size, line, 700)}">{_soft(_display(question))}</p></td></tr></table>')
+            + f'<p style="margin:8px 0 0 0;{_font(size, line, 700)}">{_soft(_display(question), tail=True)}</p></td></tr></table>')
 
 
 def _letter(issue: dict[str, Any]) -> dict[str, Any]:
@@ -514,63 +546,73 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
     # --- шапка: знак, название, строка из трех сведений о выпуске ---
     def head(minutes: int) -> str:
         facts = [x for x in (number, period, reading(minutes)) if x]
-        cells = "".join(f'<td width="{100 // len(facts)}%" valign="top" style="{_font(13, 18)}">{H(x)}</td>' for x in facts)
+        # Первое сведение стоит по левому краю, последнее по правому: края строки совпадают с краями знака,
+        # названия и плиток. Среднее занимает все место между ними, поэтому промежутки слева и справа от него равны.
+        last = len(facts) - 1
+
+        def fact(i: int, x: str) -> str:
+            width = "" if i in (0, last) else ' width="100%"'
+            side = "left" if i == 0 else "right" if i == last else "center"
+            return f'<td{width} align="{side}" valign="top" style="white-space:nowrap;{_font(13, 18)}">{H(x).replace(" ", NBSP)}</td>'
+
+        cells = "".join(fact(i, x) for i, x in enumerate(facts))
         return _zone(
             f'<table {TABLE}><tr><td style="{_font(13, 18, 700, INK, "letter-spacing:0.02em;")}">NOWATER.TECH</td>'
-            f'<td align="right" style="{_font(13, 18)}">{H(issue["name"])}</td></tr></table>'
-            f'<table {TABLE} style="margin-top:40px;"><tr>{cells}</tr></table>', top=24)
+            f'<td align="right" style="{_font(13, 18)}">{_typo(issue["name"])}</td></tr></table>'
+            f'<table {TABLE} style="margin-top:8px;"><tr>{cells}</tr></table>', top=24)
 
     # --- суть: одна фраза, самая крупная в письме ---
     essence = _zone(
         _label(L["summary"])
-        + f'<p style="margin:8px 0 0 0;{_font(26, 33, 700, INK, "letter-spacing:-0.01em;")}">{_soft(_display(c["essence"]))}</p>', top=24)
+        + f'<p style="margin:8px 0 0 0;{_font(26, 33, 700, INK, "letter-spacing:-0.01em;")}">{_soft(_display(c["essence"]), tail=True)}</p>', top=48)
 
     # --- карта сути: по плитке на сигнал, по две в ряд ---
-    def tile(n: int, short: str, *, left: bool, wide: bool) -> str:
-        pad = "0 0 8px 0" if wide else ("0 4px 8px 0" if left else "0 0 8px 4px")
-        span = 'colspan="2"' if wide else 'width="50%"'
-        return (f'<td {span} valign="top" style="padding:{pad};">'
-                f'<table {TABLE}><tr><td bgcolor="{PANEL}" style="background-color:{PANEL};border-top:2px solid {ACCENT};padding:16px 16px 18px 16px;">'
+    # Фон и розовая линия стоят на самой ячейке: ряд читается как одна плашка с двумя колонками,
+    # и плитки одного ряда одной высоты, даже если в одной из них слова перенеслись на вторую строку.
+    def tile(n: int, short: str, span: str) -> str:
+        return (f'<td {span} bgcolor="{PANEL}" valign="top" style="background-color:{PANEL};border-top:2px solid {ACCENT};padding:16px 16px 18px 16px;">'
                 f'<p style="margin:0;{_font(13, 18, 700, ACCENT)}">{n:02d}</p>'
-                f'<p style="margin:6px 0 0 0;{_font(17, 22, 700)}">{H(short)}</p></td></tr></table></td>')
+                f'<p style="margin:6px 0 0 0;{_font(17, 22, 700)}">{_typo(short)}</p></td>')
 
     tiles = c["map"]
-    rows = "".join(
-        "<tr>" + (tile(*tiles[i], left=True, wide=i + 1 == len(tiles))
-                  + (tile(*tiles[i + 1], left=False, wide=False) if i + 1 < len(tiles) else "")) + "</tr>"
-        for i in range(0, len(tiles), 2))
-    card_map = _zone(f'<table {TABLE}>{rows}</table>', top=32) if tiles else ""
+    rows = []
+    for i in range(0, len(tiles), 2):
+        pair = tiles[i:i + 2]
+        rows.append("<tr>" + ("".join(tile(n, short, 'width="50%"') for n, short in pair) if len(pair) == 2
+                             else tile(*pair[0], 'colspan="2"')) + "</tr>")
+    between = '<tr><td colspan="2" height="8" style="height:8px;font-size:0;line-height:0;">&nbsp;</td></tr>'
+    card_map = _zone(f'<table {TABLE}>{between.join(rows)}</table>', top=32) if tiles else ""
 
     # --- главный сигнал: заголовок-вывод, что произошло, почему это важно, цифра, вопрос клиенту ---
     figure = ""
     if c["figure"]:
         f = c["figure"]
-        figure = (f'<table {TABLE} style="margin-top:32px;"><tr><td bgcolor="{ACCENT}" style="background-color:{ACCENT};padding:22px 24px 24px 24px;">'
+        figure = (f'<table {TABLE} style="margin-top:32px;"><tr><td bgcolor="{ACCENT}" style="background-color:{ACCENT};padding:22px 20px 24px 20px;">'
                   + _label(L["figure"], color=BG)
-                  + f'<p style="margin:6px 0 0 0;{_font(36, 40, 700, BG, "letter-spacing:-0.02em;")}">{H(f["value"])}</p>'
-                  + f'<p style="margin:6px 0 0 0;{_font(17, 24, 700, BG)}">{H(_display(f["caption"]))}</p>'
-                  + (f'<p style="margin:10px 0 0 0;{_font(17, 25, 400, BG)}">{H(_display(f["note"]))}</p>' if f["note"] else "")
+                  + f'<p style="margin:8px 0 0 0;{_font(36, 40, 700, BG, "letter-spacing:-0.02em;")}">{DIGIT_GROUPS.sub(NBSP, H(f["value"]))}</p>'
+                  + f'<p style="margin:8px 0 0 0;{_font(17, 24, 700, BG)}">{_typo(_display(f["caption"]))}</p>'
+                  + (f'<p style="margin:8px 0 0 0;{_font(17, 25, 400, BG)}">{_typo(_display(f["note"]), tail=True)}</p>' if f["note"] else "")
                   + "</td></tr></table>")
     main = _zone(
         f'<p style="margin:0;{_font(13, 18, 700, ACCENT)}">01</p>'
-        f'<h1 class="rh1" style="margin:8px 0 0 0;{_font(26, 32, 700, INK, "letter-spacing:-0.01em;")}">{H(_display(m["title"]))}</h1>'
-        + _body(m["what"]) + _label(L["why"], top=24) + _body(m["why"], top=6)
-        + figure + _ask(L["question"], m["question"], top=8 if figure else 28, size=20, line=28), top=56)
+        f'<h1 style="margin:8px 0 0 0;{_font(26, 32, 700, INK, "letter-spacing:-0.01em;")}">{_typo(_display(m["title"]), tail=True)}</h1>'
+        + _body(m["what"]) + _label(L["why"], top=24) + _body(m["why"], top=8)
+        + figure + _ask(L["question"], m["question"], top=8 if figure else 24, size=20, line=28), top=56)
 
     # --- остальные сигналы: заголовок-вывод, одна фраза, вопрос клиенту ---
     def row(s: dict[str, Any]) -> str:
-        return (f'<p style="margin:40px 0 0 0;{_font(13, 18, 700, ACCENT)}">{s["n"]:02d}</p>'
-                f'<h2 style="margin:8px 0 0 0;{_font(20, 26, 700)}">{H(_display(s["title"]))}</h2>'
-                + _body(s["text"]) + (_ask(L["question"], s["question"], top=20) if s["question"] else ""))
+        return (f'<p style="margin:{24 if s["n"] == 2 else 48}px 0 0 0;{_font(13, 18, 700, ACCENT)}">{s["n"]:02d}</p>'
+                f'<h2 style="margin:8px 0 0 0;{_font(20, 26, 700)}">{_typo(_display(s["title"]), tail=True)}</h2>'
+                + _body(s["text"]) + (_ask(L["question"], s["question"], top=24) if s["question"] else ""))
 
-    signal_list = _zone(_label(signals_label) + "".join(row(s) for s in signals), top=64) if signals else ""
+    signal_list = _zone(_label(signals_label) + "".join(row(s) for s in signals), top=56) if signals else ""
 
     # --- одна кнопка на весь выпуск и подпись ---
     button = _zone(
-        f'<table {TABLE}><tr><td align="center" bgcolor="{ACCENT}" style="background-color:{ACCENT};">'
-        f'<a href="{url}" target="_blank" style="display:block;padding:19px 20px;{_font(17, 22, 700, BG)}text-decoration:none;">'
+        f'<table {TABLE}><tr><td align="center" bgcolor="{ACCENT}" style="background-color:{ACCENT};mso-padding-alt:19px 20px;">'
+        f'<a href="{url}" target="_blank" style="display:block;padding:19px 20px;{_font(17, 22, 700, BG)}text-decoration:none;mso-padding-alt:0;">'
         f"Весь выпуск на сайте &rarr;</a></td></tr></table>", top=56)
-    sign = _zone(f'<p style="margin:0;{_font(13, 19, 700)}">{SIGNATURE}</p><p style="margin:0;{_font(13, 19)}">NOWATER.TECH</p>', top=40, bottom=48)
+    sign = _zone(f'<p style="margin:0;{_font(13, 18, 700)}">{SIGNATURE}</p><p style="margin:2px 0 0 0;{_font(13, 18)}">NOWATER.TECH</p>', top=40, bottom=48)
 
     # Время чтения - по словам готового письма. Считаются слова из букв, цифры и номера не в счет.
     rest = essence + card_map + main + signal_list + button + sign
@@ -578,7 +620,7 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
     minutes = max(1, round(len(re.findall(r"[^\W\d_]{2,}", shown)) / READING_SPEED))
 
     hidden = (f'<div style="display:none;max-height:0;max-width:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:{BG};mso-hide:all;" '
-              f'aria-hidden="true">{H(preheader)} {"&#847;&zwnj;&nbsp;&#8199;&shy; " * 30}</div>')
+              f'aria-hidden="true">{H(preheader)}</div>')
     body = (
         f'<!doctype html><html lang="ru" dir="ltr" xmlns:o="urn:schemas-microsoft-com:office:office"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'

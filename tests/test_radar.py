@@ -124,14 +124,44 @@ class RenderTest(unittest.TestCase):
         shown = visible(letter)
         for mark in (":", '"', "·", " / ", ";"):
             self.assertNotIn(mark, shown)
-        self.assertIn('После выбора <strong style="font-weight:700;">не то</strong> покупателю предлагают <strong style="font-weight:700;">передумал</strong>.', letter)
+        self.assertIn('После выбора <strong style="font-weight:700;">не&nbsp;то</strong> покупателю предлагают <strong style="font-weight:700;">передумал</strong>.', letter)
         # Подпись стоит на своей строке, текст начинается с новой.
-        self.assertRegex(letter, r">Возможный вопрос клиенту</p><p [^>]*>Одна готовая формулировка вопроса для менеджера\?</p>")
+        self.assertRegex(letter, r">Возможный вопрос клиенту</p><p [^>]*>Одна готовая формулировка вопроса для&nbsp;менеджера\?</p>")
         self.assertRegex(letter, r">Суть</p><p [^>]*>Пример сути недели[^<]*селлеров</p>")
         # Три цвета текста: светлый, розовый и темный на розовой заливке.
         self.assertEqual(set(re.findall(r"(?<![-\w])color:(#[0-9A-Fa-f]{6})", letter)), {render.INK, render.ACCENT, render.BG})
         sizes = set(int(x) for x in re.findall(r"font-size:(\d+)px", letter)) - {0}
         self.assertEqual(sizes, {13, 17, 20, 26, 36})
+
+    def test_typograph_keeps_short_words_and_numbers_with_their_neighbours(self):
+        # Предлог не остается в конце строки, число не отрывается от слова, слово с дефисом не рвется.
+        self.assertEqual(render._typo("Тариф от 4 990 рублей в месяц"), "Тариф от&nbsp;4&nbsp;990&nbsp;рублей в&nbsp;месяц")
+        self.assertEqual(render._typo("с 1 января 2027 и далее"), "с&nbsp;1&nbsp;января&nbsp;2027 и&nbsp;далее")
+        self.assertEqual(render._typo("Допуск ИИ-агентов к чатам"),
+                         'Допуск <span style="white-space:nowrap;">ИИ-агентов</span> к&nbsp;чатам')
+        # В заголовке два последних слова стоят вместе: одно слово на строке не повисает.
+        self.assertEqual(render._typo("Площадки забирают возврат себе", tail=True), "Площадки забирают возврат&nbsp;себе")
+        # Длинную пару слов типограф не связывает: она не поместится в строку заголовка на узком телефоне.
+        self.assertEqual(render._typo("Площадки забирают оформление возврата", tail=True), "Площадки забирают оформление возврата")
+        # Адрес ссылки и слова выпуска типограф не меняет.
+        issue = copy.deepcopy(EXAMPLE)
+        issue["main_signal"]["why"] = "Продавцы читают [обзор в журнале](https://example.com/v-go/a-b?x=1) и меняют цены."
+        page = render.page(render.check(issue))
+        self.assertIn('href="https://example.com/v-go/a-b?x=1"', page)
+        self.assertIn(">обзор в&nbsp;журнале</a> и&nbsp;меняют цены.", page)
+        letter = render.mail(render.check(EXAMPLE))
+        self.assertNotIn("&nbsp;", letter["text"])
+        self.assertNotIn("\u00a0", letter["text"])
+
+    def test_letter_head_lines_up_with_the_edges(self):
+        # Сведения о выпуске стоят по краям письма: первое слева, последнее справа, как знак и название над ними.
+        letter = render.mail(render.check(EXAMPLE))["html"]
+        self.assertRegex(letter, r'<td align="left" valign="top"[^>]*>Выпуск&nbsp;1</td>')
+        self.assertRegex(letter, r'<td width="100%" align="center" valign="top"[^>]*>17-23&nbsp;ноября</td>')
+        self.assertRegex(letter, r'<td align="right" valign="top"[^>]*>1&nbsp;минута&nbsp;чтения</td>')
+        # Строка превью идет без хвоста невидимых символов.
+        self.assertNotIn("&#847;", letter)
+        self.assertNotIn("&zwnj;", letter)
 
     def test_long_paragraph_gives_its_first_sentence_without_sources(self):
         issue = copy.deepcopy(EXAMPLE)
@@ -161,8 +191,8 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(shown.count("Возможный вопрос клиенту"), 1)
         # Нечетное число плиток: последняя встает во всю ширину.
         odd = render.mail(render.check(EXAMPLE))["html"]
-        self.assertEqual(odd.count('width="50%" valign="top"'), 2)
-        self.assertEqual(odd.count('colspan="2" valign="top"'), 1)
+        self.assertEqual(odd.count(f'<td width="50%" bgcolor="{render.PANEL}"'), 2)
+        self.assertEqual(odd.count(f'<td colspan="2" bgcolor="{render.PANEL}"'), 1)
 
     def test_page_keeps_sections_for_links(self):
         page = render.page(render.check(EXAMPLE))
@@ -234,7 +264,7 @@ class RenderTest(unittest.TestCase):
         issue = copy.deepcopy(EXAMPLE)
         issue["main_signal"]["why"] = "Первый абзац о сегменте.\nВторой абзац о гипотезе."
         clean = render.check(issue)
-        self.assertIn("<p>Первый абзац о сегменте.</p><p>Второй абзац о гипотезе.</p>", render.page(clean))
+        self.assertIn("<p>Первый абзац о&nbsp;сегменте.</p><p>Второй абзац о&nbsp;гипотезе.</p>", render.page(clean))
         letter = render.mail(clean)
         self.assertEqual(letter["html"].count("абзац о"), 1)
         self.assertIn("Первый абзац о сегменте.", letter["text"])
