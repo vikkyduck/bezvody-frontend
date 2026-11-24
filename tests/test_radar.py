@@ -159,6 +159,8 @@ class RenderTest(unittest.TestCase):
         self.assertRegex(letter, r'<td align="left" valign="top"[^>]*>Выпуск&nbsp;1</td>')
         self.assertRegex(letter, r'<td width="100%" align="center" valign="top"[^>]*>17-23&nbsp;ноября</td>')
         self.assertRegex(letter, r'<td align="right" valign="top"[^>]*>1&nbsp;минута&nbsp;чтения</td>')
+        # Среднее сведение может перенестись: длинный период не выталкивает строку за край узкого телефона.
+        self.assertNotRegex(letter, r'<td width="100%"[^>]*white-space:nowrap')
         # Строка превью идет без хвоста невидимых символов.
         self.assertNotIn("&#847;", letter)
         self.assertNotIn("&zwnj;", letter)
