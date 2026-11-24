@@ -80,7 +80,7 @@ class RenderTest(unittest.TestCase):
     def test_letter_is_the_whole_issue_in_nowater_style(self):
         issue = render.check(EXAMPLE)
         markup = render.mail(issue)["html"]
-        for expected in ("NOWATER.TECH", render.BG, render.ACCENT, 'lang="ru"', "Открыть выпуск на сайте"):
+        for expected in ("NOWATER.TECH", render.BG, render.ACCENT, 'lang="ru"', "Весь выпуск на сайте"):
             self.assertIn(expected, markup)
         # Сводная таблица в письме - плашки с подписями колонок, не таблица данных.
         self.assertNotIn("<th", markup)
@@ -98,8 +98,8 @@ class RenderTest(unittest.TestCase):
         issue = render.check(EXAMPLE)
         page = render.page(issue)
         anchors = set(re.findall(re.escape(URL) + r"#([a-z0-9-]+)", render.mail(issue)["html"]))
-        self.assertEqual(anchors, {"main", "signals", "product", "noise"})
-        for anchor in anchors | {"signal-2", "signal-3"}:
+        self.assertEqual(anchors, {"main", "signals", "product", "noise", "signal-2", "signal-3"})
+        for anchor in anchors:
             self.assertIn(f'id="{anchor}"', page)
 
     def test_links_inside_text_stay_in_place(self):
@@ -152,6 +152,29 @@ class RenderTest(unittest.TestCase):
         issue["labels"], issue["number"] = {}, "шесть"
         with self.assertRaisesRegex(render.IssueError, "number"):
             render.check(issue)
+
+    def test_letter_is_laid_out_in_blocks_without_changing_words(self):
+        # Оформление держится на разметке, а не на правке текста: крупная первая фраза вывода,
+        # выделенная подпись в начале фразы, источники отдельной строкой, врезка для второго абзаца.
+        issue = copy.deepcopy(EXAMPLE)
+        issue["summary"] = "Первая фраза вывода. Вторая фраза вывода."
+        issue["main_signal"]["why"] = "Кто затронут.\nГипотеза для проверки: агент удерживает продавца. Ограничения: данных мало."
+        issue["signals"][0]["text"] = "Суть ([источник](https://example.com/second)).\nКонтур - Доверие, идея фичи - одной строкой."
+        markup = render.mail(render.check(issue))["html"]
+        self.assertRegex(markup, r"font-size:20px[^>]*>Первая фраза вывода\.</p><p[^>]*font-size:16px[^>]*>Вторая фраза вывода\.</p>")
+        self.assertRegex(markup, r"<strong[^>]*>Гипотеза для проверки:</strong> агент удерживает продавца\. <strong[^>]*>Ограничения:</strong> данных мало\.")
+        self.assertRegex(markup, r"без абстракций\.</p><p[^>]*font-size:13px[^>]*>Источники: <a ")
+        self.assertRegex(markup, r'width="1" bgcolor="#313336"[^>]*>&nbsp;</td><td[^>]*><p[^>]*>Контур - Доверие, идея фичи - одной строкой\.</p>')
+        # Подпись внутри ссылки и адрес ссылки не трогаются.
+        self.assertNotIn("<strong", re.search(r'<a href="https://example.com/second".*?</a>', markup).group(0))
+
+    def test_own_words_of_the_letter_are_polite(self):
+        # Свои слова сборщика - только названия разделов и ссылок. Без команд читателю.
+        markup = visible(render.mail(render.check(EXAMPLE))["html"])
+        for phrase in ("Главный сигнал на сайте", "Подробнее на сайте", "Весь выпуск на сайте"):
+            self.assertIn(phrase, markup)
+        for harsh in ("Открыть", "Разобрать", "Читать", "Нажмите", "Перейти"):
+            self.assertNotIn(harsh, markup)
 
     def test_letter_is_escaped(self):
         issue = copy.deepcopy(EXAMPLE)

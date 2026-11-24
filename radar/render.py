@@ -411,9 +411,28 @@ def _caps(text: str, color: str = MUTED, top: int = 0, spacing: str = "0.11em") 
     return f'<p style="margin:{top}px 0 0 0;{_font(11, 16, 600, color, f"letter-spacing:{spacing};")}">{H(text.upper())}</p>'
 
 
-def _para(text: str, top: int = 10, size: int = 16, line: int = 26, color: str = PROSE) -> str:
+# Подпись в начале фразы: "Гипотеза для проверки:", "Метрики проверки:", "Ограничения:".
+# Одно-три слова с прописной буквы и двоеточие. В письме такая подпись выделяется, слова не меняются.
+RUN_IN = re.compile(r"(^|(?<=[.!?] ))([А-ЯA-Z][а-яa-z]+(?: [а-яa-zА-ЯA-Z]+){0,2}:)(?= )")
+SOURCES_TAIL = re.compile(r"^(.*[.!?])\s+(Источники?:\s.+)$", re.S)
+FIRST_SENTENCE = re.compile(r"^(.+?[.!?])\s+(?=[А-ЯA-Z\"])(.+)$", re.S)
+
+
+def _mail_rich(text: str, *, labels: bool = False) -> str:
+    """Текст выпуска для письма: ссылки на месте, подписи в начале фраз выделены. Слова не меняются."""
+    markup = _rich(text, MAIL_LINK)
+    if not labels:
+        return markup
+    # Подписи ищем только вне ссылок: текст ссылки и ее адрес не трогаем.
+    parts = re.split(r"(<a\b.*?</a>)", markup)
+    strong = f'<strong style="font-weight:600;color:{INK};">'
+    return "".join(part if part.startswith("<a") else RUN_IN.sub(lambda m: f"{m.group(1)}{strong}{m.group(2)}</strong>", part)
+                   for part in parts)
+
+
+def _para(text: str, top: int = 10, size: int = 16, line: int = 26, color: str = PROSE, *, labels: bool = False) -> str:
     """Абзацы письма. Перевод строки в тексте выпуска начинает новый абзац."""
-    return "".join(f'<p style="margin:{top if i == 0 else 12}px 0 0 0;{_font(size, line, 400, color)}">{_rich(part, MAIL_LINK)}</p>'
+    return "".join(f'<p style="margin:{top if i == 0 else 12}px 0 0 0;{_font(size, line, 400, color)}">{_mail_rich(part, labels=labels)}</p>'
                    for i, part in enumerate(_lines(text)))
 
 
@@ -433,6 +452,13 @@ def _panel(inner: str, *, top: int = 0, accent: str = "") -> str:
             f'<td bgcolor="{PANEL}" style="background-color:{PANEL};{edge}padding:20px 22px 22px 22px;">{inner}</td></tr></table>')
 
 
+def _note(inner: str, *, top: int = 14) -> str:
+    """Врезка с тонкой линией слева: фраза, которая стоит особняком от основного текста."""
+    return (f'<table {TABLE} style="margin-top:{top}px;"><tr>'
+            f'<td width="1" bgcolor="{LINE}" style="background-color:{LINE};width:1px;font-size:0;line-height:0;">&nbsp;</td>'
+            f'<td style="padding:2px 0 3px 16px;">{inner}</td></tr></table>')
+
+
 def _badge(text: str, *, filled: bool, top: int = 0) -> str:
     """Метка сигнала. Текст метки приходит из выпуска, сборщик его не придумывает."""
     if not text:
@@ -441,6 +467,13 @@ def _badge(text: str, *, filled: bool, top: int = 0) -> str:
     return (f'<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin-top:{top}px;"><tr>'
             f'<td bgcolor="{back}" style="background-color:{back};border:1px solid {ACCENT};padding:3px 9px;'
             f'{_font(11, 16, 700, ink, "letter-spacing:0.08em;")}">{H(text.upper())}</td></tr></table>')
+
+
+def _button(label: str, href: str, *, top: int = 24) -> str:
+    return (f'<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin-top:{top}px;"><tr>'
+            f'<td align="center" bgcolor="{ACCENT}" style="background-color:{ACCENT};mso-padding-alt:15px 26px;">'
+            f'<a href="{href}" target="_blank" style="display:inline-block;padding:15px 26px;{_font(15, 20, 700, BG)}text-decoration:none;mso-padding-alt:0;">'
+            f"{label} &rarr;</a></td></tr></table>")
 
 
 def _mail_sources(sources: list[dict[str, str]]) -> str:
@@ -481,61 +514,94 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
         + slash.join(link(a, t, f"color:{SECOND};text-decoration:none;white-space:nowrap;") for a, t in nav)
         + "</p></td></tr></table></td></tr></table>")
 
-    # --- первый экран: тема выпуска и его объем ---
+    # --- первый экран: главный вывод и объем выпуска ---
+    # Первая фраза вывода набрана крупно, остальной вывод - обычным текстом. Слова и порядок те же.
+    lead_parts = _lines(issue["summary"])
+    split = FIRST_SENTENCE.match(lead_parts[0])
+    first, rest = (split.group(1), [split.group(2)] + lead_parts[1:]) if split else (lead_parts[0], lead_parts[1:])
+    lead = (f'<p style="margin:14px 0 0 0;{_font(20, 30, 400, INK)}">{_mail_rich(first)}</p>'
+            + "".join(f'<p style="margin:12px 0 0 0;{_font(16, 26, 400, PROSE)}">{_mail_rich(part)}</p>' for part in rest))
     cells = "".join(
         f'<td width="{100 // len(facts)}%" valign="top" style="padding:0 {0 if i == len(facts) - 1 else 12}px 0 0;">'
         f'<table {TABLE}><tr><td style="border-top:2px solid {ACCENT};padding:12px 0 0 0;">'
         f'<p style="margin:0;{_font(30, 34, 400, INK)}">{n}</p>{_caps(label, top=4)}</td></tr></table></td>'
         for i, (n, label) in enumerate(facts))
     hero = _zone(
-        _caps(f"{issue['audience']} / {period}", spacing="0.15em")
-        + f'<h1 class="rh1" style="margin:18px 0 0 0;{_font(34, 38, 400, INK, "letter-spacing:-0.02em;")}">{H(issue["subject"])}</h1>'
+        _caps(f"{issue['audience']} / {period}", spacing="0.15em") + _caps(L["summary"], ACCENT, top=22) + lead
         + f'<table {TABLE} style="margin-top:28px;"><tr>{cells}</tr></table>',
-        top=30, bottom=30, rule=False)
-
-    # --- главный вывод: отдельная плашка ---
-    summary = (f'<table {TABLE}><tr><td bgcolor="{BG}" style="background-color:{BG};padding:0 {MAIL_PAD}px 30px {MAIL_PAD}px;">'
-               + _panel(_caps(L["summary"]) + _para(issue["summary"], top=10, size=17, line=27, color=INK))
-               + "</td></tr></table>")
+        top=30, bottom=34, rule=False)
 
     # --- главный сигнал ---
+    # Фраза "Источники: ..." в конце абзаца уходит отдельной мелкой строкой под текст.
+    what_parts = _lines(m["what"])
+    tail = SOURCES_TAIL.match(what_parts[-1])
+    if tail:
+        what_parts[-1] = tail.group(1)
+    what = _para("\n".join(what_parts)) + (
+        f'<p style="margin:12px 0 0 0;{_font(13, 21, 400, MUTED)}">{_mail_rich(tail.group(2))}</p>' if tail else "")
+    # "Почему важно": первый абзац - текст, следующие (гипотеза) - врезки.
+    why_parts = _lines(m["why"])
+    why = _para(why_parts[0]) + "".join(_note(_para(part, top=0, size=15, line=24, color=INK, labels=True), top=16) for part in why_parts[1:])
+    # "Возможные фичи": короткая первая фраза - название фичи, она выделена.
+    product_parts = _lines(m["product"])
+    name = FIRST_SENTENCE.match(product_parts[0])
+    if name and len(_visible(name.group(1))) <= 60:
+        head = (f'<p style="margin:10px 0 0 0;{_font(16, 26, 400, INK)}"><strong style="font-weight:600;color:{INK};">'
+                f'{_mail_rich(name.group(1))}</strong> {_mail_rich(name.group(2))}</p>')
+    else:
+        head = _para(product_parts[0], color=INK)
+    product = head + "".join(f'<p style="margin:12px 0 0 0;{_font(15, 24, 400, PROSE)}">{_mail_rich(part, labels=True)}</p>'
+                             for part in product_parts[1:])
     main = _zone(
         f'<table {TABLE}><tr><td width="34" valign="top" style="width:34px;{_font(12, 16, 600, ACCENT)}">01</td>'
         f'<td valign="top">{_caps(L["main"], spacing="0.15em")}</td></tr></table>'
         + _badge(m["badge"], filled=True, top=16)
-        + f'<h2 style="margin:14px 0 0 0;{_font(27, 32, 400, INK, "letter-spacing:-0.02em;")}">{H(m["title"])}</h2>'
-        + _caps(L["what"], top=26) + _para(m["what"]) + _mail_sources(m["sources"])
-        + f'<table {TABLE} style="margin-top:26px;"><tr><td style="border-top:1px solid {LINE};padding:22px 0 0 0;">'
-        + _caps(L["why"]) + _para(m["why"]) + "</td></tr></table>"
-        + _panel(_caps(L["product"]) + _para(m["product"], color=INK), top=26)
-        + _panel(_caps(L["question"], ACCENT) + _para(m["question"], top=8, size=19, line=27, color=INK), top=14, accent="left"))
+        + f'<h1 class="rh1" style="margin:14px 0 0 0;{_font(32, 36, 400, INK, "letter-spacing:-0.02em;")}">{H(m["title"])}</h1>'
+        + _caps(L["what"], top=26) + what + _mail_sources(m["sources"])
+        + _caps(L["why"], top=26) + why
+        + _panel(_caps(L["product"]) + product, top=24)
+        + _panel(_caps(L["question"], ACCENT) + _para(m["question"], top=8, size=19, line=27, color=INK), top=14, accent="left")
+        + _button("Главный сигнал на сайте", f"{url}#main"))
 
-    # --- остальные сигналы: текст сигнала целиком ---
+    # --- остальные сигналы: первый абзац - текст, следующие абзацы - врезки ---
     def row(n: int, s: dict[str, Any]) -> str:
+        parts = _lines(s["text"])
+        notes = "".join(_note(_para(part, top=0, size=15, line=23, color=INK)) for part in parts[1:])
         extra = "".join(_caps(L[label], top=14) + _para(s[key], top=4, size=15, line=23, color=INK)
                         for key, label in (("contour", "col_contour"), ("feature", "col_feature")) if s[key])
+        more = (f'<p style="margin:14px 0 0 0;{_font(13, 20, 600, ACCENT)}">'
+                + link(f"signal-{n}", "Подробнее на сайте &rarr;", MAIL_LINK) + "</p>")
         return (f'<table {TABLE}><tr><td width="34" valign="top" style="width:34px;border-top:1px solid {LINE};padding:23px 0 0 0;{_font(12, 16, 600, ACCENT)}">{n:02d}</td>'
                 f'<td valign="top" style="border-top:1px solid {LINE};padding:20px 0 24px 0;">' + _badge(s["badge"], filled=False)
-                + f'<h3 style="margin:{12 if s["badge"] else 0}px 0 0 0;{_font(21, 27, 400, INK, "letter-spacing:-0.01em;")}">{H(s["title"])}</h3>'
-                + _para(s["text"], top=8, size=15, line=24) + extra + _mail_sources(s["sources"]) + "</td></tr></table>")
+                + f'<h2 style="margin:{12 if s["badge"] else 0}px 0 0 0;{_font(21, 27, 400, INK, "letter-spacing:-0.01em;")}">{H(s["title"])}</h2>'
+                + _para(parts[0], top=8, size=15, line=23) + notes + extra + _mail_sources(s["sources"]) + more + "</td></tr></table>")
 
     signal_list = _zone(_caps(signals_label, spacing="0.15em") + '<div style="margin-top:18px;">'
                         + "".join(row(n, s) for n, s in enumerate(signals, 2)) + "</div>", bottom=8) if signals else ""
 
-    # --- сводная таблица: строка таблицы - плашка, колонки идут друг под другом с подписями ---
-    cards = "".join(
-        _panel("".join(_caps(L["col_" + key], top=0 if i == 0 else 14)
-                       + _para(r[key], top=4, size=17 if i == 0 else 15, line=25 if i == 0 else 23,
-                               color=INK if key in ("signal", "feature") else PROSE)
-                       for i, key in enumerate(TABLE_KEYS)), top=18 if n == 0 else 12)
-        for n, r in enumerate(issue["table"]))
-    table = _zone(_caps(L["table"], spacing="0.15em") + cards)
+    # --- сводная таблица: строка таблицы - плашка. На широком экране колонки стоят в два столбца,
+    # на телефоне сами встают друг под друга: столбцы - блоки inline-block с предельной шириной.
+    def cell(r: dict[str, str], key: str, first: bool) -> str:
+        return (_caps(L["col_" + key], top=0 if first else 14)
+                + _para(r[key], top=4, size=15, line=23, color=INK if key == "feature" else PROSE))
+
+    def card(n: int, r: dict[str, str]) -> str:
+        column = "display:inline-block;width:100%;max-width:246px;vertical-align:top;"
+        return _panel(
+            f'<table {TABLE}><tr><td width="34" valign="top" style="width:34px;{_font(12, 25, 600, ACCENT)}">{n + 1:02d}</td>'
+            f'<td valign="top" style="{_font(17, 25, 400, INK)}">{_mail_rich(r["signal"])}</td></tr></table>'
+            f'<div style="margin-top:2px;font-size:0;line-height:0;">'
+            f'<div style="{column}padding:14px 16px 0 0;">{cell(r, "segment", True)}{cell(r, "contour", False)}</div>'
+            f'<div style="{column}padding:14px 0 0 0;">{cell(r, "feature", True)}{cell(r, "question", False)}</div></div>',
+            top=18 if n == 0 else 12)
+
+    table = _zone(_caps(L["table"], spacing="0.15em") + "".join(card(n, r) for n, r in enumerate(issue["table"])))
 
     # --- шум ---
     def noise_html(x: dict[str, str]) -> str:
         if "text" in x:
-            return _rich(x["text"], MAIL_LINK)
-        return f'<strong style="font-weight:600;color:{INK};">{H(x["topic"])}</strong> - {_rich(x["reason"], MAIL_LINK)}'
+            return _mail_rich(x["text"])
+        return f'<strong style="font-weight:600;color:{INK};">{H(x["topic"])}</strong> - {_mail_rich(x["reason"])}'
 
     noise = _zone(_caps(L["noise"], spacing="0.15em") + "".join(
         f'<table {TABLE} style="margin-top:{16 if i == 0 else 12}px;"><tr>'
@@ -546,12 +612,8 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
     limits = _zone(_caps(L["limits"]) + _para(issue["limits"], top=8, size=14, line=22, color=SECOND)) if issue["limits"] else ""
 
     # --- переход на страницу ---
-    button = (f'<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr>'
-              f'<td align="center" bgcolor="{ACCENT}" style="background-color:{ACCENT};mso-padding-alt:15px 26px;">'
-              f'<a href="{url}" target="_blank" style="display:inline-block;padding:15px 26px;{_font(15, 20, 700, BG)}text-decoration:none;mso-padding-alt:0;">'
-              f"Открыть выпуск на сайте &rarr;</a></td></tr></table>")
     cta = (f'<table {TABLE}><tr><td bgcolor="{BG}" style="background-color:{BG};padding:0 {MAIL_PAD}px 34px {MAIL_PAD}px;">'
-           + _panel(_caps("Выпуск на сайте") + button
+           + _panel(_caps("Выпуск на сайте") + _button("Весь выпуск на сайте", url, top=14)
                     + f'<p style="margin:14px 0 0 0;{_font(12, 18, 400, MUTED, "word-break:break-all;")}">'
                       f'<a href="{url}" target="_blank" style="color:{MUTED};text-decoration:underline;">{url}</a></p>', accent="top")
            + "</td></tr></table>")
@@ -568,11 +630,11 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
         f'<meta name="supported-color-schemes" content="dark"><title>{H(issue["subject"])}</title>'
         f'<!--[if mso]><xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->'
         f'<style>body{{margin:0;padding:0;background-color:{BG};}}h1,h2,h3,p{{mso-line-height-rule:exactly;}}'
-        f'@media only screen and (max-width:480px){{.rh1{{font-size:30px !important;line-height:34px !important;}}}}</style></head>'
+        f'@media only screen and (max-width:480px){{.rh1{{font-size:28px !important;line-height:32px !important;}}}}</style></head>'
         f'<body style="margin:0;padding:0;background-color:{BG};"><div lang="ru" dir="ltr" style="margin:0;padding:0;background-color:{BG};">{hidden}'
         f'<!--[if mso]><table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" width="{MAIL_WIDTH}"><tr><td><![endif]-->'
         f'<div style="max-width:{MAIL_WIDTH}px;margin:0 auto;background-color:{BG};">'
-        + header + hero + summary + main + signal_list + table + noise + limits + cta + footer
+        + header + hero + main + signal_list + table + noise + limits + cta + footer
         + "</div><!--[if mso]></td></tr></table><![endif]--></div></body></html>")
 
     def flat(value: str) -> str:
