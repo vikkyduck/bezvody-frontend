@@ -95,15 +95,37 @@ def note(line: str) -> None:
         handle.write(f"{stamp} {line}\n")
 
 
+def fingerprint(page: bytes, mail: bytes) -> str:
+    """Отпечаток выпуска: письмо и страница вместе. Правка только страницы тоже считается новой версией."""
+    return hashlib.sha256((digest(mail) + hashlib.sha256(page).hexdigest()).encode()).hexdigest()
+
+
 def control_copy(period: str, page: bytes, mail: bytes, kind: str) -> bool:
-    """Публикует страницу и отправляет контрольную копию. Отметка kind хранит отпечаток письма, чтобы не слать его дважды."""
+    """Публикует страницу и отправляет контрольную копию. Отметка kind хранит отпечаток выпуска, чтобы не слать его дважды."""
     for command, data in ((f"publish {period}", page), (f"test {period}", mail)):
         ok, answer = gateway(command, data)
         note(f"{period}: {command.split()[0]} - {answer}")
         if not ok:
             return False
-    mark(period, kind).write_text(digest(mail))
+    mark(period, kind).write_text(fingerprint(page, mail))
     return True
+
+
+def handle(period: str, approved: tuple[bytes, bytes] | None, draft: tuple[bytes, bytes] | None) -> None:
+    read = lambda kind: mark(period, kind).read_text().strip() if mark(period, kind).exists() else ""
+    seen = read("draft")  # последняя версия, которую Виктория получила контрольной копией из ветки
+    if approved and fingerprint(*approved) == seen:
+        ok, answer = gateway(f"send {period}", approved[1])
+        note(f"{period}: send - {answer}")
+        return
+    # Версия из ветки показывается, только если она отличается от main: выпуск, влитый раньше, чем его
+    # увидел наблюдатель, не должен уйти адресатам через ветку с тем же содержанием.
+    if draft and fingerprint(*draft) != seen and (not approved or fingerprint(*draft) != fingerprint(*approved)):
+        control_copy(period, *draft, "draft")
+    elif approved and read("mismatch") != fingerprint(*approved):
+        note(f"{period}: в main выпуск, который не уходил контрольной копией из ветки. Адресатам не отправляю, отправляю контрольную копию. "
+             "Чтобы отправить адресатам, нужна правка в ветке radar-issue и новое слияние")
+        control_copy(period, *approved, "mismatch")
 
 
 def step(today: dt.date) -> None:
@@ -114,23 +136,11 @@ def step(today: dt.date) -> None:
     for period in sorted(set(drafts) | merged):
         if not fresh(period, today) or mark(period, "sent").exists() or mark(period, "sending").exists():
             continue
-        approved = issue("refs/remotes/origin/main", period) if period in merged else None
-        if approved:
-            page, mail = approved
-            seen = mark(period, "draft").read_text().strip() if mark(period, "draft").exists() else ""
-            if digest(mail) == seen:
-                ok, answer = gateway(f"send {period}", mail)
-                note(f"{period}: send - {answer}")
-            elif not mark(period, "mismatch").exists() or mark(period, "mismatch").read_text().strip() != digest(mail):
-                note(f"{period}: в main письмо, которое не уходило контрольной копией из ветки. Адресатам не отправляю, отправляю контрольную копию")
-                control_copy(period, page, mail, "mismatch")
-            continue
-        draft = issue(drafts[period], period) if period in drafts else None
-        if draft:
-            page, mail = draft
-            seen = mark(period, "draft").read_text().strip() if mark(period, "draft").exists() else ""
-            if digest(mail) != seen:
-                control_copy(period, page, mail, "draft")
+        try:  # сломанный выпуск одного периода не останавливает остальные
+            handle(period, issue("refs/remotes/origin/main", period) if period in merged else None,
+                   issue(drafts[period], period) if period in drafts else None)
+        except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            note(f"{period}: ошибка - {error}")
 
 
 def main() -> int:

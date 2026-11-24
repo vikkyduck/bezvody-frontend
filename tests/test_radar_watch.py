@@ -80,6 +80,34 @@ class WatchTest(unittest.TestCase):
         self.assertNotIn("send", self.tick())
         self.assertEqual(len(self.tick()), len(calls))  # и копия не повторяется
 
+    def test_page_only_change_gives_a_new_control_copy(self):
+        self.put("radar-issue/" + PERIOD, "Тема")
+        self.tick()
+        (self.origin / "radar" / "issues" / PERIOD / "page.html").write_text("<!doctype html>page с исправленным источником")
+        sh(self.origin, "git", "add", "-A"); sh(self.origin, "git", "commit", "-qm", "page")
+        self.assertEqual(self.tick(), ["publish", "test", "publish", "test"])
+
+    def test_merge_before_the_watcher_saw_it_is_not_sent_and_can_be_recovered(self):
+        self.put("radar-issue/" + PERIOD, "Тема")
+        self.merge("radar-issue/" + PERIOD)  # влито раньше первой проверки: контрольной копии не было
+        calls = self.tick()
+        self.assertEqual(calls, ["publish", "test"])
+        self.assertNotIn("send", self.tick())
+        # Восстановление: правка в ветке, новая контрольная копия, новое слияние.
+        self.put("radar-issue/" + PERIOD, "Тема после правки")
+        self.assertEqual(self.tick()[-2:], ["publish", "test"])
+        self.assertNotIn("send", self.tick())
+        self.merge("radar-issue/" + PERIOD)
+        self.assertEqual(self.tick()[-1], "send")
+
+    def test_broken_issue_does_not_block_another(self):
+        self.put("radar-issue/10.11-16.11.26", "Сломанный", period="10.11-16.11.26")
+        (self.origin / "radar" / "issues" / "10.11-16.11.26" / "mail.json").write_text("{не json")
+        sh(self.origin, "git", "add", "-A"); sh(self.origin, "git", "commit", "-qm", "broken")
+        sh(self.origin, "git", "checkout", "-q", "main")
+        self.put("radar-issue/" + PERIOD, "Тема")
+        self.assertEqual(self.tick(), ["publish", "test"])
+
     def test_old_issue_folder_starts_nothing(self):
         self.put("radar-issue/01.09-07.09.26", "Старый выпуск", period="01.09-07.09.26")
         self.merge("radar-issue/01.09-07.09.26")
