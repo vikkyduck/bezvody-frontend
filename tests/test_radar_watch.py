@@ -108,6 +108,19 @@ class WatchTest(unittest.TestCase):
         self.put("radar-issue/" + PERIOD, "Тема")
         self.assertEqual(self.tick(), ["publish", "test"])
 
+    def test_failed_gateway_is_not_hammered_every_run(self):
+        # Шлюз отказал (например, неверный пароль почты): повтор не каждые 5 минут, а после паузы или повторной установки.
+        gateway = self.tmp / "gateway"
+        gateway.write_text(FAKE_GATEWAY.replace('print("ok")', 'sys.exit(1) if action == "test" else print("ok")'))
+        self.put("radar-issue/" + PERIOD, "Тема")
+        self.assertEqual(self.tick(), ["publish", "test"])
+        self.assertEqual(self.tick(), ["publish", "test"])  # второй запуск шлюз не трогает
+        (self.tmp / "state" / (PERIOD + ".failed")).unlink()  # повторная установка сняла отметку
+        gateway.write_text(FAKE_GATEWAY)
+        self.assertEqual(self.tick(), ["publish", "test", "publish", "test"])
+        self.merge("radar-issue/" + PERIOD)
+        self.assertEqual(self.tick()[-1], "send")
+
     def test_old_issue_folder_starts_nothing(self):
         self.put("radar-issue/01.09-07.09.26", "Старый выпуск", period="01.09-07.09.26")
         self.merge("radar-issue/01.09-07.09.26")
