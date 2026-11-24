@@ -8,12 +8,12 @@
   mail.json          - тема, HTML и текст письма, их шлюз отправляет (radar/README.md);
   mail-preview.html  - письмо как HTML-файл, чтобы посмотреть его в браузере.
 
-Письмо - выпуск целиком в оформлении nowater.tech, разложенный по блокам: главный вывод,
-главный сигнал, остальные сигналы, сводная таблица, шум и кнопка на страницу.
+Страница несет выпуск целиком, слово в слово: сборщик ничего не сокращает и не пересказывает.
+Ссылки внутри текста записываются как [текст](https://адрес) и остаются на своем месте.
 
-Текст выпуска сборщик не сокращает, не переставляет и не пересказывает: каждое поле JSON
-попадает в письмо и на страницу слово в слово. Ссылки внутри текста записываются как
-[текст](https://адрес) и остаются на своем месте в предложении.
+Письмо построено по пирамиде Минто и несет первый уровень чтения: суть недели, сигналы с
+заголовками-выводами, цифру, диаграмму, идею фичи и вопрос клиенту. В письмо идет первый абзац
+каждого поля без ссылок на источники. Источники, сводная таблица и шум читаются на странице.
 
 Скрипт ничего не публикует и не отправляет. Перед сборкой он проверяет текст по правилам
 Виктории (буква "е", короткий дефис, прямые кавычки, без точки с запятой, без точки в конце
@@ -61,7 +61,7 @@ LINK = re.compile(r"\[([^\[\]\n]+)\]\((https?://[^\s()<>\"']+)\)")
 # Подписи разделов. Они совпадают с заголовками в тексте выпуска. Если заголовки в выпуске
 # другие, упаковщик передает их в поле labels: сборщик подписи не придумывает.
 LABELS = {
-    "summary": "Главный вывод недели",
+    "summary": "Суть",
     "main": "Главный сигнал недели",
     "what": "Что происходит",
     "why": "Почему это важно для выручки",
@@ -71,6 +71,9 @@ LABELS = {
     "table": "Сводная таблица возможных продуктовых фич",
     "noise": "Что отсеяли как шум",
     "limits": "Ограничения",
+    "figure": "Цифра недели",
+    "contours": "Сигналы недели по контурам Авито",
+    "on_site": "На сайте",
     "col_signal": "Сигнал",
     "col_segment": "Сегмент селлеров",
     "col_contour": "Контур Авито",
@@ -203,7 +206,14 @@ def check(issue: Any) -> dict[str, Any]:
         "signals": [],
         "table": [],
         "noise": [],
+        "figure": None,
     }
+    figure = issue.get("figure")
+    if figure is not None:
+        figure = figure if isinstance(figure, dict) else {}
+        # Цифра недели: число словами выпуска и фраза выпуска, в которой оно стоит.
+        clean["figure"] = {"value": _text(figure.get("value"), "figure.value", problems, heading=True),
+                           "caption": _text(figure.get("caption"), "figure.caption", problems)}
     signals = issue.get("signals") or []
     if not isinstance(signals, list) or len(signals) > 3:
         problems.append("signals: от 0 до 3 коротких сигналов")
@@ -411,28 +421,32 @@ def _caps(text: str, color: str = MUTED, top: int = 0, spacing: str = "0.11em") 
     return f'<p style="margin:{top}px 0 0 0;{_font(11, 16, 600, color, f"letter-spacing:{spacing};")}">{H(text.upper())}</p>'
 
 
-# Подпись в начале фразы: "Гипотеза для проверки:", "Метрики проверки:", "Ограничения:".
-# Одно-три слова с прописной буквы и двоеточие. В письме такая подпись выделяется, слова не меняются.
-RUN_IN = re.compile(r"(^|(?<=[.!?] ))([А-ЯA-Z][а-яa-z]+(?: [а-яa-zА-ЯA-Z]+){0,2}:)(?= )")
-SOURCES_TAIL = re.compile(r"^(.*[.!?])\s+(Источники?:\s.+)$", re.S)
-FIRST_SENTENCE = re.compile(r"^(.+?[.!?])\s+(?=[А-ЯA-Z\"])(.+)$", re.S)
+# Письмо построено по пирамиде Минто и несет только первый уровень чтения:
+#   суть недели -> опоры (сигналы с заголовками-выводами) -> что это может значить, фича, вопрос.
+# Третий уровень - источники, сводная таблица, шум, оговорки - читается на странице.
+# Поэтому письмо берет из каждого поля выпуска первый абзац, убирает из него ссылки на
+# источники и больше ничего не меняет. Слов от себя сборщик в текст выпуска не добавляет.
+SOURCE_BRACKETS = re.compile(r"\s*\((?:\s*\[[^\[\]\n]+\]\(https?://[^\s()<>\"']+\)\s*(?:,|и)?)+\s*\)")
+SOURCES_SENTENCE = re.compile(r"(?:^|(?<=[.!?])\s+)Источники?:\s[^\n]*$")
+SENTENCE_END = re.compile(r"(?<=[^\s.]{4})[.!?](?=\s+[А-ЯA-Z\"])")
+LETTER_LIMIT = 260  # абзац длиннее этого упаковщик не разбил: в письмо идет его первая фраза
+TRACK = "#2A2C33"
+READING_SPEED = 170  # слов в минуту
 
 
-def _mail_rich(text: str, *, labels: bool = False) -> str:
-    """Текст выпуска для письма: ссылки на месте, подписи в начале фраз выделены. Слова не меняются."""
-    markup = _rich(text, MAIL_LINK)
-    if not labels:
-        return markup
-    # Подписи ищем только вне ссылок: текст ссылки и ее адрес не трогаем.
-    parts = re.split(r"(<a\b.*?</a>)", markup)
-    strong = f'<strong style="font-weight:600;color:{INK};">'
-    return "".join(part if part.startswith("<a") else RUN_IN.sub(lambda m: f"{m.group(1)}{strong}{m.group(2)}</strong>", part)
-                   for part in parts)
+def _essence(text: str) -> str:
+    """Что из поля выпуска идет в письмо: первый абзац без ссылок на источники."""
+    parts = _lines(text)
+    first = _visible(SOURCE_BRACKETS.sub("", SOURCES_SENTENCE.sub("", parts[0]))).strip()
+    if len(parts) == 1 and len(first) > LETTER_LIMIT:
+        end = SENTENCE_END.search(first)
+        if end:
+            first = first[:end.end()]
+    return first
 
 
-def _para(text: str, top: int = 10, size: int = 16, line: int = 26, color: str = PROSE, *, labels: bool = False) -> str:
-    """Абзацы письма. Перевод строки в тексте выпуска начинает новый абзац."""
-    return "".join(f'<p style="margin:{top if i == 0 else 12}px 0 0 0;{_font(size, line, 400, color)}">{_mail_rich(part, labels=labels)}</p>'
+def _para(text: str, top: int = 10, size: int = 16, line: int = 26, color: str = PROSE) -> str:
+    return "".join(f'<p style="margin:{top if i == 0 else 12}px 0 0 0;{_font(size, line, 400, color)}">{H(part)}</p>'
                    for i, part in enumerate(_lines(text)))
 
 
@@ -452,13 +466,6 @@ def _panel(inner: str, *, top: int = 0, accent: str = "") -> str:
             f'<td bgcolor="{PANEL}" style="background-color:{PANEL};{edge}padding:20px 22px 22px 22px;">{inner}</td></tr></table>')
 
 
-def _note(inner: str, *, top: int = 14) -> str:
-    """Врезка с тонкой линией слева: фраза, которая стоит особняком от основного текста."""
-    return (f'<table {TABLE} style="margin-top:{top}px;"><tr>'
-            f'<td width="1" bgcolor="{LINE}" style="background-color:{LINE};width:1px;font-size:0;line-height:0;">&nbsp;</td>'
-            f'<td style="padding:2px 0 3px 16px;">{inner}</td></tr></table>')
-
-
 def _badge(text: str, *, filled: bool, top: int = 0) -> str:
     """Метка сигнала. Текст метки приходит из выпуска, сборщик его не придумывает."""
     if not text:
@@ -476,25 +483,41 @@ def _button(label: str, href: str, *, top: int = 24) -> str:
             f"{label} &rarr;</a></td></tr></table>")
 
 
-def _mail_sources(sources: list[dict[str, str]]) -> str:
-    if not sources:
-        return ""
-    links = ", ".join(
-        f'<a href="{H(s["url"], quote=True)}" target="_blank" style="{MAIL_LINK}">{H(s["title"])}</a>, {H(s["date"])}'
-        for s in sources)
-    return f'<p style="margin:12px 0 0 0;{_font(13, 21, 400, MUTED)}">{"Источник" if len(sources) == 1 else "Источники"}: {links}</p>'
+def _letter(issue: dict[str, Any]) -> dict[str, Any]:
+    """Содержание письма: какие слова выпуска в него идут. Верстка и текстовая версия берут их отсюда."""
+    m, signals, table = issue["main"], issue["signals"], issue["table"]
+    # Строки сводной таблицы идут в том же порядке, что и сигналы: первая - главный сигнал.
+    rows = table if len(table) == 1 + len(signals) else None
+    contours: dict[str, list[int]] = {}
+    for n, r in enumerate(rows or [], 1):
+        contours.setdefault(_visible(r["contour"]).split(":")[0].strip(), []).append(n)
+    figure = issue["figure"]
+    return {
+        "essence": _essence(issue["summary"]),
+        "main": {
+            "title": m["title"], "badge": m["badge"], "what": _essence(m["what"]), "why": _essence(m["why"]),
+            "feature": _essence(rows[0]["feature"] if rows else m["product"]),
+            "question": _essence(m["question"]),
+        },
+        "signals": [{
+            "n": n, "title": s["title"], "badge": s["badge"], "text": _essence(s["text"]),
+            "feature": _essence(rows[n - 1]["feature"]) if rows else (_essence(s["feature"]) if s["feature"] else ""),
+            "question": _essence(rows[n - 1]["question"]) if rows else "",
+        } for n, s in enumerate(signals, 2)],
+        "figure": {"value": figure["value"], "caption": _essence(figure["caption"])} if figure else None,
+        "contours": contours,
+        "ideas": len(table),
+    }
 
 
 def mail(issue: dict[str, Any]) -> dict[str, str]:
-    m, url, signals, L = issue["main"], issue["url"], issue["signals"], issue["labels"]
+    url, L, c = issue["url"], issue["labels"], _letter(issue)
+    m, signals = c["main"], c["signals"]
     period = f"{issue['start']:%d.%m}-{issue['end']:%d.%m.%Y}"
-    total, ideas, skipped = 1 + len(signals), len(issue["table"]), len(issue["noise"])
-    facts = [(total, _count(total, "сигнал недели", "сигнала недели", "сигналов недели")),
-             (ideas, _count(ideas, "идея фичи", "идеи фич", "идей фич"))]
-    if skipped:
-        facts.append((skipped, _count(skipped, "тема в шуме", "темы в шуме", "тем в шуме")))
-    preheader = issue["preheader"] or f"{L['main']}: {m['title']}"
+    total = 1 + len(signals)
+    preheader = issue["preheader"] or c["essence"]
     signals_label = _signals_label(issue)
+    on_site = f"На странице выпуска - источники и {L['table'][0].lower()}{L['table'][1:]}."
 
     def link(anchor: str, label: str, style: str) -> str:
         return f'<a href="{url}#{anchor}" target="_blank" style="{style}">{label}</a>'
@@ -503,7 +526,6 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
     # На узком экране название переносится по словам, а номер выпуска не отрывается от слова "Выпуск".
     edition = H(issue["edition"]).replace(" Выпуск ", " Выпуск&nbsp;")
     nav = [("main", "Главный сигнал")] + ([("signals", "Еще сигналы")] if signals else []) + [("product", "Таблица фич")]
-    nav += [("noise", "Шум")] if skipped else []
     slash = f' <span style="color:{LINE};">/</span> '  # обычные пробелы: строка переносится между пунктами
     header = (
         f'<table {TABLE}><tr><td bgcolor="{BG}" style="background-color:{BG};padding:0 {MAIL_PAD}px;"><table {TABLE}><tr>'
@@ -514,106 +536,80 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
         + slash.join(link(a, t, f"color:{SECOND};text-decoration:none;white-space:nowrap;") for a, t in nav)
         + "</p></td></tr></table></td></tr></table>")
 
-    # --- первый экран: главный вывод и объем выпуска ---
-    # Первая фраза вывода набрана крупно, остальной вывод - обычным текстом. Слова и порядок те же.
-    lead_parts = _lines(issue["summary"])
-    split = FIRST_SENTENCE.match(lead_parts[0])
-    first, rest = (split.group(1), [split.group(2)] + lead_parts[1:]) if split else (lead_parts[0], lead_parts[1:])
-    lead = (f'<p style="margin:14px 0 0 0;{_font(20, 30, 400, INK)}">{_mail_rich(first)}</p>'
-            + "".join(f'<p style="margin:12px 0 0 0;{_font(16, 26, 400, PROSE)}">{_mail_rich(part)}</p>' for part in rest))
-    cells = "".join(
-        f'<td width="{100 // len(facts)}%" valign="top" style="padding:0 {0 if i == len(facts) - 1 else 12}px 0 0;">'
-        f'<table {TABLE}><tr><td style="border-top:2px solid {ACCENT};padding:12px 0 0 0;">'
-        f'<p style="margin:0;{_font(30, 34, 400, INK)}">{n}</p>{_caps(label, top=4)}</td></tr></table></td>'
-        for i, (n, label) in enumerate(facts))
-    hero = _zone(
-        _caps(f"{issue['audience']} / {period}", spacing="0.15em") + _caps(L["summary"], ACCENT, top=22) + lead
-        + f'<table {TABLE} style="margin-top:28px;"><tr>{cells}</tr></table>',
-        top=30, bottom=34, rule=False)
+    # --- первый экран: суть недели и три цифры. Время чтения считается по готовому письму. ---
+    def counters(minutes: int) -> str:
+        facts = [(total, _count(total, "сигнал недели", "сигнала недели", "сигналов недели")),
+                 (c["ideas"], _count(c["ideas"], "идея фичи", "идеи фич", "идей фич")),
+                 (minutes, _count(minutes, "минута чтения", "минуты чтения", "минут чтения"))]
+        return "".join(
+            f'<td width="{100 // len(facts)}%" valign="top" style="padding:0 {0 if i == len(facts) - 1 else 12}px 0 0;">'
+            f'<table {TABLE}><tr><td style="border-top:2px solid {ACCENT};padding:12px 0 0 0;">'
+            f'<p style="margin:0;{_font(30, 34, 400, INK)}">{n}</p>{_caps(label, top=4)}</td></tr></table></td>'
+            for i, (n, label) in enumerate(facts))
 
-    # --- главный сигнал ---
-    # Фраза "Источники: ..." в конце абзаца уходит отдельной мелкой строкой под текст.
-    what_parts = _lines(m["what"])
-    tail = SOURCES_TAIL.match(what_parts[-1])
-    if tail:
-        what_parts[-1] = tail.group(1)
-    what = _para("\n".join(what_parts)) + (
-        f'<p style="margin:12px 0 0 0;{_font(13, 21, 400, MUTED)}">{_mail_rich(tail.group(2))}</p>' if tail else "")
-    # "Почему важно": первый абзац - текст, следующие (гипотеза) - врезки.
-    why_parts = _lines(m["why"])
-    why = _para(why_parts[0]) + "".join(_note(_para(part, top=0, size=15, line=24, color=INK, labels=True), top=16) for part in why_parts[1:])
-    # "Возможные фичи": короткая первая фраза - название фичи, она выделена.
-    product_parts = _lines(m["product"])
-    name = FIRST_SENTENCE.match(product_parts[0])
-    if name and len(_visible(name.group(1))) <= 60:
-        head = (f'<p style="margin:10px 0 0 0;{_font(16, 26, 400, INK)}"><strong style="font-weight:600;color:{INK};">'
-                f'{_mail_rich(name.group(1))}</strong> {_mail_rich(name.group(2))}</p>')
-    else:
-        head = _para(product_parts[0], color=INK)
-    product = head + "".join(f'<p style="margin:12px 0 0 0;{_font(15, 24, 400, PROSE)}">{_mail_rich(part, labels=True)}</p>'
-                             for part in product_parts[1:])
+    def hero(minutes: int) -> str:
+        return _zone(
+            _caps(f"{issue['audience']} / {period}", spacing="0.15em") + _caps(L["summary"], ACCENT, top=22)
+            + f'<p style="margin:12px 0 0 0;{_font(22, 32, 400, INK, "letter-spacing:-0.01em;")}">{H(c["essence"])}</p>'
+            + f'<table {TABLE} style="margin-top:28px;"><tr>{counters(minutes)}</tr></table>',
+            top=30, bottom=30, rule=False)
+
+    # --- диаграмма: на какие контуры Авито приходятся сигналы недели ---
+    def bar(share: int) -> str:
+        rest = (f'<td width="{100 - share}%" bgcolor="{TRACK}" height="8" style="background-color:{TRACK};height:8px;font-size:0;line-height:0;">&nbsp;</td>'
+                if share < 100 else "")
+        return (f'<table {TABLE} style="margin-top:8px;"><tr>'
+                f'<td width="{share}%" bgcolor="{ACCENT}" height="8" style="background-color:{ACCENT};height:8px;font-size:0;line-height:0;">&nbsp;</td>{rest}</tr></table>')
+
+    chart = ""
+    if c["contours"]:
+        chart = (f'<table {TABLE}><tr><td bgcolor="{BG}" style="background-color:{BG};padding:0 {MAIL_PAD}px 30px {MAIL_PAD}px;">'
+                 + _panel(_caps(L["contours"]) + "".join(
+                     f'<table {TABLE} style="margin-top:{16 if i == 0 else 18}px;"><tr>'
+                     f'<td valign="bottom" style="{_font(15, 22, 400, INK)}">{H(name)}</td>'
+                     f'<td valign="bottom" align="right" style="padding-left:12px;white-space:nowrap;{_font(12, 22, 600, MUTED)}">'
+                     f'{"Сигнал" if len(nums) == 1 else "Сигналы"} {", ".join(f"{n:02d}" for n in nums)}</td></tr></table>'
+                     + bar(max(8, round(len(nums) / total * 100)))
+                     for i, (name, nums) in enumerate(c["contours"].items())))
+                 + "</td></tr></table>")
+
+    # --- главный сигнал: заголовок-вывод, что произошло, что это может значить, цифра, фича, вопрос ---
+    figure = ""
+    if c["figure"]:
+        figure = _panel(
+            _caps(L["figure"])
+            + f'<p style="margin:8px 0 0 0;{_font(44, 48, 400, ACCENT, "letter-spacing:-0.02em;")}">{H(c["figure"]["value"])}</p>'
+            + _para(c["figure"]["caption"], top=10, size=15, line=23), top=22, accent="top")
     main = _zone(
         f'<table {TABLE}><tr><td width="34" valign="top" style="width:34px;{_font(12, 16, 600, ACCENT)}">01</td>'
         f'<td valign="top">{_caps(L["main"], spacing="0.15em")}</td></tr></table>'
         + _badge(m["badge"], filled=True, top=16)
         + f'<h1 class="rh1" style="margin:14px 0 0 0;{_font(32, 36, 400, INK, "letter-spacing:-0.02em;")}">{H(m["title"])}</h1>'
-        + _caps(L["what"], top=26) + what + _mail_sources(m["sources"])
-        + _caps(L["why"], top=26) + why
-        + _panel(_caps(L["product"]) + product, top=24)
+        + _para(m["what"], top=14)
+        + _caps(L["why"], top=26) + _para(m["why"], top=8)
+        + figure
+        + _panel(_caps(L["product"]) + _para(m["feature"], top=8, color=INK), top=14)
         + _panel(_caps(L["question"], ACCENT) + _para(m["question"], top=8, size=19, line=27, color=INK), top=14, accent="left")
         + _button("Главный сигнал на сайте", f"{url}#main"))
 
-    # --- остальные сигналы: первый абзац - текст, следующие абзацы - врезки ---
-    def row(n: int, s: dict[str, Any]) -> str:
-        parts = _lines(s["text"])
-        notes = "".join(_note(_para(part, top=0, size=15, line=23, color=INK)) for part in parts[1:])
-        extra = "".join(_caps(L[label], top=14) + _para(s[key], top=4, size=15, line=23, color=INK)
-                        for key, label in (("contour", "col_contour"), ("feature", "col_feature")) if s[key])
+    # --- остальные сигналы: опоры сути. Заголовок-вывод, одна мысль, идея фичи, вопрос ---
+    def row(s: dict[str, Any]) -> str:
+        extra = "".join(_caps(label, top=14) + _para(value, top=4, size=15, line=23, color=INK)
+                        for label, value in ((L["col_feature"], s["feature"]), (L["question"], s["question"])) if value)
         more = (f'<p style="margin:14px 0 0 0;{_font(13, 20, 600, ACCENT)}">'
-                + link(f"signal-{n}", "Подробнее на сайте &rarr;", MAIL_LINK) + "</p>")
-        return (f'<table {TABLE}><tr><td width="34" valign="top" style="width:34px;border-top:1px solid {LINE};padding:23px 0 0 0;{_font(12, 16, 600, ACCENT)}">{n:02d}</td>'
+                + link(f"signal-{s['n']}", "Подробнее на сайте &rarr;", MAIL_LINK) + "</p>")
+        return (f'<table {TABLE}><tr><td width="34" valign="top" style="width:34px;border-top:1px solid {LINE};padding:23px 0 0 0;{_font(12, 16, 600, ACCENT)}">{s["n"]:02d}</td>'
                 f'<td valign="top" style="border-top:1px solid {LINE};padding:20px 0 24px 0;">' + _badge(s["badge"], filled=False)
                 + f'<h2 style="margin:{12 if s["badge"] else 0}px 0 0 0;{_font(21, 27, 400, INK, "letter-spacing:-0.01em;")}">{H(s["title"])}</h2>'
-                + _para(parts[0], top=8, size=15, line=23) + notes + extra + _mail_sources(s["sources"]) + more + "</td></tr></table>")
+                + _para(s["text"], top=8, size=15, line=23) + extra + more + "</td></tr></table>")
 
     signal_list = _zone(_caps(signals_label, spacing="0.15em") + '<div style="margin-top:18px;">'
-                        + "".join(row(n, s) for n, s in enumerate(signals, 2)) + "</div>", bottom=8) if signals else ""
+                        + "".join(row(s) for s in signals) + "</div>", bottom=8) if signals else ""
 
-    # --- сводная таблица: строка таблицы - плашка. На широком экране колонки стоят в два столбца,
-    # на телефоне сами встают друг под друга: столбцы - блоки inline-block с предельной шириной.
-    def cell(r: dict[str, str], key: str, first: bool) -> str:
-        return (_caps(L["col_" + key], top=0 if first else 14)
-                + _para(r[key], top=4, size=15, line=23, color=INK if key == "feature" else PROSE))
-
-    def card(n: int, r: dict[str, str]) -> str:
-        column = "display:inline-block;width:100%;max-width:246px;vertical-align:top;"
-        return _panel(
-            f'<table {TABLE}><tr><td width="34" valign="top" style="width:34px;{_font(12, 25, 600, ACCENT)}">{n + 1:02d}</td>'
-            f'<td valign="top" style="{_font(17, 25, 400, INK)}">{_mail_rich(r["signal"])}</td></tr></table>'
-            f'<div style="margin-top:2px;font-size:0;line-height:0;">'
-            f'<div style="{column}padding:14px 16px 0 0;">{cell(r, "segment", True)}{cell(r, "contour", False)}</div>'
-            f'<div style="{column}padding:14px 0 0 0;">{cell(r, "feature", True)}{cell(r, "question", False)}</div></div>',
-            top=18 if n == 0 else 12)
-
-    table = _zone(_caps(L["table"], spacing="0.15em") + "".join(card(n, r) for n, r in enumerate(issue["table"])))
-
-    # --- шум ---
-    def noise_html(x: dict[str, str]) -> str:
-        if "text" in x:
-            return _mail_rich(x["text"])
-        return f'<strong style="font-weight:600;color:{INK};">{H(x["topic"])}</strong> - {_mail_rich(x["reason"])}'
-
-    noise = _zone(_caps(L["noise"], spacing="0.15em") + "".join(
-        f'<table {TABLE} style="margin-top:{16 if i == 0 else 12}px;"><tr>'
-        f'<td width="34" valign="top" style="width:34px;{_font(12, 24, 600, ACCENT)}">{i + 1:02d}</td>'
-        f'<td valign="top" style="{_font(15, 24, 400, PROSE)}">{noise_html(x)}</td></tr></table>'
-        for i, x in enumerate(issue["noise"]))) if skipped else ""
-
-    limits = _zone(_caps(L["limits"]) + _para(issue["limits"], top=8, size=14, line=22, color=SECOND)) if issue["limits"] else ""
-
-    # --- переход на страницу ---
-    cta = (f'<table {TABLE}><tr><td bgcolor="{BG}" style="background-color:{BG};padding:0 {MAIL_PAD}px 34px {MAIL_PAD}px;">'
-           + _panel(_caps("Выпуск на сайте") + _button("Весь выпуск на сайте", url, top=14)
+    # --- переход на страницу: там третий уровень чтения ---
+    cta = (f'<table {TABLE}><tr><td bgcolor="{BG}" style="background-color:{BG};padding:{0 if signals else 30}px {MAIL_PAD}px 34px {MAIL_PAD}px;">'
+           + _panel(_caps(L["on_site"]) + _para(on_site, top=8, size=15, line=23, color=SECOND)
+                    + _button("Весь выпуск на сайте", url, top=16)
                     + f'<p style="margin:14px 0 0 0;{_font(12, 18, 400, MUTED, "word-break:break-all;")}">'
                       f'<a href="{url}" target="_blank" style="color:{MUTED};text-decoration:underline;">{url}</a></p>', accent="top")
            + "</td></tr></table>")
@@ -621,6 +617,13 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
         f'<p style="margin:0;{_font(12, 19, 600, SECOND)}">{SIGNATURE} / "БЕЗ ВОДЫ" / NOWATER.TECH</p>'
         f'<p style="margin:6px 0 0 0;{_font(12, 19, 400, MUTED)}">Выпуск за {H(issue["period_text"])}</p>',
         top=22, bottom=40)
+
+    # Время чтения - по словам готового письма.
+    rest = chart + main + signal_list + cta
+    # Считаются слова из букв: адрес страницы, номера и цифры временем чтения не являются.
+    shown = re.sub(r"https?://\S+", " ", html.unescape(re.sub(r"<[^>]+>", " ", hero(1) + rest)))
+    words = len(re.findall(r"[^\W\d_]{2,}", shown))
+    minutes = max(1, round(words / READING_SPEED))
 
     hidden = (f'<div style="display:none;max-height:0;max-width:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:{BG};mso-hide:all;" '
               f'aria-hidden="true">{H(preheader)} {"&#847;&zwnj;&nbsp;&#8199;&shy; " * 30}</div>')
@@ -634,38 +637,23 @@ def mail(issue: dict[str, Any]) -> dict[str, str]:
         f'<body style="margin:0;padding:0;background-color:{BG};"><div lang="ru" dir="ltr" style="margin:0;padding:0;background-color:{BG};">{hidden}'
         f'<!--[if mso]><table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" width="{MAIL_WIDTH}"><tr><td><![endif]-->'
         f'<div style="max-width:{MAIL_WIDTH}px;margin:0 auto;background-color:{BG};">'
-        + header + hero + main + signal_list + table + noise + limits + cta + footer
+        + header + hero(minutes) + rest + footer
         + "</div><!--[if mso]></td></tr></table><![endif]--></div></body></html>")
 
-    def flat(value: str) -> str:
-        return "\n\n".join(_lines(_plain(value)))
-
-    def sources_text(sources: list[dict[str, str]]) -> list[str]:
-        if not sources:
-            return []
-        return [("Источник: " if len(sources) == 1 else "Источники: ") + ", ".join(f"{s['title']}, {s['date']}, {s['url']}" for s in sources)]
-
-    text = [f"NOWATER.TECH / {issue['edition']} / {issue['audience']} / {period}", "", issue["subject"], "",
-            L["summary"], flat(issue["summary"]), "", f"Выпуск на сайте: {url}", "",
-            f"{L['main']}: {m['title']}", "",
-            f"{L['what']}. " + flat(m["what"]), *sources_text(m["sources"]),
-            "", f"{L['why']}. " + flat(m["why"]),
-            "", f"{L['product']}. " + flat(m["product"]),
-            "", f"{L['question']}: " + flat(m["question"])]
+    # Текстовая версия повторяет письмо: те же слова в том же порядке.
+    reading = f"{minutes} {_count(minutes, 'минута чтения', 'минуты чтения', 'минут чтения')}"
+    text = [f"NOWATER.TECH / {issue['edition']} / {issue['audience']} / {period} / {reading}", "",
+            L["summary"], c["essence"], "",
+            f"{L['main']}: {m['title']}", "", m["what"], "", f"{L['why']}. {m['why']}"]
+    if c["figure"]:
+        text += ["", f"{L['figure']}: {c['figure']['value']}. {c['figure']['caption']}"]
+    text += ["", f"{L['product']}. {m['feature']}", "", f"{L['question']}: {m['question']}"]
     if signals:
         text += ["", signals_label]
-        for n, s in enumerate(signals, 2):
-            text += ["", f"{n:02d}. {s['title']}. " + flat(s["text"])]
-            text += [f"{L['col_' + key]}: " + flat(s[key]) for key in ("contour", "feature") if s[key]]
-            text += sources_text(s["sources"])
-    text += ["", L["table"]]
-    for n, r in enumerate(issue["table"], 1):
-        text += ["", *[f"{L['col_' + key]}: " + flat(r[key]) for key in TABLE_KEYS]]
-    if skipped:
-        text += ["", L["noise"], *["- " + (flat(x["text"]) if "text" in x else f"{x['topic']} - {flat(x['reason'])}") for x in issue["noise"]]]
-    if issue["limits"]:
-        text += ["", f"{L['limits']}. " + flat(issue["limits"])]
-    text += ["", f"Выпуск на сайте: {url}", "", SIGNATURE]
+        for s in signals:
+            text += ["", f"{s['n']:02d}. {s['title']}. {s['text']}"]
+            text += [f"{label}: {value}" for label, value in ((L["col_feature"], s["feature"]), (L["question"], s["question"])) if value]
+    text += ["", on_site, f"Весь выпуск на сайте: {url}", "", SIGNATURE]
     return {"period": issue["slug"], "url": url, "subject": issue["subject"], "html": body, "text": "\n".join(text) + "\n"}
 
 
